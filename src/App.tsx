@@ -9,6 +9,11 @@ import Auth from "./pages/Auth";
 import AppHome from "./pages/AppHome";
 import AppContent from "./pages/AppContent";
 import AppNutrition from "./pages/AppNutrition";
+import AdminLayout from "./pages/admin/AdminLayout";
+import AdminDashboard from "./pages/admin/AdminDashboard";
+import AdminUsers from "./pages/admin/AdminUsers";
+import AdminContent from "./pages/admin/AdminContent";
+import AdminQuotes from "./pages/admin/AdminQuotes";
 import NotFound from "./pages/NotFound";
 import { BottomNav } from "./components/BottomNav";
 import { AppHeader } from "./components/AppHeader";
@@ -62,6 +67,12 @@ const App = () => (
               <Route index element={<AppHome />} />
               <Route path="content" element={<AppContent />} />
               <Route path="nutrition" element={<AppNutrition />} />
+            </Route>
+            <Route path="/admin" element={<AdminLayout />}>
+              <Route index element={<AdminDashboard />} />
+              <Route path="users" element={<AdminUsers />} />
+              <Route path="content" element={<AdminContent />} />
+              <Route path="quotes" element={<AdminQuotes />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>
