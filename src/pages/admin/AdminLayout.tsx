@@ -1,7 +1,6 @@
 import { useEffect } from 'react';
-import { useNavigate, Outlet, NavLink } from 'react-router-dom';
+import { useNavigate, Outlet, NavLink, Navigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
-import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { Users, BookOpen, Quote, ArrowRight, LayoutDashboard, LogOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -15,20 +14,27 @@ const adminNavItems = [
 ];
 
 export default function AdminLayout() {
-  const { isAdmin, isLoading, user } = useAuth();
+  const { isAdmin, isLoading, user, signOut } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!isLoading && (!user || !isAdmin)) {
-      navigate('/app');
+    if (isLoading) return;
+
+    if (!user) {
+      navigate('/auth', { replace: true });
+      return;
+    }
+
+    if (!isAdmin) {
+      navigate('/app', { replace: true });
     }
   }, [isAdmin, isLoading, user, navigate]);
 
   const handleLogout = async () => {
     try {
-      await supabase.auth.signOut();
+      await signOut();
       toast({ title: 'להתראות!', description: 'התנתקת בהצלחה' });
-      navigate('/auth');
+      navigate('/auth', { replace: true });
     } catch (error) {
       console.error('Logout error:', error);
       toast({ title: 'שגיאה', description: 'לא ניתן להתנתק', variant: 'destructive' });
@@ -43,8 +49,12 @@ export default function AdminLayout() {
     );
   }
 
+  if (!user) {
+    return <Navigate to="/auth" replace />;
+  }
+
   if (!isAdmin) {
-    return null;
+    return <Navigate to="/app" replace />;
   }
 
   return (
