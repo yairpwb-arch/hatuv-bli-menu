@@ -42,7 +42,7 @@ export default function AppContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedContent, setSelectedContent] = useState<ContentItem | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('all');
-  const [expandedParts, setExpandedParts] = useState<Set<number>>(new Set([1, 2, 3]));
+  const [expandedParts, setExpandedParts] = useState<Set<number>>(new Set([1]));
   const [weeklySurveyLink, setWeeklySurveyLink] = useState('');
   const [snacksBookLink, setSnacksBookLink] = useState('');
 
@@ -107,6 +107,21 @@ export default function AppContent() {
   const totalContent = allContent.length;
   const completedContent = allContent.filter((item) => item.isCompleted).length;
   const progressPercentage = totalContent > 0 ? Math.round((completedContent / totalContent) * 100) : 0;
+
+  // Check if a part is unlocked based on content unlock days
+  const isPartUnlocked = (partNumber: number): boolean => {
+    if (partNumber === 1) return true;
+    // A part is unlocked if any content in it is unlocked
+    const partContent = allContent.filter((item) => item.part_number === partNumber);
+    return partContent.some((item) => item.isUnlocked);
+  };
+
+  // Get earliest unlock day for a part
+  const getPartUnlockDay = (partNumber: number): number => {
+    const partContent = allContent.filter((item) => item.part_number === partNumber);
+    if (partContent.length === 0) return 0;
+    return Math.min(...partContent.map((item) => item.unlock_day));
+  };
 
   // Group content by part and week
   const groupedContent = filteredContent.reduce((acc, item) => {
@@ -279,6 +294,9 @@ export default function AppContent() {
 
           const isExpanded = expandedParts.has(partNumber);
           const partInfo = PART_NAMES[partNumber];
+          const partUnlocked = isPartUnlocked(partNumber);
+          const partUnlockDay = getPartUnlockDay(partNumber);
+          const daysUntilPartUnlock = Math.max(0, partUnlockDay - currentDay);
 
           return (
             <div
@@ -288,27 +306,48 @@ export default function AppContent() {
             >
               {/* Part Header */}
               <button
-                onClick={() => togglePart(partNumber)}
-                className="w-full glass-card p-4 flex items-center justify-between hover:border-primary/30 transition-colors"
+                onClick={() => partUnlocked && togglePart(partNumber)}
+                disabled={!partUnlocked}
+                className={cn(
+                  'w-full glass-card p-4 flex items-center justify-between transition-colors',
+                  partUnlocked 
+                    ? 'hover:border-primary/30 cursor-pointer' 
+                    : 'opacity-60 cursor-not-allowed'
+                )}
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl gradient-primary flex items-center justify-center">
-                    <BookOpen className="h-5 w-5 text-primary-foreground" />
+                  <div className={cn(
+                    'w-10 h-10 rounded-xl flex items-center justify-center',
+                    partUnlocked ? 'gradient-primary' : 'bg-muted'
+                  )}>
+                    {partUnlocked ? (
+                      <BookOpen className="h-5 w-5 text-primary-foreground" />
+                    ) : (
+                      <Lock className="h-5 w-5 text-muted-foreground" />
+                    )}
                   </div>
                   <div className="text-right">
                     <h3 className="font-bold text-foreground">{partInfo.title}</h3>
-                    <p className="text-sm text-muted-foreground">{partInfo.subtitle}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {partUnlocked 
+                        ? partInfo.subtitle 
+                        : `ייפתח בעוד ${daysUntilPartUnlock} ימים`}
+                    </p>
                   </div>
                 </div>
-                {isExpanded ? (
-                  <ChevronUp className="h-5 w-5 text-muted-foreground" />
+                {partUnlocked ? (
+                  isExpanded ? (
+                    <ChevronUp className="h-5 w-5 text-muted-foreground" />
+                  ) : (
+                    <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                  )
                 ) : (
-                  <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                  <Lock className="h-5 w-5 text-muted-foreground" />
                 )}
               </button>
 
               {/* Part Content */}
-              {isExpanded && (
+              {isExpanded && partUnlocked && (
                 <div className="mt-3 space-y-4 pr-2 border-r-2 border-primary/20 mr-5">
                   {Object.entries(partContent).map(([weekRange, items]) => (
                     <div key={weekRange} className="space-y-2">
@@ -384,9 +423,9 @@ export default function AppContent() {
                                     item.isCompleted && 'text-muted-foreground line-through'
                                   )}
                                 >
-                                  {item.title}
+                                  {item.isUnlocked ? item.title : 'תוכן נעול'}
                                 </h4>
-                                {item.is_bonus && (
+                                {item.is_bonus && item.isUnlocked && (
                                   <Badge
                                     variant="outline"
                                     className="flex-shrink-0 bg-warning/10 text-warning border-warning/30 text-xs"
@@ -398,7 +437,7 @@ export default function AppContent() {
                               </div>
                               {!item.isUnlocked && (
                                 <p className="text-xs text-muted-foreground">
-                                  נפתח בעוד {item.daysUntilUnlock} ימים
+                                  ייחשף בעוד {item.daysUntilUnlock} ימים
                                 </p>
                               )}
                             </div>
