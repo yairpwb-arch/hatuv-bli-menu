@@ -301,19 +301,19 @@ export default function AdminContent() {
 
       {/* Add/Edit Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent dir="rtl" className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent dir="rtl" className="w-[95vw] max-w-lg max-h-[85vh] overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle>{editingContent ? 'עריכת תוכן' : 'הוספת תוכן חדש'}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 pt-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>חלק</Label>
+          <div className="space-y-3 sm:space-y-4 pt-2 sm:pt-4">
+            <div className="grid grid-cols-2 gap-2 sm:gap-4">
+              <div className="space-y-1 sm:space-y-2">
+                <Label className="text-sm">חלק</Label>
                 <Select
                   value={String(formData.part_number)}
                   onValueChange={(v) => setFormData({ ...formData, part_number: Number(v) })}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="h-9 sm:h-10">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -323,67 +323,72 @@ export default function AdminContent() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label>שבוע/תקופה</Label>
+              <div className="space-y-1 sm:space-y-2">
+                <Label className="text-sm">שבוע/תקופה</Label>
                 <Input
                   value={formData.week_range}
                   onChange={(e) => setFormData({ ...formData, week_range: e.target.value })}
                   placeholder="שבוע 1"
+                  className="h-9 sm:h-10"
                 />
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label>כותרת</Label>
+            <div className="space-y-1 sm:space-y-2">
+              <Label className="text-sm">כותרת</Label>
               <Input
                 value={formData.title}
                 onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                 placeholder="כותרת התוכן"
+                className="h-9 sm:h-10"
               />
             </div>
 
-            <div className="space-y-2">
-              <Label>תיאור</Label>
+            <div className="space-y-1 sm:space-y-2">
+              <Label className="text-sm">תיאור</Label>
               <Textarea
                 value={formData.description || ''}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                 placeholder="תיאור קצר של התוכן"
-                rows={3}
+                rows={2}
+                className="text-sm"
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>יום פתיחה</Label>
+            <div className="grid grid-cols-2 gap-2 sm:gap-4">
+              <div className="space-y-1 sm:space-y-2">
+                <Label className="text-sm">יום פתיחה</Label>
                 <Input
                   type="number"
                   min="1"
                   value={formData.unlock_day}
                   onChange={(e) => setFormData({ ...formData, unlock_day: Number(e.target.value) })}
+                  className="h-9 sm:h-10"
                 />
               </div>
-              <div className="space-y-2">
-                <Label>סדר תצוגה</Label>
+              <div className="space-y-1 sm:space-y-2">
+                <Label className="text-sm">סדר תצוגה</Label>
                 <Input
                   type="number"
                   min="0"
                   value={formData.sort_order}
                   onChange={(e) => setFormData({ ...formData, sort_order: Number(e.target.value) })}
+                  className="h-9 sm:h-10"
                 />
               </div>
             </div>
 
             {/* Video Input Section */}
-            <div className="space-y-2">
-              <Label>סרטון</Label>
+            <div className="space-y-1 sm:space-y-2">
+              <Label className="text-sm">סרטון</Label>
               <Tabs value={videoInputMode} onValueChange={(v) => setVideoInputMode(v as 'upload' | 'url')} dir="rtl">
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="url" className="flex items-center gap-2">
-                    <Link className="h-4 w-4" />
+                <TabsList className="grid w-full grid-cols-2 h-9 sm:h-10">
+                  <TabsTrigger value="url" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm">
+                    <Link className="h-3 w-3 sm:h-4 sm:w-4" />
                     קישור חיצוני
                   </TabsTrigger>
-                  <TabsTrigger value="upload" className="flex items-center gap-2">
-                    <Upload className="h-4 w-4" />
+                  <TabsTrigger value="upload" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm">
+                    <Upload className="h-3 w-3 sm:h-4 sm:w-4" />
                     העלאה
                   </TabsTrigger>
                 </TabsList>
@@ -393,7 +398,7 @@ export default function AdminContent() {
                     onChange={(e) => setFormData({ ...formData, video_url: e.target.value })}
                     placeholder="https://youtube.com/watch?v=..."
                     dir="ltr"
-                    className="text-left"
+                    className="text-left h-9 sm:h-10 text-sm"
                   />
                   <p className="text-xs text-muted-foreground mt-1">תומך ב-YouTube, Vimeo וקישורים ישירים</p>
                 </TabsContent>
@@ -457,14 +462,14 @@ export default function AdminContent() {
               </Tabs>
             </div>
 
-            <div className="space-y-2">
-              <Label>קישור למשאב (PDF)</Label>
+            <div className="space-y-1 sm:space-y-2">
+              <Label className="text-sm">קישור למשאב (PDF)</Label>
               <Input
                 value={formData.resource_link || ''}
                 onChange={(e) => setFormData({ ...formData, resource_link: e.target.value })}
                 placeholder="https://..."
                 dir="ltr"
-                className="text-left"
+                className="text-left h-9 sm:h-10 text-sm"
               />
             </div>
 
@@ -476,10 +481,10 @@ export default function AdminContent() {
                 onChange={(e) => setFormData({ ...formData, is_bonus: e.target.checked })}
                 className="h-4 w-4"
               />
-              <Label htmlFor="isBonus">תוכן בונוס</Label>
+              <Label htmlFor="isBonus" className="text-sm">תוכן בונוס</Label>
             </div>
 
-            <Button onClick={handleSubmit} className="w-full gradient-primary" disabled={isSubmitting || isUploading}>
+            <Button onClick={handleSubmit} className="w-full gradient-primary h-10 sm:h-11" disabled={isSubmitting || isUploading}>
               {isSubmitting && <Loader2 className="h-4 w-4 ml-2 animate-spin" />}
               {editingContent ? 'שמור שינויים' : 'הוסף תוכן'}
             </Button>
