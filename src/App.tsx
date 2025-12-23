@@ -9,6 +9,7 @@ import Auth from "./pages/Auth";
 import AppHome from "./pages/AppHome";
 import AppContent from "./pages/AppContent";
 import AppNutrition from "./pages/AppNutrition";
+import AppProfile from "./pages/AppProfile";
 import AdminLayout from "./pages/admin/AdminLayout";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminUsers from "./pages/admin/AdminUsers";
@@ -21,7 +22,7 @@ import { AppHeader } from "./components/AppHeader";
 const queryClient = new QueryClient();
 
 function ProtectedRoute() {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, isAdmin } = useAuth();
 
   if (isLoading) {
     return (
@@ -35,6 +36,11 @@ function ProtectedRoute() {
     return <Navigate to="/auth" replace />;
   }
 
+  // Admin users get redirected to admin dashboard
+  if (isAdmin) {
+    return <Navigate to="/admin" replace />;
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <AppHeader />
@@ -45,10 +51,17 @@ function ProtectedRoute() {
 }
 
 function AuthRoute() {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, isAdmin } = useAuth();
 
   if (isLoading) return null;
-  if (user) return <Navigate to="/app" replace />;
+  
+  if (user) {
+    // Admin goes to admin dashboard, others go to app
+    if (isAdmin) {
+      return <Navigate to="/admin" replace />;
+    }
+    return <Navigate to="/app" replace />;
+  }
 
   return <Auth />;
 }
@@ -67,6 +80,7 @@ const App = () => (
               <Route index element={<AppHome />} />
               <Route path="content" element={<AppContent />} />
               <Route path="nutrition" element={<AppNutrition />} />
+              <Route path="profile" element={<AppProfile />} />
             </Route>
             <Route path="/admin" element={<AdminLayout />}>
               <Route index element={<AdminDashboard />} />

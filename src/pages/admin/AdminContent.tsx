@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,9 +9,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
-import { Plus, Edit, Trash2, Star, Loader2 } from 'lucide-react';
+import { Plus, Edit, Trash2, Star, Loader2, Upload, Link } from 'lucide-react';
 
 interface Content {
   id: string;
@@ -45,6 +46,9 @@ export default function AdminContent() {
   const [editingContent, setEditingContent] = useState<Content | null>(null);
   const [formData, setFormData] = useState<Omit<Content, 'id'>>(emptyContent);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [videoInputMode, setVideoInputMode] = useState<'upload' | 'url'>('url');
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchContent();
@@ -69,6 +73,7 @@ export default function AdminContent() {
   const openAddDialog = () => {
     setEditingContent(null);
     setFormData({ ...emptyContent, sort_order: content.length + 1 });
+    setVideoInputMode('url');
     setIsDialogOpen(true);
   };
 
@@ -85,7 +90,49 @@ export default function AdminContent() {
       is_bonus: item.is_bonus,
       sort_order: item.sort_order,
     });
+    setVideoInputMode(item.video_url?.includes('supabase') ? 'upload' : 'url');
     setIsDialogOpen(true);
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('video/')) {
+      toast({ title: 'שגיאה', description: 'אנא בחר קובץ וידאו', variant: 'destructive' });
+      return;
+    }
+
+    // Validate file size (max 100MB)
+    if (file.size > 100 * 1024 * 1024) {
+      toast({ title: 'שגיאה', description: 'הקובץ גדול מדי (מקסימום 100MB)', variant: 'destructive' });
+      return;
+    }
+
+    setIsUploading(true);
+
+    const fileName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+    const filePath = `videos/${fileName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('videos')
+      .upload(filePath, file);
+
+    if (uploadError) {
+      console.error('Upload error:', uploadError);
+      toast({ title: 'שגיאה', description: 'לא ניתן להעלות את הקובץ', variant: 'destructive' });
+      setIsUploading(false);
+      return;
+    }
+
+    const { data: { publicUrl } } = supabase.storage
+      .from('videos')
+      .getPublicUrl(filePath);
+
+    setFormData({ ...formData, video_url: publicUrl });
+    toast({ title: 'הצלחה', description: 'הסרטון הועלה בהצלחה' });
+    setIsUploading(false);
   };
 
   const handleSubmit = async () => {
@@ -288,15 +335,62 @@ export default function AdminContent() {
               </div>
             </div>
 
+            {/* Video Input Section */}
             <div className="space-y-2">
-              <Label>קישור לסרטון</Label>
-              <Input
-                value={formData.video_url || ''}
-                onChange={(e) => setFormData({ ...formData, video_url: e.target.value })}
-                placeholder="https://..."
-                dir="ltr"
-                className="text-left"
-              />
+              <Label>סרטון</Label>
+              <Tabs value={videoInputMode} onValueChange={(v) => setVideoInputMode(v as 'upload' | 'url')} dir="rtl">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="url" className="flex items-center gap-2">
+                    <Link className="h-4 w-4" />
+                    קישור חיצוני
+                  </TabsTrigger>
+                  <TabsTrigger value="upload" className="flex items-center gap-2">
+                    <Upload className="h-4 w-4" />
+                    העלאה
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value="url" className="mt-2">
+                  <Input
+                    value={formData.video_url || ''}
+                    onChange={(e) => setFormData({ ...formData, video_url: e.target.value })}
+                    placeholder="https://youtube.com/watch?v=..."
+                    dir="ltr"
+                    className="text-left"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">תומך ב-YouTube, Vimeo וקישורים ישירים</p>
+                </TabsContent>
+                <TabsContent value="upload" className="mt-2">
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    accept="video/*"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploading}
+                  >
+                    {isUploading ? (
+                      <>
+                        <Loader2 className="h-4 w-4 ml-2 animate-spin" />
+                        מעלה...
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="h-4 w-4 ml-2" />
+                        בחר קובץ וידאו
+                      </>
+                    )}
+                  </Button>
+                  {formData.video_url && formData.video_url.includes('supabase') && (
+                    <p className="text-xs text-success mt-1">✓ סרטון הועלה</p>
+                  )}
+                </TabsContent>
+              </Tabs>
             </div>
 
             <div className="space-y-2">
@@ -321,7 +415,7 @@ export default function AdminContent() {
               <Label htmlFor="isBonus">תוכן בונוס</Label>
             </div>
 
-            <Button onClick={handleSubmit} className="w-full" disabled={isSubmitting}>
+            <Button onClick={handleSubmit} className="w-full" disabled={isSubmitting || isUploading}>
               {isSubmitting && <Loader2 className="h-4 w-4 ml-2 animate-spin" />}
               {editingContent ? 'שמור שינויים' : 'הוסף תוכן'}
             </Button>

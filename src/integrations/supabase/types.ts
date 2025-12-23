@@ -144,7 +144,9 @@ export type Database = {
           current_weight: number | null
           email: string
           full_name: string | null
+          height: number | null
           id: string
+          initial_weight: number | null
           is_active: boolean | null
           phone_number: string | null
           start_date: string | null
@@ -155,7 +157,9 @@ export type Database = {
           current_weight?: number | null
           email: string
           full_name?: string | null
+          height?: number | null
           id: string
+          initial_weight?: number | null
           is_active?: boolean | null
           phone_number?: string | null
           start_date?: string | null
@@ -166,7 +170,9 @@ export type Database = {
           current_weight?: number | null
           email?: string
           full_name?: string | null
+          height?: number | null
           id?: string
+          initial_weight?: number | null
           is_active?: boolean | null
           phone_number?: string | null
           start_date?: string | null

@@ -36,6 +36,7 @@ export function AppHeader() {
               <p className="text-xs text-muted-foreground">{profile?.email}</p>
             </div>
             <DropdownMenuSeparator />
+            {/* Only show admin link for yairpwb@gmail.com */}
             {isAdmin && (
               <DropdownMenuItem onClick={() => navigate('/admin')}>
                 <Settings className="ml-2 h-4 w-4" />
