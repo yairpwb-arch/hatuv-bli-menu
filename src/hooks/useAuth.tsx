@@ -27,6 +27,8 @@ interface AuthContextType {
   refreshProfile: () => Promise<void>;
 }
 
+type AppRole = 'admin' | 'user';
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -34,8 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-
-  const isAdmin = profile?.email?.toLowerCase() === 'yairpwb@gmail.com';
+  const [isAdmin, setIsAdmin] = useState(false);
   
   const currentDay = profile?.start_date 
     ? Math.max(1, Math.floor((Date.now() - new Date(profile.start_date).getTime()) / (1000 * 60 * 60 * 24)) + 1)
@@ -55,10 +56,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return data;
   };
 
+  const checkAdminRole = async (userId: string) => {
+    const { data, error } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', userId)
+      .eq('role', 'admin' as AppRole)
+      .maybeSingle();
+    
+    if (error) {
+      console.error('Error checking admin role:', error);
+      return false;
+    }
+    return !!data;
+  };
+
   const refreshProfile = async () => {
     if (user) {
       const profileData = await fetchProfile(user.id);
       setProfile(profileData);
+      const adminStatus = await checkAdminRole(user.id);
+      setIsAdmin(adminStatus);
     }
   };
 
@@ -72,10 +90,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setTimeout(async () => {
             const profileData = await fetchProfile(session.user.id);
             setProfile(profileData);
+            const adminStatus = await checkAdminRole(session.user.id);
+            setIsAdmin(adminStatus);
             setIsLoading(false);
           }, 0);
         } else {
           setProfile(null);
+          setIsAdmin(false);
           setIsLoading(false);
         }
       }
@@ -86,8 +107,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(session?.user ?? null);
       
       if (session?.user) {
-        fetchProfile(session.user.id).then((profileData) => {
+        Promise.all([
+          fetchProfile(session.user.id),
+          checkAdminRole(session.user.id)
+        ]).then(([profileData, adminStatus]) => {
           setProfile(profileData);
+          setIsAdmin(adminStatus);
           setIsLoading(false);
         });
       } else {
@@ -124,6 +149,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setSession(null);
     setProfile(null);
+    setIsAdmin(false);
   };
 
   return (

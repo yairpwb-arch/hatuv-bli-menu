@@ -26,14 +26,13 @@ interface User {
   created_at: string;
 }
 
-const ADMIN_EMAIL = 'yairpwb@gmail.com';
-
 export default function AdminUsers() {
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [adminUserIds, setAdminUserIds] = useState<string[]>([]);
 
   const [newUser, setNewUser] = useState({
     email: '',
@@ -50,22 +49,42 @@ export default function AdminUsers() {
   });
 
   useEffect(() => {
-    fetchUsers();
+    fetchAdminUsers();
   }, []);
+
+  useEffect(() => {
+    if (adminUserIds.length >= 0) {
+      fetchUsers();
+    }
+  }, [adminUserIds]);
+
+  const fetchAdminUsers = async () => {
+    const { data, error } = await supabase
+      .from('user_roles')
+      .select('user_id')
+      .eq('role', 'admin');
+    
+    if (!error && data) {
+      setAdminUserIds(data.map(r => r.user_id));
+    }
+  };
 
   const fetchUsers = async () => {
     setIsLoading(true);
+    
+    // Get all profiles, then filter out admins
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
-      .neq('email', ADMIN_EMAIL) // Exclude admin from users list
       .order('created_at', { ascending: false });
 
     if (error) {
       console.error('Error fetching users:', error);
       toast({ title: 'שגיאה', description: 'לא ניתן לטעון משתמשים', variant: 'destructive' });
     } else {
-      setUsers(data || []);
+      // Filter out admin users
+      const nonAdminUsers = (data || []).filter(user => !adminUserIds.includes(user.id));
+      setUsers(nonAdminUsers);
     }
     setIsLoading(false);
   };
