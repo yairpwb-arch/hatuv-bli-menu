@@ -1,0 +1,333 @@
+import { useEffect, useState } from 'react';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from '@/hooks/use-toast';
+import { Plus, Edit, Trash2, Star, Loader2 } from 'lucide-react';
+
+interface Content {
+  id: string;
+  part_number: number;
+  week_range: string;
+  unlock_day: number;
+  title: string;
+  description: string | null;
+  video_url: string | null;
+  resource_link: string | null;
+  is_bonus: boolean;
+  sort_order: number;
+}
+
+const emptyContent: Omit<Content, 'id'> = {
+  part_number: 1,
+  week_range: '',
+  unlock_day: 1,
+  title: '',
+  description: '',
+  video_url: '',
+  resource_link: '',
+  is_bonus: false,
+  sort_order: 0,
+};
+
+export default function AdminContent() {
+  const [content, setContent] = useState<Content[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingContent, setEditingContent] = useState<Content | null>(null);
+  const [formData, setFormData] = useState<Omit<Content, 'id'>>(emptyContent);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    fetchContent();
+  }, []);
+
+  const fetchContent = async () => {
+    setIsLoading(true);
+    const { data, error } = await supabase
+      .from('program_content')
+      .select('*')
+      .order('sort_order', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching content:', error);
+      toast({ title: 'שגיאה', description: 'לא ניתן לטעון תכנים', variant: 'destructive' });
+    } else {
+      setContent(data || []);
+    }
+    setIsLoading(false);
+  };
+
+  const openAddDialog = () => {
+    setEditingContent(null);
+    setFormData({ ...emptyContent, sort_order: content.length + 1 });
+    setIsDialogOpen(true);
+  };
+
+  const openEditDialog = (item: Content) => {
+    setEditingContent(item);
+    setFormData({
+      part_number: item.part_number,
+      week_range: item.week_range,
+      unlock_day: item.unlock_day,
+      title: item.title,
+      description: item.description || '',
+      video_url: item.video_url || '',
+      resource_link: item.resource_link || '',
+      is_bonus: item.is_bonus,
+      sort_order: item.sort_order,
+    });
+    setIsDialogOpen(true);
+  };
+
+  const handleSubmit = async () => {
+    if (!formData.title || !formData.week_range) {
+      toast({ title: 'שגיאה', description: 'אנא מלא את כל השדות הנדרשים', variant: 'destructive' });
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    if (editingContent) {
+      const { error } = await supabase
+        .from('program_content')
+        .update(formData)
+        .eq('id', editingContent.id);
+
+      if (error) {
+        toast({ title: 'שגיאה', description: 'לא ניתן לעדכן את התוכן', variant: 'destructive' });
+      } else {
+        toast({ title: 'הצלחה', description: 'התוכן עודכן בהצלחה' });
+        setIsDialogOpen(false);
+        fetchContent();
+      }
+    } else {
+      const { error } = await supabase.from('program_content').insert(formData);
+
+      if (error) {
+        toast({ title: 'שגיאה', description: 'לא ניתן להוסיף את התוכן', variant: 'destructive' });
+      } else {
+        toast({ title: 'הצלחה', description: 'התוכן נוסף בהצלחה' });
+        setIsDialogOpen(false);
+        fetchContent();
+      }
+    }
+
+    setIsSubmitting(false);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('האם אתה בטוח שברצונך למחוק תוכן זה?')) return;
+
+    const { error } = await supabase.from('program_content').delete().eq('id', id);
+
+    if (error) {
+      toast({ title: 'שגיאה', description: 'לא ניתן למחוק את התוכן', variant: 'destructive' });
+    } else {
+      toast({ title: 'הצלחה', description: 'התוכן נמחק בהצלחה' });
+      fetchContent();
+    }
+  };
+
+  const partNames: Record<number, string> = {
+    1: 'חלק 1',
+    2: 'חלק 2',
+    3: 'חלק 3',
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold">ניהול תכנים</h2>
+          <p className="text-muted-foreground">הוסף ועדכן את תכני התוכנית</p>
+        </div>
+
+        <Button onClick={openAddDialog}>
+          <Plus className="h-4 w-4 ml-2" />
+          הוסף תוכן
+        </Button>
+      </div>
+
+      <Card className="glass-card">
+        <CardContent className="p-0">
+          {isLoading ? (
+            <div className="p-4 space-y-3">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full" />
+              ))}
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-right w-16">סדר</TableHead>
+                  <TableHead className="text-right">חלק</TableHead>
+                  <TableHead className="text-right">שבוע</TableHead>
+                  <TableHead className="text-right">כותרת</TableHead>
+                  <TableHead className="text-right">יום פתיחה</TableHead>
+                  <TableHead className="text-right">סוג</TableHead>
+                  <TableHead className="text-right">פעולות</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {content.map((item) => (
+                  <TableRow key={item.id}>
+                    <TableCell>{item.sort_order}</TableCell>
+                    <TableCell>{partNames[item.part_number]}</TableCell>
+                    <TableCell>{item.week_range}</TableCell>
+                    <TableCell className="font-medium">{item.title}</TableCell>
+                    <TableCell>{item.unlock_day}</TableCell>
+                    <TableCell>
+                      {item.is_bonus ? (
+                        <Badge variant="secondary">
+                          <Star className="h-3 w-3 ml-1" />
+                          בונוס
+                        </Badge>
+                      ) : (
+                        <Badge>רגיל</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => openEditDialog(item)}>
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleDelete(item.id)}>
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Add/Edit Dialog */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent dir="rtl" className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editingContent ? 'עריכת תוכן' : 'הוספת תוכן חדש'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>חלק</Label>
+                <Select
+                  value={String(formData.part_number)}
+                  onValueChange={(v) => setFormData({ ...formData, part_number: Number(v) })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">חלק 1</SelectItem>
+                    <SelectItem value="2">חלק 2</SelectItem>
+                    <SelectItem value="3">חלק 3</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>שבוע/תקופה</Label>
+                <Input
+                  value={formData.week_range}
+                  onChange={(e) => setFormData({ ...formData, week_range: e.target.value })}
+                  placeholder="שבוע 1"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>כותרת</Label>
+              <Input
+                value={formData.title}
+                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                placeholder="כותרת התוכן"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>תיאור</Label>
+              <Textarea
+                value={formData.description || ''}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                placeholder="תיאור קצר של התוכן"
+                rows={3}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>יום פתיחה</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={formData.unlock_day}
+                  onChange={(e) => setFormData({ ...formData, unlock_day: Number(e.target.value) })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>סדר תצוגה</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={formData.sort_order}
+                  onChange={(e) => setFormData({ ...formData, sort_order: Number(e.target.value) })}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>קישור לסרטון</Label>
+              <Input
+                value={formData.video_url || ''}
+                onChange={(e) => setFormData({ ...formData, video_url: e.target.value })}
+                placeholder="https://..."
+                dir="ltr"
+                className="text-left"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>קישור למשאב (PDF)</Label>
+              <Input
+                value={formData.resource_link || ''}
+                onChange={(e) => setFormData({ ...formData, resource_link: e.target.value })}
+                placeholder="https://..."
+                dir="ltr"
+                className="text-left"
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="isBonus"
+                checked={formData.is_bonus}
+                onChange={(e) => setFormData({ ...formData, is_bonus: e.target.checked })}
+                className="h-4 w-4"
+              />
+              <Label htmlFor="isBonus">תוכן בונוס</Label>
+            </div>
+
+            <Button onClick={handleSubmit} className="w-full" disabled={isSubmitting}>
+              {isSubmitting && <Loader2 className="h-4 w-4 ml-2 animate-spin" />}
+              {editingContent ? 'שמור שינויים' : 'הוסף תוכן'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
