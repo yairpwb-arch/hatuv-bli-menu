@@ -118,6 +118,7 @@ export type Database = {
         Row: {
           ai_feedback: string | null
           id: string
+          image_url: string | null
           meal_description: string
           recorded_at: string | null
           user_id: string
@@ -125,6 +126,7 @@ export type Database = {
         Insert: {
           ai_feedback?: string | null
           id?: string
+          image_url?: string | null
           meal_description: string
           recorded_at?: string | null
           user_id: string
@@ -132,6 +134,7 @@ export type Database = {
         Update: {
           ai_feedback?: string | null
           id?: string
+          image_url?: string | null
           meal_description?: string
           recorded_at?: string | null
           user_id?: string
