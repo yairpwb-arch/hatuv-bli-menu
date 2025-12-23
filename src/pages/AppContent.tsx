@@ -170,13 +170,13 @@ export default function AppContent() {
               </div>
 
               <div className="space-y-3">
-                {Object.entries(weeks).map(([weekRange, items]) => (
+                {Object.entries(weeks as Record<string, ContentItem[]>).map(([weekRange, items]) => (
                   <div key={weekRange} className="space-y-2">
                     <p className="text-sm font-medium text-muted-foreground pr-2">
                       {weekRange}
                     </p>
                     
-                    {items.map((item) => (
+                    {items.map((item: ContentItem) => (
                       <Card
                         key={item.id}
                         className={cn(
