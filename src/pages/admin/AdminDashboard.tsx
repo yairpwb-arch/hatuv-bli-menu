@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
-import { Users, BookOpen, Quote, TrendingUp, UtensilsCrossed, UserPlus, LogOut } from 'lucide-react';
+import { Users, BookOpen, Quote, TrendingUp, UtensilsCrossed, UserPlus, LogOut, Link2, Save, Loader2 } from 'lucide-react';
 
 const ADMIN_EMAIL = 'yairpwb@gmail.com';
 
@@ -14,6 +16,11 @@ interface Stats {
   totalContent: number;
   totalQuotes: number;
   mealsLoggedToday: number;
+}
+
+interface GlobalSettings {
+  weekly_survey_link: string;
+  snacks_book_link: string;
 }
 
 export default function AdminDashboard() {
@@ -26,19 +33,25 @@ export default function AdminDashboard() {
     mealsLoggedToday: 0,
   });
   const [isLoading, setIsLoading] = useState(true);
+  const [globalSettings, setGlobalSettings] = useState<GlobalSettings>({
+    weekly_survey_link: '',
+    snacks_book_link: '',
+  });
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
 
   useEffect(() => {
-    const fetchStats = async () => {
+    const fetchData = async () => {
       setIsLoading(true);
 
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
-      const [usersRes, contentRes, quotesRes, mealsRes] = await Promise.all([
+      const [usersRes, contentRes, quotesRes, mealsRes, settingsRes] = await Promise.all([
         supabase.from('profiles').select('id, is_active, email', { count: 'exact' }),
         supabase.from('program_content').select('id', { count: 'exact' }),
         supabase.from('daily_quotes').select('id', { count: 'exact' }),
         supabase.from('nutrition_log').select('id', { count: 'exact' }).gte('recorded_at', today.toISOString()),
+        supabase.from('app_settings').select('key, value'),
       ]);
 
       // Filter out admin from user counts
@@ -52,11 +65,47 @@ export default function AdminDashboard() {
         mealsLoggedToday: mealsRes.count || 0,
       });
 
+      // Parse settings
+      if (settingsRes.data) {
+        const settings: GlobalSettings = {
+          weekly_survey_link: '',
+          snacks_book_link: '',
+        };
+        settingsRes.data.forEach((s: { key: string; value: string | null }) => {
+          if (s.key === 'weekly_survey_link') settings.weekly_survey_link = s.value || '';
+          if (s.key === 'snacks_book_link') settings.snacks_book_link = s.value || '';
+        });
+        setGlobalSettings(settings);
+      }
+
       setIsLoading(false);
     };
 
-    fetchStats();
+    fetchData();
   }, []);
+
+  const handleSaveSettings = async () => {
+    setIsSavingSettings(true);
+    try {
+      // Update both settings
+      await Promise.all([
+        supabase
+          .from('app_settings')
+          .update({ value: globalSettings.weekly_survey_link })
+          .eq('key', 'weekly_survey_link'),
+        supabase
+          .from('app_settings')
+          .update({ value: globalSettings.snacks_book_link })
+          .eq('key', 'snacks_book_link'),
+      ]);
+      toast({ title: 'נשמר!', description: 'ההגדרות עודכנו בהצלחה' });
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      toast({ title: 'שגיאה', description: 'לא ניתן לשמור את ההגדרות', variant: 'destructive' });
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
 
   const handleLogout = async () => {
     try {
@@ -125,6 +174,66 @@ export default function AdminDashboard() {
               <p className="text-sm text-muted-foreground">ארוחות שנרשמו היום</p>
               <p className="text-3xl font-bold">{isLoading ? '-' : stats.mealsLoggedToday}</p>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Global Settings - Links Management */}
+      <Card className="card-elevated">
+        <CardContent className="pt-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Link2 className="h-5 w-5 text-primary" />
+            <h3 className="text-lg font-semibold">ניהול קישורים גלובליים</h3>
+          </div>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="weekly-survey" className="text-sm font-medium">
+                קישור לשאלון מעקב שבועי
+              </Label>
+              <Input
+                id="weekly-survey"
+                value={globalSettings.weekly_survey_link}
+                onChange={(e) =>
+                  setGlobalSettings({ ...globalSettings, weekly_survey_link: e.target.value })
+                }
+                placeholder="https://forms.google.com/..."
+                dir="ltr"
+                className="text-left"
+              />
+              <p className="text-xs text-muted-foreground">
+                קישור זה יופיע בכפתור הצף בתחתית עמוד התוכן
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="snacks-book" className="text-sm font-medium">
+                קישור לספר נשנושים
+              </Label>
+              <Input
+                id="snacks-book"
+                value={globalSettings.snacks_book_link}
+                onChange={(e) =>
+                  setGlobalSettings({ ...globalSettings, snacks_book_link: e.target.value })
+                }
+                placeholder="https://drive.google.com/..."
+                dir="ltr"
+                className="text-left"
+              />
+              <p className="text-xs text-muted-foreground">
+                קישור זה יופיע ככפתור נפרד בעמוד התוכן
+              </p>
+            </div>
+            <Button
+              onClick={handleSaveSettings}
+              disabled={isSavingSettings}
+              className="gradient-primary"
+            >
+              {isSavingSettings ? (
+                <Loader2 className="h-4 w-4 ml-2 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4 ml-2" />
+              )}
+              שמור הגדרות
+            </Button>
           </div>
         </CardContent>
       </Card>

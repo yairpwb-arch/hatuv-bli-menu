@@ -22,7 +22,7 @@ export function AppHeader() {
   return (
     <header className="sticky top-0 z-40 bg-card/80 backdrop-blur-sm border-b border-border">
       <div className="flex items-center justify-between px-4 h-14">
-        <h1 className="text-lg font-bold text-primary">הטוב בלי תפריט</h1>
+        <h1 className="text-lg font-bold text-primary">חטוב בלי תפריט</h1>
         
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
