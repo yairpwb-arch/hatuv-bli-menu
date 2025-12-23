@@ -2,11 +2,51 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
+import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import Index from "./pages/Index";
+import Auth from "./pages/Auth";
+import AppHome from "./pages/AppHome";
+import AppContent from "./pages/AppContent";
+import AppNutrition from "./pages/AppNutrition";
 import NotFound from "./pages/NotFound";
+import { BottomNav } from "./components/BottomNav";
+import { AppHeader } from "./components/AppHeader";
 
 const queryClient = new QueryClient();
+
+function ProtectedRoute() {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Navigate to="/auth" replace />;
+  }
+
+  return (
+    <div className="min-h-screen bg-background">
+      <AppHeader />
+      <Outlet />
+      <BottomNav />
+    </div>
+  );
+}
+
+function AuthRoute() {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) return null;
+  if (user) return <Navigate to="/app" replace />;
+
+  return <Auth />;
+}
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -14,11 +54,18 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+        <AuthProvider>
+          <Routes>
+            <Route path="/" element={<Index />} />
+            <Route path="/auth" element={<AuthRoute />} />
+            <Route path="/app" element={<ProtectedRoute />}>
+              <Route index element={<AppHome />} />
+              <Route path="content" element={<AppContent />} />
+              <Route path="nutrition" element={<AppNutrition />} />
+            </Route>
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
