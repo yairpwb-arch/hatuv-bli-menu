@@ -1,8 +1,11 @@
 import { useEffect } from 'react';
 import { useNavigate, Outlet, NavLink } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
-import { Users, BookOpen, Quote, ArrowRight, LayoutDashboard } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from '@/hooks/use-toast';
+import { Users, BookOpen, Quote, ArrowRight, LayoutDashboard, LogOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 
 const adminNavItems = [
   { to: '/admin', icon: LayoutDashboard, label: 'סקירה', end: true },
@@ -20,6 +23,17 @@ export default function AdminLayout() {
       navigate('/app');
     }
   }, [isAdmin, isLoading, user, navigate]);
+
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+      toast({ title: 'להתראות!', description: 'התנתקת בהצלחה' });
+      navigate('/auth');
+    } catch (error) {
+      console.error('Logout error:', error);
+      toast({ title: 'שגיאה', description: 'לא ניתן להתנתק', variant: 'destructive' });
+    }
+  };
 
   if (isLoading) {
     return (
@@ -47,6 +61,17 @@ export default function AdminLayout() {
             </button>
             <h1 className="text-lg font-bold text-primary">לוח ניהול</h1>
           </div>
+          
+          {/* Logout Button in Header */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleLogout}
+            className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+          >
+            <LogOut className="h-4 w-4 ml-2" />
+            התנתקות
+          </Button>
         </div>
       </header>
 

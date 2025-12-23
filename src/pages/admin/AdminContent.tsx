@@ -4,15 +4,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Progress } from '@/components/ui/progress';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
-import { Plus, Edit, Trash2, Star, Loader2, Upload, Link } from 'lucide-react';
+import { Plus, Edit, Trash2, Star, Loader2, Upload, Link, CheckCircle2 } from 'lucide-react';
 
 interface Content {
   id: string;
@@ -48,6 +49,8 @@ export default function AdminContent() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [videoInputMode, setVideoInputMode] = useState<'upload' | 'url'>('url');
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadComplete, setUploadComplete] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -74,6 +77,8 @@ export default function AdminContent() {
     setEditingContent(null);
     setFormData({ ...emptyContent, sort_order: content.length + 1 });
     setVideoInputMode('url');
+    setUploadProgress(0);
+    setUploadComplete(false);
     setIsDialogOpen(true);
   };
 
@@ -91,6 +96,8 @@ export default function AdminContent() {
       sort_order: item.sort_order,
     });
     setVideoInputMode(item.video_url?.includes('supabase') ? 'upload' : 'url');
+    setUploadProgress(0);
+    setUploadComplete(item.video_url?.includes('supabase') || false);
     setIsDialogOpen(true);
   };
 
@@ -104,35 +111,66 @@ export default function AdminContent() {
       return;
     }
 
-    // Validate file size (max 100MB)
-    if (file.size > 100 * 1024 * 1024) {
-      toast({ title: 'שגיאה', description: 'הקובץ גדול מדי (מקסימום 100MB)', variant: 'destructive' });
+    // Allow up to 500MB
+    const maxSize = 500 * 1024 * 1024;
+    if (file.size > maxSize) {
+      toast({ title: 'שגיאה', description: 'הקובץ גדול מדי (מקסימום 500MB)', variant: 'destructive' });
       return;
     }
 
     setIsUploading(true);
+    setUploadProgress(0);
+    setUploadComplete(false);
 
     const fileName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
     const filePath = `videos/${fileName}`;
 
-    const { error: uploadError } = await supabase.storage
-      .from('videos')
-      .upload(filePath, file);
+    // Simulate progress for better UX (actual upload progress tracking)
+    const progressInterval = setInterval(() => {
+      setUploadProgress((prev) => {
+        if (prev >= 90) {
+          clearInterval(progressInterval);
+          return prev;
+        }
+        return prev + Math.random() * 15;
+      });
+    }, 500);
 
-    if (uploadError) {
-      console.error('Upload error:', uploadError);
+    try {
+      const { error: uploadError } = await supabase.storage
+        .from('videos')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false,
+        });
+
+      clearInterval(progressInterval);
+
+      if (uploadError) {
+        console.error('Upload error:', uploadError);
+        toast({ title: 'שגיאה', description: 'לא ניתן להעלות את הקובץ', variant: 'destructive' });
+        setUploadProgress(0);
+        setIsUploading(false);
+        return;
+      }
+
+      setUploadProgress(100);
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('videos')
+        .getPublicUrl(filePath);
+
+      setFormData({ ...formData, video_url: publicUrl });
+      setUploadComplete(true);
+      toast({ title: 'הצלחה', description: 'הסרטון הועלה בהצלחה' });
+    } catch (error) {
+      clearInterval(progressInterval);
+      console.error('Upload error:', error);
       toast({ title: 'שגיאה', description: 'לא ניתן להעלות את הקובץ', variant: 'destructive' });
+      setUploadProgress(0);
+    } finally {
       setIsUploading(false);
-      return;
     }
-
-    const { data: { publicUrl } } = supabase.storage
-      .from('videos')
-      .getPublicUrl(filePath);
-
-    setFormData({ ...formData, video_url: publicUrl });
-    toast({ title: 'הצלחה', description: 'הסרטון הועלה בהצלחה' });
-    setIsUploading(false);
   };
 
   const handleSubmit = async () => {
@@ -198,13 +236,13 @@ export default function AdminContent() {
           <p className="text-muted-foreground">הוסף ועדכן את תכני התוכנית</p>
         </div>
 
-        <Button onClick={openAddDialog}>
+        <Button onClick={openAddDialog} className="gradient-primary">
           <Plus className="h-4 w-4 ml-2" />
           הוסף תוכן
         </Button>
       </div>
 
-      <Card className="glass-card">
+      <Card className="card-elevated">
         <CardContent className="p-0">
           {isLoading ? (
             <div className="p-4 space-y-3">
@@ -359,7 +397,7 @@ export default function AdminContent() {
                   />
                   <p className="text-xs text-muted-foreground mt-1">תומך ב-YouTube, Vimeo וקישורים ישירים</p>
                 </TabsContent>
-                <TabsContent value="upload" className="mt-2">
+                <TabsContent value="upload" className="mt-2 space-y-3">
                   <input
                     type="file"
                     ref={fileInputRef}
@@ -367,27 +405,53 @@ export default function AdminContent() {
                     onChange={handleFileUpload}
                     className="hidden"
                   />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isUploading}
-                  >
-                    {isUploading ? (
-                      <>
-                        <Loader2 className="h-4 w-4 ml-2 animate-spin" />
-                        מעלה...
-                      </>
-                    ) : (
-                      <>
-                        <Upload className="h-4 w-4 ml-2" />
-                        בחר קובץ וידאו
-                      </>
-                    )}
-                  </Button>
-                  {formData.video_url && formData.video_url.includes('supabase') && (
-                    <p className="text-xs text-success mt-1">✓ סרטון הועלה</p>
+                  
+                  {/* Upload Button or Progress */}
+                  {!isUploading && !uploadComplete && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full h-20 border-dashed border-2"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <div className="flex flex-col items-center gap-1">
+                        <Upload className="h-6 w-6 text-muted-foreground" />
+                        <span className="text-sm">בחר קובץ וידאו (עד 500MB)</span>
+                      </div>
+                    </Button>
+                  )}
+                  
+                  {/* Progress Bar */}
+                  {isUploading && (
+                    <div className="space-y-2 p-4 bg-muted/50 rounded-xl">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">מעלה סרטון...</span>
+                        <span className="font-medium">{Math.round(uploadProgress)}%</span>
+                      </div>
+                      <Progress value={uploadProgress} className="h-2" />
+                    </div>
+                  )}
+                  
+                  {/* Success State */}
+                  {uploadComplete && !isUploading && (
+                    <div className="flex items-center gap-3 p-4 bg-success/10 border border-success/20 rounded-xl">
+                      <CheckCircle2 className="h-6 w-6 text-success" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-success">הסרטון הועלה בהצלחה</p>
+                        <p className="text-xs text-muted-foreground truncate">{formData.video_url}</p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setUploadComplete(false);
+                          setFormData({ ...formData, video_url: '' });
+                        }}
+                      >
+                        החלף
+                      </Button>
+                    </div>
                   )}
                 </TabsContent>
               </Tabs>
@@ -415,7 +479,7 @@ export default function AdminContent() {
               <Label htmlFor="isBonus">תוכן בונוס</Label>
             </div>
 
-            <Button onClick={handleSubmit} className="w-full" disabled={isSubmitting || isUploading}>
+            <Button onClick={handleSubmit} className="w-full gradient-primary" disabled={isSubmitting || isUploading}>
               {isSubmitting && <Loader2 className="h-4 w-4 ml-2 animate-spin" />}
               {editingContent ? 'שמור שינויים' : 'הוסף תוכן'}
             </Button>
