@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Progress } from '@/components/ui/progress';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
-import { Lock, Play, Check, Star, FileText, BookOpen, Video, File } from 'lucide-react';
+import { 
+  Lock, Play, Check, Star, FileText, BookOpen, 
+  ChevronDown, ChevronUp, ExternalLink, ClipboardList
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface ContentItem {
@@ -27,25 +28,27 @@ interface ContentItem {
   daysUntilUnlock: number;
 }
 
-interface GroupedContent {
-  [part: number]: {
-    [weekRange: string]: ContentItem[];
-  };
-}
+type TabType = 'all' | 'videos' | 'guides';
+
+const PART_NAMES: Record<number, { title: string; subtitle: string }> = {
+  1: { title: 'חלק 1', subtitle: 'בניית היסודות' },
+  2: { title: 'חלק 2', subtitle: 'אדפטציה ושדרוג תזונתי' },
+  3: { title: 'חלק 3', subtitle: 'הטמעה ושיפור ביצועים' },
+};
 
 export default function AppContent() {
   const { currentDay, user } = useAuth();
   const [allContent, setAllContent] = useState<ContentItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedContent, setSelectedContent] = useState<ContentItem | null>(null);
-  const [activeTab, setActiveTab] = useState('videos');
+  const [activeTab, setActiveTab] = useState<TabType>('all');
+  const [expandedParts, setExpandedParts] = useState<Set<number>>(new Set([1, 2, 3]));
 
   useEffect(() => {
     const fetchContent = async () => {
       if (!user) return;
       setIsLoading(true);
 
-      // Fetch all content
       const { data: contentData, error: contentError } = await supabase
         .from('program_content')
         .select('*')
@@ -57,7 +60,6 @@ export default function AppContent() {
         return;
       }
 
-      // Fetch user's completed content
       const { data: progressData } = await supabase
         .from('content_progress')
         .select('content_id')
@@ -65,7 +67,6 @@ export default function AppContent() {
 
       const completedIds = new Set(progressData?.map((p) => p.content_id) || []);
 
-      // Process content
       const processedContent = (contentData || []).map((item) => ({
         ...item,
         isUnlocked: currentDay >= item.unlock_day,
@@ -81,175 +82,112 @@ export default function AppContent() {
   }, [user, currentDay]);
 
   // Filter content by type
-  const videoContent = allContent.filter((item) => item.video_url);
-  const guideContent = allContent.filter((item) => !item.video_url);
+  const filteredContent = allContent.filter((item) => {
+    if (activeTab === 'videos') return item.video_url;
+    if (activeTab === 'guides') return !item.video_url;
+    return true;
+  });
+
+  // Calculate progress
+  const totalContent = allContent.length;
+  const completedContent = allContent.filter((item) => item.isCompleted).length;
+  const progressPercentage = totalContent > 0 ? Math.round((completedContent / totalContent) * 100) : 0;
 
   // Group content by part and week
-  const groupContent = (items: ContentItem[]): GroupedContent => {
-    const grouped: GroupedContent = {};
-    items.forEach((item) => {
-      if (!grouped[item.part_number]) {
-        grouped[item.part_number] = {};
-      }
-      if (!grouped[item.part_number][item.week_range]) {
-        grouped[item.part_number][item.week_range] = [];
-      }
-      grouped[item.part_number][item.week_range].push(item);
-    });
-    return grouped;
-  };
+  const groupedContent = filteredContent.reduce((acc, item) => {
+    if (!acc[item.part_number]) {
+      acc[item.part_number] = {};
+    }
+    if (!acc[item.part_number][item.week_range]) {
+      acc[item.part_number][item.week_range] = [];
+    }
+    acc[item.part_number][item.week_range].push(item);
+    return acc;
+  }, {} as Record<number, Record<string, ContentItem[]>>);
 
-  const markAsComplete = async (contentId: string) => {
+  const toggleCompletion = async (contentId: string, isCurrentlyCompleted: boolean) => {
     if (!user) return;
 
-    const { error } = await supabase
-      .from('content_progress')
-      .insert({ user_id: user.id, content_id: contentId });
+    if (isCurrentlyCompleted) {
+      // Remove completion
+      const { error } = await supabase
+        .from('content_progress')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('content_id', contentId);
 
-    if (error && !error.message.includes('duplicate')) {
-      toast({
-        title: 'שגיאה',
-        description: 'לא ניתן לסמן כהושלם',
-        variant: 'destructive',
-      });
-      return;
+      if (error) {
+        toast({ title: 'שגיאה', description: 'לא ניתן לבטל סימון', variant: 'destructive' });
+        return;
+      }
+
+      setAllContent((prev) =>
+        prev.map((item) => (item.id === contentId ? { ...item, isCompleted: false } : item))
+      );
+      toast({ title: 'בוטל', description: 'הסימון בוטל' });
+    } else {
+      // Add completion
+      const { error } = await supabase
+        .from('content_progress')
+        .insert({ user_id: user.id, content_id: contentId });
+
+      if (error && !error.message.includes('duplicate')) {
+        toast({ title: 'שגיאה', description: 'לא ניתן לסמן כהושלם', variant: 'destructive' });
+        return;
+      }
+
+      setAllContent((prev) =>
+        prev.map((item) => (item.id === contentId ? { ...item, isCompleted: true } : item))
+      );
+      toast({ title: 'מעולה!', description: 'התוכן סומן כהושלם' });
     }
 
-    setAllContent((prev) =>
-      prev.map((item) =>
-        item.id === contentId ? { ...item, isCompleted: true } : item
-      )
-    );
-
-    if (selectedContent) {
-      setSelectedContent({ ...selectedContent, isCompleted: true });
+    if (selectedContent?.id === contentId) {
+      setSelectedContent((prev) => prev ? { ...prev, isCompleted: !isCurrentlyCompleted } : null);
     }
+  };
 
-    toast({
-      title: 'מעולה!',
-      description: 'התוכן סומן כהושלם',
+  const togglePart = (part: number) => {
+    setExpandedParts((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(part)) {
+        newSet.delete(part);
+      } else {
+        newSet.add(part);
+      }
+      return newSet;
     });
   };
 
-  const partNames: Record<number, string> = {
-    1: 'חלק ראשון - יסודות',
-    2: 'חלק שני - העמקה',
-    3: 'חלק שלישי - אינטגרציה',
-  };
-
-  const renderContentList = (items: ContentItem[]) => {
-    const grouped = groupContent(items);
-
-    return (
-      <div className="space-y-6 pb-4">
-        {Object.entries(grouped).map(([part, weeks], partIndex) => (
-          <div
-            key={part}
-            className="animate-slide-up"
-            style={{ animationDelay: `${partIndex * 0.1}s` }}
-          >
-            <div className="flex items-center gap-2 mb-3">
-              <BookOpen className="h-5 w-5 text-primary" />
-              <h3 className="text-lg font-bold">{partNames[Number(part)]}</h3>
-            </div>
-
-            <div className="space-y-3">
-              {Object.entries(weeks as Record<string, ContentItem[]>).map(([weekRange, contentItems]) => (
-                <div key={weekRange} className="space-y-2">
-                  <p className="text-sm font-medium text-muted-foreground pr-2">
-                    {weekRange}
-                  </p>
-
-                  {contentItems.map((item: ContentItem) => (
-                    <Card
-                      key={item.id}
-                      className={cn(
-                        'transition-all duration-300 cursor-pointer',
-                        item.isUnlocked
-                          ? 'glass-card hover:shadow-lg hover:border-primary/30'
-                          : 'bg-muted/50 border-muted'
-                      )}
-                      onClick={() => item.isUnlocked && setSelectedContent(item)}
-                    >
-                      <CardContent className="p-4">
-                        <div className="flex items-center gap-3">
-                          {/* Status Icon */}
-                          <div
-                            className={cn(
-                              'w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0',
-                              item.isCompleted
-                                ? 'bg-success/20 text-success'
-                                : item.isUnlocked
-                                ? 'gradient-primary text-primary-foreground'
-                                : 'bg-muted text-muted-foreground'
-                            )}
-                          >
-                            {item.isCompleted ? (
-                              <Check className="h-5 w-5" />
-                            ) : item.isUnlocked ? (
-                              item.video_url ? <Play className="h-5 w-5" /> : <File className="h-5 w-5" />
-                            ) : (
-                              <Lock className="h-5 w-5" />
-                            )}
-                          </div>
-
-                          {/* Content Info */}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <h4
-                                className={cn(
-                                  'font-medium truncate',
-                                  !item.isUnlocked && 'text-muted-foreground'
-                                )}
-                              >
-                                {item.title}
-                              </h4>
-                              {item.is_bonus && (
-                                <Badge variant="secondary" className="flex-shrink-0">
-                                  <Star className="h-3 w-3 ml-1" />
-                                  בונוס
-                                </Badge>
-                              )}
-                            </div>
-                            <p
-                              className={cn(
-                                'text-sm truncate',
-                                item.isUnlocked
-                                  ? 'text-muted-foreground'
-                                  : 'text-muted-foreground/50'
-                              )}
-                            >
-                              {item.isUnlocked
-                                ? item.description || 'לחץ לצפייה'
-                                : `נפתח בעוד ${item.daysUntilUnlock} ימים`}
-                            </p>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-        {Object.keys(grouped).length === 0 && (
-          <div className="text-center py-12 text-muted-foreground">
-            <p>אין תכנים להצגה בקטגוריה זו</p>
-          </div>
-        )}
-      </div>
-    );
-  };
+  const TabButton = ({ value, label }: { value: TabType; label: string }) => (
+    <button
+      onClick={() => setActiveTab(value)}
+      className={cn(
+        'px-4 py-2 rounded-full text-sm font-medium transition-all duration-200',
+        activeTab === value
+          ? 'gradient-primary text-primary-foreground shadow-glow'
+          : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+      )}
+    >
+      {label}
+    </button>
+  );
 
   if (isLoading) {
     return (
-      <div className="min-h-screen pb-20 pt-4 px-4 space-y-6">
+      <div className="min-h-screen pb-24 pt-4 px-4 space-y-6">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-4 w-full" />
+        <div className="flex gap-2">
+          <Skeleton className="h-10 w-20 rounded-full" />
+          <Skeleton className="h-10 w-24 rounded-full" />
+          <Skeleton className="h-10 w-24 rounded-full" />
+        </div>
         {Array.from({ length: 3 }).map((_, i) => (
           <div key={i} className="space-y-3">
-            <Skeleton className="h-8 w-48" />
-            <Skeleton className="h-24 w-full" />
-            <Skeleton className="h-24 w-full" />
+            <Skeleton className="h-12 w-full rounded-xl" />
+            <Skeleton className="h-20 w-full rounded-xl" />
+            <Skeleton className="h-20 w-full rounded-xl" />
           </div>
         ))}
       </div>
@@ -257,34 +195,198 @@ export default function AppContent() {
   }
 
   return (
-    <div className="min-h-screen pb-20 pt-4 px-4 space-y-4">
-      <div className="animate-slide-up">
-        <h2 className="text-2xl font-bold text-foreground">ספריית התכנים</h2>
-        <p className="text-muted-foreground">כל התכנים והמשאבים במקום אחד</p>
+    <div className="min-h-screen pb-24 pt-4 px-4 space-y-5">
+      {/* Header */}
+      <div className="animate-fade-in">
+        <h2 className="text-2xl font-bold text-foreground">חטוב בלי תפריט</h2>
+        <p className="text-muted-foreground text-sm">מפת הדרכים שלך להצלחה</p>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} dir="rtl">
-        <TabsList className="grid w-full grid-cols-2 mb-4">
-          <TabsTrigger value="videos" className="flex items-center gap-2">
-            <Video className="h-4 w-4" />
-            סרטונים ({videoContent.length})
-          </TabsTrigger>
-          <TabsTrigger value="guides" className="flex items-center gap-2">
-            <FileText className="h-4 w-4" />
-            מדריכים ({guideContent.length})
-          </TabsTrigger>
-        </TabsList>
+      {/* Progress Bar */}
+      <div className="glass-card p-4 animate-fade-in" style={{ animationDelay: '0.1s' }}>
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-medium">ההתקדמות שלך</span>
+          <span className="text-sm font-bold text-primary">{progressPercentage}%</span>
+        </div>
+        <Progress value={progressPercentage} className="h-2" />
+        <p className="text-xs text-muted-foreground mt-2">
+          {completedContent} מתוך {totalContent} תכנים הושלמו
+        </p>
+      </div>
 
-        <ScrollArea className="h-[calc(100vh-240px)]">
-          <TabsContent value="videos" className="mt-0">
-            {renderContentList(videoContent)}
-          </TabsContent>
+      {/* Tabs */}
+      <div className="flex gap-2 animate-fade-in" style={{ animationDelay: '0.15s' }}>
+        <TabButton value="all" label="הכל" />
+        <TabButton value="videos" label="סרטונים" />
+        <TabButton value="guides" label="מדריכים" />
+      </div>
 
-          <TabsContent value="guides" className="mt-0">
-            {renderContentList(guideContent)}
-          </TabsContent>
-        </ScrollArea>
-      </Tabs>
+      {/* Content Roadmap */}
+      <div className="space-y-4">
+        {[1, 2, 3].map((partNumber, partIndex) => {
+          const partContent = groupedContent[partNumber];
+          if (!partContent) return null;
+
+          const isExpanded = expandedParts.has(partNumber);
+          const partInfo = PART_NAMES[partNumber];
+
+          return (
+            <div
+              key={partNumber}
+              className="animate-fade-in"
+              style={{ animationDelay: `${0.2 + partIndex * 0.1}s` }}
+            >
+              {/* Part Header */}
+              <button
+                onClick={() => togglePart(partNumber)}
+                className="w-full glass-card p-4 flex items-center justify-between hover:border-primary/30 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl gradient-primary flex items-center justify-center">
+                    <BookOpen className="h-5 w-5 text-primary-foreground" />
+                  </div>
+                  <div className="text-right">
+                    <h3 className="font-bold text-foreground">{partInfo.title}</h3>
+                    <p className="text-sm text-muted-foreground">{partInfo.subtitle}</p>
+                  </div>
+                </div>
+                {isExpanded ? (
+                  <ChevronUp className="h-5 w-5 text-muted-foreground" />
+                ) : (
+                  <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                )}
+              </button>
+
+              {/* Part Content */}
+              {isExpanded && (
+                <div className="mt-3 space-y-4 pr-2 border-r-2 border-primary/20 mr-5">
+                  {Object.entries(partContent).map(([weekRange, items]) => (
+                    <div key={weekRange} className="space-y-2">
+                      {/* Week Label */}
+                      <div className="flex items-center gap-2 pr-4">
+                        <div className="w-3 h-3 rounded-full bg-primary/30 -mr-[7px]" />
+                        <span className="text-sm font-medium text-muted-foreground">
+                          {weekRange}
+                        </span>
+                      </div>
+
+                      {/* Content Cards */}
+                      <div className="space-y-2 pr-4">
+                        {items.map((item) => (
+                          <div
+                            key={item.id}
+                            className={cn(
+                              'glass-card p-3 flex items-center gap-3 transition-all duration-200',
+                              item.isUnlocked
+                                ? 'cursor-pointer hover:border-primary/40 hover:shadow-md'
+                                : 'opacity-60',
+                              item.isCompleted && 'bg-success/5 border-success/20'
+                            )}
+                            onClick={() => item.isUnlocked && setSelectedContent(item)}
+                          >
+                            {/* Completion Toggle */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (item.isUnlocked) {
+                                  toggleCompletion(item.id, item.isCompleted);
+                                }
+                              }}
+                              disabled={!item.isUnlocked}
+                              className={cn(
+                                'w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 border-2 transition-all',
+                                item.isCompleted
+                                  ? 'bg-success border-success text-success-foreground'
+                                  : item.isUnlocked
+                                  ? 'border-border hover:border-primary bg-background'
+                                  : 'border-muted bg-muted'
+                              )}
+                            >
+                              {item.isCompleted ? (
+                                <Check className="h-4 w-4" />
+                              ) : !item.isUnlocked ? (
+                                <Lock className="h-3 w-3 text-muted-foreground" />
+                              ) : null}
+                            </button>
+
+                            {/* Type Icon */}
+                            <div
+                              className={cn(
+                                'w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0',
+                                item.video_url
+                                  ? 'bg-primary/10 text-primary'
+                                  : 'bg-accent/10 text-accent'
+                              )}
+                            >
+                              {item.video_url ? (
+                                <Play className="h-4 w-4" />
+                              ) : (
+                                <FileText className="h-4 w-4" />
+                              )}
+                            </div>
+
+                            {/* Content Info */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <h4
+                                  className={cn(
+                                    'font-medium text-sm truncate',
+                                    item.isCompleted && 'text-muted-foreground line-through'
+                                  )}
+                                >
+                                  {item.title}
+                                </h4>
+                                {item.is_bonus && (
+                                  <Badge
+                                    variant="outline"
+                                    className="flex-shrink-0 bg-warning/10 text-warning border-warning/30 text-xs"
+                                  >
+                                    <Star className="h-3 w-3 ml-1" />
+                                    בונוס
+                                  </Badge>
+                                )}
+                              </div>
+                              {!item.isUnlocked && (
+                                <p className="text-xs text-muted-foreground">
+                                  נפתח בעוד {item.daysUntilUnlock} ימים
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {Object.keys(groupedContent).length === 0 && (
+        <div className="text-center py-12 text-muted-foreground">
+          <p>אין תכנים להצגה בקטגוריה זו</p>
+        </div>
+      )}
+
+      {/* Sticky Weekly Survey Button */}
+      <div className="fixed bottom-20 left-4 right-4 z-40">
+        <Button
+          className="w-full gradient-primary shadow-glow text-primary-foreground font-medium"
+          size="lg"
+          onClick={() => {
+            // Find the weekly survey content or open external link
+            toast({
+              title: 'שאלון מעקב שבועי',
+              description: 'השאלון ייפתח בקרוב',
+            });
+          }}
+        >
+          <ClipboardList className="h-5 w-5 ml-2" />
+          שאלון מעקב שבועי
+        </Button>
+      </div>
 
       {/* Content Detail Dialog */}
       <Dialog open={!!selectedContent} onOpenChange={() => setSelectedContent(null)}>
@@ -292,10 +394,13 @@ export default function AppContent() {
           {selectedContent && (
             <>
               <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
+                <DialogTitle className="flex items-center gap-2 text-right">
                   {selectedContent.title}
                   {selectedContent.is_bonus && (
-                    <Badge variant="secondary">
+                    <Badge
+                      variant="outline"
+                      className="bg-warning/10 text-warning border-warning/30"
+                    >
                       <Star className="h-3 w-3 ml-1" />
                       בונוס
                     </Badge>
@@ -307,26 +412,28 @@ export default function AppContent() {
                 {/* Video Player or Placeholder */}
                 {selectedContent.video_url ? (
                   <div className="aspect-video bg-muted rounded-xl overflow-hidden">
-                    {selectedContent.video_url.includes('youtube') || selectedContent.video_url.includes('youtu.be') ? (
+                    {selectedContent.video_url.includes('youtube') ||
+                    selectedContent.video_url.includes('youtu.be') ? (
                       <iframe
-                        src={selectedContent.video_url.replace('watch?v=', 'embed/').replace('youtu.be/', 'youtube.com/embed/')}
+                        src={selectedContent.video_url
+                          .replace('watch?v=', 'embed/')
+                          .replace('youtu.be/', 'youtube.com/embed/')}
                         className="w-full h-full"
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                         allowFullScreen
                       />
                     ) : selectedContent.video_url.includes('vimeo') ? (
                       <iframe
-                        src={selectedContent.video_url.replace('vimeo.com/', 'player.vimeo.com/video/')}
+                        src={selectedContent.video_url.replace(
+                          'vimeo.com/',
+                          'player.vimeo.com/video/'
+                        )}
                         className="w-full h-full"
                         allow="autoplay; fullscreen; picture-in-picture"
                         allowFullScreen
                       />
                     ) : (
-                      <video
-                        src={selectedContent.video_url}
-                        controls
-                        className="w-full h-full"
-                      />
+                      <video src={selectedContent.video_url} controls className="w-full h-full" />
                     )}
                   </div>
                 ) : (
@@ -341,7 +448,7 @@ export default function AppContent() {
                 {/* Description */}
                 <div>
                   <h4 className="font-medium mb-2">תיאור</h4>
-                  <p className="text-muted-foreground">
+                  <p className="text-muted-foreground text-sm">
                     {selectedContent.description || 'אין תיאור זמין'}
                   </p>
                 </div>
@@ -351,9 +458,13 @@ export default function AppContent() {
                   <div>
                     <h4 className="font-medium mb-2">קבצים להורדה</h4>
                     <Button variant="outline" className="w-full" asChild>
-                      <a href={selectedContent.resource_link} target="_blank" rel="noopener noreferrer">
-                        <FileText className="h-4 w-4 ml-2" />
-                        הורד מדריך PDF
+                      <a
+                        href={selectedContent.resource_link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <ExternalLink className="h-4 w-4 ml-2" />
+                        פתח קובץ
                       </a>
                     </Button>
                   </div>
@@ -361,15 +472,14 @@ export default function AppContent() {
 
                 {/* Mark Complete Button */}
                 <Button
-                  onClick={() => markAsComplete(selectedContent.id)}
-                  disabled={selectedContent.isCompleted}
+                  onClick={() => toggleCompletion(selectedContent.id, selectedContent.isCompleted)}
                   className="w-full"
-                  variant={selectedContent.isCompleted ? 'secondary' : 'default'}
+                  variant={selectedContent.isCompleted ? 'outline' : 'default'}
                 >
                   {selectedContent.isCompleted ? (
                     <>
                       <Check className="h-4 w-4 ml-2" />
-                      הושלם
+                      בטל סימון
                     </>
                   ) : (
                     'סמן כהושלם'
