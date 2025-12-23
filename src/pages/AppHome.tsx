@@ -56,6 +56,36 @@ export default function AppHome() {
     return 'לילה טוב';
   };
 
+  // Parse quote message to separate the main quote from the explanation
+  const parseQuoteMessage = (message: string): { quote: string; explanation: string } => {
+    // Remove "המשפט היומי:" prefix if exists
+    let cleanMessage = message.replace(/^המשפט היומי:\s*/i, '').trim();
+    
+    // Try to find quoted text (between " " or « » or " ")
+    const quotedMatch = cleanMessage.match(/["״«"]([^"״»"]+)["״»"]/);
+    
+    if (quotedMatch) {
+      const mainQuote = quotedMatch[1].trim();
+      // Get everything after the quoted text as explanation
+      const afterQuote = cleanMessage.substring(cleanMessage.indexOf(quotedMatch[0]) + quotedMatch[0].length).trim();
+      // Remove leading dash or period
+      const explanation = afterQuote.replace(/^[-–—.]\s*/, '').trim();
+      return { quote: mainQuote, explanation };
+    }
+    
+    // If no quotes found, try to split by first period or dash
+    const splitMatch = cleanMessage.match(/^([^.–—]+[.])(.+)$/);
+    if (splitMatch) {
+      return { 
+        quote: splitMatch[1].trim(), 
+        explanation: splitMatch[2].trim() 
+      };
+    }
+    
+    // Fallback: return full message as quote
+    return { quote: cleanMessage, explanation: '' };
+  };
+
   useEffect(() => {
     const fetchQuote = async () => {
       setIsLoadingQuote(true);
@@ -214,18 +244,41 @@ export default function AppHome() {
       </Card>
 
       {/* Daily Quote */}
-      <Card className="gradient-primary text-primary-foreground animate-slide-up" style={{ animationDelay: '0.2s' }}>
-        <CardContent className="pt-6">
-          <div className="flex items-start gap-3">
-            <Quote className="h-6 w-6 flex-shrink-0 opacity-80" />
-            {isLoadingQuote ? (
+      <Card className="gradient-primary text-primary-foreground animate-slide-up overflow-hidden" style={{ animationDelay: '0.2s' }}>
+        <CardContent className="pt-6 pb-5">
+          {isLoadingQuote ? (
+            <div className="space-y-3">
+              <Skeleton className="h-8 w-full bg-primary-foreground/20" />
               <Skeleton className="h-16 w-full bg-primary-foreground/20" />
-            ) : (
-              <p className="text-lg font-medium leading-relaxed">
-                {quote?.message || 'כל יום הוא הזדמנות חדשה לשינוי'}
-              </p>
-            )}
-          </div>
+            </div>
+          ) : (
+            (() => {
+              const parsed = parseQuoteMessage(quote?.message || 'כל יום הוא הזדמנות חדשה לשינוי');
+              return (
+                <div className="space-y-4">
+                  {/* Main Quote */}
+                  <div className="flex items-start gap-3">
+                    <Quote className="h-7 w-7 flex-shrink-0 opacity-80 mt-1" />
+                    <p className="text-xl font-bold leading-relaxed">
+                      {parsed.quote}
+                    </p>
+                  </div>
+                  
+                  {/* Explanation */}
+                  {parsed.explanation && (
+                    <div className="border-t border-primary-foreground/20 pt-4 mt-3">
+                      <div className="flex items-start gap-2">
+                        <span className="text-primary-foreground/60 mt-1">◆</span>
+                        <p className="text-sm leading-relaxed opacity-90">
+                          {parsed.explanation}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()
+          )}
         </CardContent>
       </Card>
 
