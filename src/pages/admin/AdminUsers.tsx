@@ -20,9 +20,13 @@ interface User {
   full_name: string | null;
   start_date: string | null;
   current_weight: number | null;
+  initial_weight: number | null;
+  height: number | null;
   is_active: boolean;
   created_at: string;
 }
+
+const ADMIN_EMAIL = 'yairpwb@gmail.com';
 
 export default function AdminUsers() {
   const [users, setUsers] = useState<User[]>([]);
@@ -36,6 +40,8 @@ export default function AdminUsers() {
     password: '',
     fullName: '',
     startDate: '',
+    height: '',
+    initialWeight: '',
   });
 
   const [editData, setEditData] = useState({
@@ -52,6 +58,7 @@ export default function AdminUsers() {
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
+      .neq('email', ADMIN_EMAIL) // Exclude admin from users list
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -86,16 +93,26 @@ export default function AdminUsers() {
       return;
     }
 
-    // Update profile with start date
-    if (authData.user && newUser.startDate) {
-      await supabase
-        .from('profiles')
-        .update({ start_date: newUser.startDate })
-        .eq('id', authData.user.id);
+    // Update profile with all fields
+    if (authData.user) {
+      const updateData: Record<string, unknown> = {};
+      if (newUser.startDate) updateData.start_date = newUser.startDate;
+      if (newUser.height) updateData.height = parseFloat(newUser.height);
+      if (newUser.initialWeight) {
+        updateData.initial_weight = parseFloat(newUser.initialWeight);
+        updateData.current_weight = parseFloat(newUser.initialWeight);
+      }
+
+      if (Object.keys(updateData).length > 0) {
+        await supabase
+          .from('profiles')
+          .update(updateData)
+          .eq('id', authData.user.id);
+      }
     }
 
     toast({ title: 'הצלחה', description: 'המשתמש נוסף בהצלחה' });
-    setNewUser({ email: '', password: '', fullName: '', startDate: '' });
+    setNewUser({ email: '', password: '', fullName: '', startDate: '', height: '', initialWeight: '' });
     setIsAddOpen(false);
     setIsSubmitting(false);
     fetchUsers();
@@ -153,7 +170,7 @@ export default function AdminUsers() {
               הוסף משתמש
             </Button>
           </DialogTrigger>
-          <DialogContent dir="rtl">
+          <DialogContent dir="rtl" className="max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>הוספת משתמש חדש</DialogTitle>
             </DialogHeader>
@@ -197,6 +214,31 @@ export default function AdminUsers() {
                   dir="ltr"
                   className="text-left"
                 />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>גובה (ס"מ)</Label>
+                  <Input
+                    type="number"
+                    value={newUser.height}
+                    onChange={(e) => setNewUser({ ...newUser, height: e.target.value })}
+                    placeholder="170"
+                    dir="ltr"
+                    className="text-left"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>משקל התחלתי (ק"ג)</Label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    value={newUser.initialWeight}
+                    onChange={(e) => setNewUser({ ...newUser, initialWeight: e.target.value })}
+                    placeholder="75.5"
+                    dir="ltr"
+                    className="text-left"
+                  />
+                </div>
               </div>
               <Button onClick={handleAddUser} className="w-full" disabled={isSubmitting}>
                 {isSubmitting && <Loader2 className="h-4 w-4 ml-2 animate-spin" />}

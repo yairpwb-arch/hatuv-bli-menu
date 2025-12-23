@@ -3,6 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
 import { Users, BookOpen, Quote, TrendingUp } from 'lucide-react';
 
+const ADMIN_EMAIL = 'yairpwb@gmail.com';
+
 interface Stats {
   totalUsers: number;
   activeUsers: number;
@@ -24,14 +26,17 @@ export default function AdminDashboard() {
       setIsLoading(true);
 
       const [usersRes, contentRes, quotesRes] = await Promise.all([
-        supabase.from('profiles').select('id, is_active', { count: 'exact' }),
+        supabase.from('profiles').select('id, is_active, email', { count: 'exact' }),
         supabase.from('program_content').select('id', { count: 'exact' }),
         supabase.from('daily_quotes').select('id', { count: 'exact' }),
       ]);
 
+      // Filter out admin from user counts
+      const nonAdminUsers = usersRes.data?.filter((u) => u.email.toLowerCase() !== ADMIN_EMAIL) || [];
+
       setStats({
-        totalUsers: usersRes.count || 0,
-        activeUsers: usersRes.data?.filter((u) => u.is_active).length || 0,
+        totalUsers: nonAdminUsers.length,
+        activeUsers: nonAdminUsers.filter((u) => u.is_active).length,
         totalContent: contentRes.count || 0,
         totalQuotes: quotesRes.count || 0,
       });
@@ -43,10 +48,10 @@ export default function AdminDashboard() {
   }, []);
 
   const statCards = [
-    { label: 'סה"כ משתמשים', value: stats.totalUsers, icon: Users, color: 'text-blue-500' },
-    { label: 'משתמשים פעילים', value: stats.activeUsers, icon: TrendingUp, color: 'text-green-500' },
-    { label: 'פריטי תוכן', value: stats.totalContent, icon: BookOpen, color: 'text-purple-500' },
-    { label: 'ציטוטים יומיים', value: stats.totalQuotes, icon: Quote, color: 'text-orange-500' },
+    { label: 'סה"כ משתמשים', value: stats.totalUsers, icon: Users, color: 'text-primary' },
+    { label: 'משתמשים פעילים', value: stats.activeUsers, icon: TrendingUp, color: 'text-success' },
+    { label: 'פריטי תוכן', value: stats.totalContent, icon: BookOpen, color: 'text-accent' },
+    { label: 'ציטוטים יומיים', value: stats.totalQuotes, icon: Quote, color: 'text-primary' },
   ];
 
   return (
