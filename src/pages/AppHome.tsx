@@ -12,6 +12,8 @@ import { toast } from '@/hooks/use-toast';
 import { Quote, Droplets, Footprints, Timer, Moon, Target, Apple, Scale, Sparkles } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
+import { ActivityScheduler } from '@/components/ActivityScheduler';
+import { TodayActivityTask } from '@/components/TodayActivityTask';
 
 interface DailyQuote {
   day_number: number;
@@ -242,6 +244,20 @@ export default function AppHome() {
           </p>
         </CardContent>
       </Card>
+
+      {/* Today's Activity Task (if scheduled for today) */}
+      {user && (
+        <TodayActivityTask userId={user.id} currentWeek={currentWeek} />
+      )}
+
+      {/* Activity Scheduler */}
+      {user && (
+        <ActivityScheduler 
+          userId={user.id} 
+          currentWeek={currentWeek} 
+          completedContentIds={new Set()} 
+        />
+      )}
 
       {/* Daily Quote */}
       <Card className="gradient-primary text-primary-foreground animate-slide-up overflow-hidden" style={{ animationDelay: '0.2s' }}>

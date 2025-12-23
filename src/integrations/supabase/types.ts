@@ -14,6 +14,30 @@ export type Database = {
   }
   public: {
     Tables: {
+      activity_log: {
+        Row: {
+          activity_type: string
+          completed_at: string
+          created_at: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          activity_type: string
+          completed_at?: string
+          created_at?: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          activity_type?: string
+          completed_at?: string
+          created_at?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       app_settings: {
         Row: {
           id: string
@@ -243,6 +267,36 @@ export type Database = {
           unlock_day?: number
           video_url?: string | null
           week_range?: string
+        }
+        Relationships: []
+      }
+      user_activity_schedule: {
+        Row: {
+          activity_type: string
+          created_at: string
+          day_of_week: number
+          id: string
+          is_active: boolean
+          user_id: string
+          week_start: number
+        }
+        Insert: {
+          activity_type: string
+          created_at?: string
+          day_of_week: number
+          id?: string
+          is_active?: boolean
+          user_id: string
+          week_start: number
+        }
+        Update: {
+          activity_type?: string
+          created_at?: string
+          day_of_week?: number
+          id?: string
+          is_active?: boolean
+          user_id?: string
+          week_start?: number
         }
         Relationships: []
       }
