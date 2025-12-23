@@ -225,12 +225,14 @@ export default function AppTracker() {
             {weekDates.map((date) => {
               const isSelected = isSameDay(date, selectedDate);
               const isTodayDate = isToday(date);
+              const dayOfWeek = date.getDay();
+              const hasActivity = scheduledActivities.some(a => a.day_of_week === dayOfWeek);
               return (
                 <button
                   key={date.toISOString()}
                   onClick={() => setSelectedDate(date)}
                   className={cn(
-                    'flex flex-col items-center p-2 rounded-xl min-w-[52px] transition-all duration-200',
+                    'flex flex-col items-center p-2 rounded-xl min-w-[52px] transition-all duration-200 relative',
                     isSelected
                       ? 'gradient-primary text-primary-foreground shadow-glow'
                       : isTodayDate
@@ -247,6 +249,12 @@ export default function AppTracker() {
                   )}>
                     {format(date, 'd')}
                   </span>
+                  {hasActivity && (
+                    <div className={cn(
+                      'w-1.5 h-1.5 rounded-full mt-0.5',
+                      isSelected ? 'bg-primary-foreground' : 'bg-warning'
+                    )} />
+                  )}
                 </button>
               );
             })}
