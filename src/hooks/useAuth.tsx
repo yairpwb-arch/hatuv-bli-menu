@@ -81,46 +81,73 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
+    let isMounted = true;
+    let initialSessionChecked = false;
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
+        if (!isMounted) return;
+        
         setSession(session);
         setUser(session?.user ?? null);
         
         if (session?.user) {
+          // Use setTimeout to defer database calls and prevent deadlock
           setTimeout(async () => {
+            if (!isMounted) return;
             const profileData = await fetchProfile(session.user.id);
+            if (!isMounted) return;
             setProfile(profileData);
             const adminStatus = await checkAdminRole(session.user.id);
+            if (!isMounted) return;
             setIsAdmin(adminStatus);
-            setIsLoading(false);
+            // Only set loading to false after initial session check
+            if (initialSessionChecked) {
+              setIsLoading(false);
+            }
           }, 0);
         } else {
           setProfile(null);
           setIsAdmin(false);
-          setIsLoading(false);
+          // Only set loading to false after initial session check
+          if (initialSessionChecked) {
+            setIsLoading(false);
+          }
         }
       }
     );
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    // Check for existing session
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!isMounted) return;
+      
+      initialSessionChecked = true;
       setSession(session);
       setUser(session?.user ?? null);
       
       if (session?.user) {
-        Promise.all([
-          fetchProfile(session.user.id),
-          checkAdminRole(session.user.id)
-        ]).then(([profileData, adminStatus]) => {
+        try {
+          const [profileData, adminStatus] = await Promise.all([
+            fetchProfile(session.user.id),
+            checkAdminRole(session.user.id)
+          ]);
+          if (!isMounted) return;
           setProfile(profileData);
           setIsAdmin(adminStatus);
-          setIsLoading(false);
-        });
-      } else {
+        } catch (error) {
+          console.error('Error loading user data:', error);
+        }
+      }
+      
+      if (isMounted) {
         setIsLoading(false);
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signIn = async (email: string, password: string) => {
