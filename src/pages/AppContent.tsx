@@ -9,7 +9,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { 
   Lock, Play, Check, Star, FileText, BookOpen, 
-  ChevronDown, ChevronUp, ExternalLink, ClipboardList
+  ChevronDown, ChevronUp, ExternalLink, ClipboardList, BookText
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -43,31 +43,37 @@ export default function AppContent() {
   const [selectedContent, setSelectedContent] = useState<ContentItem | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('all');
   const [expandedParts, setExpandedParts] = useState<Set<number>>(new Set([1, 2, 3]));
+  const [weeklySurveyLink, setWeeklySurveyLink] = useState('');
+  const [snacksBookLink, setSnacksBookLink] = useState('');
 
   useEffect(() => {
     const fetchContent = async () => {
       if (!user) return;
       setIsLoading(true);
 
-      const { data: contentData, error: contentError } = await supabase
-        .from('program_content')
-        .select('*')
-        .order('sort_order', { ascending: true });
+      const [contentResult, progressResult, settingsResult] = await Promise.all([
+        supabase
+          .from('program_content')
+          .select('*')
+          .order('sort_order', { ascending: true }),
+        supabase
+          .from('content_progress')
+          .select('content_id')
+          .eq('user_id', user.id),
+        supabase
+          .from('app_settings')
+          .select('key, value'),
+      ]);
 
-      if (contentError) {
-        console.error('Error fetching content:', contentError);
+      if (contentResult.error) {
+        console.error('Error fetching content:', contentResult.error);
         setIsLoading(false);
         return;
       }
 
-      const { data: progressData } = await supabase
-        .from('content_progress')
-        .select('content_id')
-        .eq('user_id', user.id);
+      const completedIds = new Set(progressResult.data?.map((p) => p.content_id) || []);
 
-      const completedIds = new Set(progressData?.map((p) => p.content_id) || []);
-
-      const processedContent = (contentData || []).map((item) => ({
+      const processedContent = (contentResult.data || []).map((item) => ({
         ...item,
         isUnlocked: currentDay >= item.unlock_day,
         isCompleted: completedIds.has(item.id),
@@ -75,6 +81,15 @@ export default function AppContent() {
       }));
 
       setAllContent(processedContent);
+
+      // Parse settings
+      if (settingsResult.data) {
+        settingsResult.data.forEach((s: { key: string; value: string | null }) => {
+          if (s.key === 'weekly_survey_link') setWeeklySurveyLink(s.value || '');
+          if (s.key === 'snacks_book_link') setSnacksBookLink(s.value || '');
+        });
+      }
+
       setIsLoading(false);
     };
 
@@ -159,6 +174,28 @@ export default function AppContent() {
     });
   };
 
+  const handleWeeklySurveyClick = () => {
+    if (weeklySurveyLink) {
+      window.open(weeklySurveyLink, '_blank');
+    } else {
+      toast({
+        title: 'שאלון מעקב שבועי',
+        description: 'הקישור לשאלון לא הוגדר עדיין',
+      });
+    }
+  };
+
+  const handleSnacksBookClick = () => {
+    if (snacksBookLink) {
+      window.open(snacksBookLink, '_blank');
+    } else {
+      toast({
+        title: 'ספר נשנושים',
+        description: 'הקישור לספר לא הוגדר עדיין',
+      });
+    }
+  };
+
   const TabButton = ({ value, label }: { value: TabType; label: string }) => (
     <button
       onClick={() => setActiveTab(value)}
@@ -195,7 +232,7 @@ export default function AppContent() {
   }
 
   return (
-    <div className="min-h-screen pb-24 pt-4 px-4 space-y-5">
+    <div className="min-h-screen pb-32 pt-4 px-4 space-y-5">
       {/* Header */}
       <div className="animate-fade-in">
         <h2 className="text-2xl font-bold text-foreground">חטוב בלי תפריט</h2>
@@ -212,6 +249,19 @@ export default function AppContent() {
         <p className="text-xs text-muted-foreground mt-2">
           {completedContent} מתוך {totalContent} תכנים הושלמו
         </p>
+      </div>
+
+      {/* Quick Action Buttons */}
+      <div className="flex gap-2 animate-fade-in" style={{ animationDelay: '0.12s' }}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleSnacksBookClick}
+          className="flex-1 border-accent/30 text-accent hover:bg-accent/10"
+        >
+          <BookText className="h-4 w-4 ml-2" />
+          ספר נשנושים
+        </Button>
       </div>
 
       {/* Tabs */}
@@ -375,13 +425,7 @@ export default function AppContent() {
         <Button
           className="w-full gradient-primary shadow-glow text-primary-foreground font-medium"
           size="lg"
-          onClick={() => {
-            // Find the weekly survey content or open external link
-            toast({
-              title: 'שאלון מעקב שבועי',
-              description: 'השאלון ייפתח בקרוב',
-            });
-          }}
+          onClick={handleWeeklySurveyClick}
         >
           <ClipboardList className="h-5 w-5 ml-2" />
           שאלון מעקב שבועי
@@ -437,52 +481,50 @@ export default function AppContent() {
                     )}
                   </div>
                 ) : (
-                  <div className="aspect-video bg-muted rounded-xl flex items-center justify-center">
-                    <div className="text-center">
-                      <BookOpen className="h-12 w-12 text-muted-foreground mx-auto mb-2" />
-                      <p className="text-sm text-muted-foreground">תוכן טקסטואלי</p>
-                    </div>
+                  <div className="aspect-video bg-accent/10 rounded-xl flex items-center justify-center">
+                    <FileText className="h-16 w-16 text-accent/50" />
                   </div>
                 )}
 
                 {/* Description */}
-                <div>
-                  <h4 className="font-medium mb-2">תיאור</h4>
-                  <p className="text-muted-foreground text-sm">
-                    {selectedContent.description || 'אין תיאור זמין'}
+                {selectedContent.description && (
+                  <p className="text-muted-foreground text-sm leading-relaxed">
+                    {selectedContent.description}
                   </p>
-                </div>
-
-                {/* Resources */}
-                {selectedContent.resource_link && (
-                  <div>
-                    <h4 className="font-medium mb-2">קבצים להורדה</h4>
-                    <Button variant="outline" className="w-full" asChild>
-                      <a
-                        href={selectedContent.resource_link}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <ExternalLink className="h-4 w-4 ml-2" />
-                        פתח קובץ
-                      </a>
-                    </Button>
-                  </div>
                 )}
 
-                {/* Mark Complete Button */}
+                {/* Resource Link */}
+                {selectedContent.resource_link && (
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => window.open(selectedContent.resource_link!, '_blank')}
+                  >
+                    <ExternalLink className="h-4 w-4 ml-2" />
+                    פתח מדריך / קובץ
+                  </Button>
+                )}
+
+                {/* Completion Toggle */}
                 <Button
+                  className={cn(
+                    'w-full',
+                    selectedContent.isCompleted
+                      ? 'bg-success hover:bg-success/90'
+                      : 'gradient-primary'
+                  )}
                   onClick={() => toggleCompletion(selectedContent.id, selectedContent.isCompleted)}
-                  className="w-full"
-                  variant={selectedContent.isCompleted ? 'outline' : 'default'}
                 >
                   {selectedContent.isCompleted ? (
                     <>
                       <Check className="h-4 w-4 ml-2" />
-                      בטל סימון
+                      סומן כהושלם - לחץ לביטול
                     </>
                   ) : (
-                    'סמן כהושלם'
+                    <>
+                      <Check className="h-4 w-4 ml-2" />
+                      סמן כהושלם
+                    </>
                   )}
                 </Button>
               </div>
