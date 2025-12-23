@@ -1,19 +1,25 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { 
   ChevronRight, ChevronLeft, Droplets, Footprints, Timer, 
-  Moon, Target, Apple, Dumbbell, Lock, Check, Sparkles 
+  Moon, Target, Apple, Dumbbell, Lock, Check, Sparkles,
+  Calendar, CalendarDays
 } from 'lucide-react';
-import { format, addDays, subDays, startOfWeek, isSameDay, isToday } from 'date-fns';
+import { 
+  format, addDays, subDays, startOfWeek, isSameDay, isToday,
+  startOfMonth, endOfMonth, eachDayOfInterval, isBefore, subDays as subDaysFromDate
+} from 'date-fns';
 import { he } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
+import { MonthlyCalendar } from '@/components/MonthlyCalendar';
 
 interface Habit {
   id: string;
@@ -27,6 +33,14 @@ interface Habit {
 interface ScheduledActivity {
   activity_type: 'walk' | 'workout';
   day_of_week: number;
+}
+
+interface DayCompletionData {
+  date: string;
+  completedHabits: number;
+  totalHabits: number;
+  activityCompleted: boolean;
+  hasActivity: boolean;
 }
 
 const iconMap: Record<string, typeof Droplets> = {
@@ -43,10 +57,13 @@ export default function AppTracker() {
   const { user, currentDay } = useAuth();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [habits, setHabits] = useState<Habit[]>([]);
+  const [allHabitIds, setAllHabitIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [completedContentIds, setCompletedContentIds] = useState<Set<string>>(new Set());
   const [scheduledActivities, setScheduledActivities] = useState<ScheduledActivity[]>([]);
   const [activityCompleted, setActivityCompleted] = useState(false);
+  const [viewMode, setViewMode] = useState<'weekly' | 'monthly'>('weekly');
+  const [monthlyData, setMonthlyData] = useState<DayCompletionData[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const currentWeek = Math.ceil(currentDay / 7);
@@ -103,6 +120,8 @@ export default function AppTracker() {
       setCompletedContentIds(completedIds);
 
       const completedHabitIds = new Set(completedHabitsResult.data?.map((h) => h.habit_id) || []);
+      const habitIds = (habitsResult.data || []).map(h => h.id);
+      setAllHabitIds(habitIds);
 
       // Process habits with lock status
       const processedHabits = (habitsResult.data || []).map((h) => ({
@@ -110,7 +129,7 @@ export default function AppTracker() {
         name: h.name,
         icon: h.icon || 'target',
         completed: completedHabitIds.has(h.id),
-        isLocked: false, // In production, check against specific content IDs
+        isLocked: false,
         lockReason: undefined,
       }));
 
@@ -122,6 +141,92 @@ export default function AppTracker() {
 
     fetchData();
   }, [user, currentWeek, dateString]);
+
+  // Fetch monthly data when in monthly view
+  useEffect(() => {
+    const fetchMonthlyData = async () => {
+      if (!user || viewMode !== 'monthly') return;
+
+      const monthStart = startOfMonth(selectedDate);
+      const monthEnd = endOfMonth(selectedDate);
+      const startStr = format(monthStart, 'yyyy-MM-dd');
+      const endStr = format(monthEnd, 'yyyy-MM-dd');
+
+      const [habitsLogResult, activityLogResult] = await Promise.all([
+        supabase
+          .from('daily_habits_log')
+          .select('habit_id, completed_at')
+          .eq('user_id', user.id)
+          .gte('completed_at', startStr)
+          .lte('completed_at', endStr),
+        supabase
+          .from('activity_log')
+          .select('activity_type, completed_at')
+          .eq('user_id', user.id)
+          .gte('completed_at', startStr)
+          .lte('completed_at', endStr),
+      ]);
+
+      const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
+      const totalHabits = allHabitIds.length;
+
+      const data: DayCompletionData[] = days.map(day => {
+        const dayStr = format(day, 'yyyy-MM-dd');
+        const dayOfWeek = day.getDay();
+        const hasActivity = scheduledActivities.some(a => a.day_of_week === dayOfWeek);
+        
+        const completedHabitsForDay = (habitsLogResult.data || [])
+          .filter(h => h.completed_at === dayStr).length;
+        
+        const activityCompletedForDay = (activityLogResult.data || [])
+          .some(a => a.completed_at === dayStr);
+
+        return {
+          date: dayStr,
+          completedHabits: completedHabitsForDay,
+          totalHabits,
+          activityCompleted: activityCompletedForDay,
+          hasActivity,
+        };
+      });
+
+      setMonthlyData(data);
+    };
+
+    fetchMonthlyData();
+  }, [user, viewMode, selectedDate, allHabitIds, scheduledActivities]);
+
+  // Calculate streak and perfect days
+  const { perfectDaysCount, currentStreak } = useMemo(() => {
+    if (monthlyData.length === 0) return { perfectDaysCount: 0, currentStreak: 0 };
+
+    let perfect = 0;
+    let streak = 0;
+    let countingStreak = true;
+    const today = new Date();
+
+    // Sort by date descending for streak calculation
+    const sortedData = [...monthlyData]
+      .filter(d => isBefore(new Date(d.date), today) || format(today, 'yyyy-MM-dd') === d.date)
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    for (const day of sortedData) {
+      const dayOfWeek = new Date(day.date).getDay();
+      const hasActivity = scheduledActivities.some(a => a.day_of_week === dayOfWeek);
+      const totalTasks = day.totalHabits + (hasActivity ? 1 : 0);
+      const completedTasks = day.completedHabits + (day.activityCompleted ? 1 : 0);
+      const isPerfect = totalTasks > 0 && completedTasks === totalTasks;
+
+      if (isPerfect) {
+        perfect++;
+        if (countingStreak) streak++;
+      } else if (totalTasks > 0) {
+        countingStreak = false;
+      }
+    }
+
+    return { perfectDaysCount: perfect, currentStreak: streak };
+  }, [monthlyData, scheduledActivities]);
 
   // Check if today has a scheduled activity
   const todayActivity = scheduledActivities.find(a => a.day_of_week === selectedDayOfWeek);
@@ -203,64 +308,96 @@ export default function AppTracker() {
         <p className="text-muted-foreground">שבוע {currentWeek} | יום {currentDay}</p>
       </div>
 
-      {/* Horizontal Week Calendar */}
-      <Card className="glass-card animate-fade-in" style={{ animationDelay: '0.1s' }}>
-        <CardContent className="pt-4 pb-3">
-          <div className="flex items-center justify-between mb-3">
-            <Button variant="ghost" size="icon" onClick={() => navigateWeek('prev')}>
-              <ChevronRight className="h-5 w-5" />
-            </Button>
-            <span className="font-medium text-sm">
-              {format(weekDates[0], 'MMMM yyyy', { locale: he })}
-            </span>
-            <Button variant="ghost" size="icon" onClick={() => navigateWeek('next')}>
-              <ChevronLeft className="h-5 w-5" />
-            </Button>
-          </div>
-          
-          <div 
-            ref={scrollRef}
-            className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide"
-          >
-            {weekDates.map((date) => {
-              const isSelected = isSameDay(date, selectedDate);
-              const isTodayDate = isToday(date);
-              const dayOfWeek = date.getDay();
-              const hasActivity = scheduledActivities.some(a => a.day_of_week === dayOfWeek);
-              return (
-                <button
-                  key={date.toISOString()}
-                  onClick={() => setSelectedDate(date)}
-                  className={cn(
-                    'flex flex-col items-center p-2 rounded-xl min-w-[52px] transition-all duration-200 relative',
-                    isSelected
-                      ? 'gradient-primary text-primary-foreground shadow-glow'
-                      : isTodayDate
-                      ? 'bg-primary/10 text-primary border-2 border-primary'
-                      : 'bg-secondary hover:bg-secondary/80'
-                  )}
-                >
-                  <span className="text-xs font-medium">
-                    {format(date, 'EEEEEE', { locale: he })}
-                  </span>
-                  <span className={cn(
-                    'text-lg font-bold',
-                    isSelected ? 'text-primary-foreground' : ''
-                  )}>
-                    {format(date, 'd')}
-                  </span>
-                  {hasActivity && (
-                    <div className={cn(
-                      'w-1.5 h-1.5 rounded-full mt-0.5',
-                      isSelected ? 'bg-primary-foreground' : 'bg-warning'
-                    )} />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
+      {/* View Toggle */}
+      <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as 'weekly' | 'monthly')} className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="weekly" className="flex items-center gap-2">
+            <Calendar className="h-4 w-4" />
+            שבועי
+          </TabsTrigger>
+          <TabsTrigger value="monthly" className="flex items-center gap-2">
+            <CalendarDays className="h-4 w-4" />
+            חודשי
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {/* Calendar Views */}
+      <div className={cn(
+        'transition-all duration-300',
+        viewMode === 'monthly' ? 'animate-fade-in' : ''
+      )}>
+        {viewMode === 'weekly' ? (
+          /* Horizontal Week Calendar */
+          <Card className="glass-card animate-fade-in">
+            <CardContent className="pt-4 pb-3">
+              <div className="flex items-center justify-between mb-3">
+                <Button variant="ghost" size="icon" onClick={() => navigateWeek('prev')}>
+                  <ChevronRight className="h-5 w-5" />
+                </Button>
+                <span className="font-medium text-sm">
+                  {format(weekDates[0], 'MMMM yyyy', { locale: he })}
+                </span>
+                <Button variant="ghost" size="icon" onClick={() => navigateWeek('next')}>
+                  <ChevronLeft className="h-5 w-5" />
+                </Button>
+              </div>
+              
+              <div 
+                ref={scrollRef}
+                className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide"
+              >
+                {weekDates.map((date) => {
+                  const isSelected = isSameDay(date, selectedDate);
+                  const isTodayDate = isToday(date);
+                  const dayOfWeek = date.getDay();
+                  const hasActivity = scheduledActivities.some(a => a.day_of_week === dayOfWeek);
+                  return (
+                    <button
+                      key={date.toISOString()}
+                      onClick={() => setSelectedDate(date)}
+                      className={cn(
+                        'flex flex-col items-center p-2 rounded-xl min-w-[52px] transition-all duration-200 relative',
+                        isSelected
+                          ? 'gradient-primary text-primary-foreground shadow-glow'
+                          : isTodayDate
+                          ? 'bg-primary/10 text-primary border-2 border-primary'
+                          : 'bg-secondary hover:bg-secondary/80'
+                      )}
+                    >
+                      <span className="text-xs font-medium">
+                        {format(date, 'EEEEEE', { locale: he })}
+                      </span>
+                      <span className={cn(
+                        'text-lg font-bold',
+                        isSelected ? 'text-primary-foreground' : ''
+                      )}>
+                        {format(date, 'd')}
+                      </span>
+                      {hasActivity && (
+                        <div className={cn(
+                          'w-1.5 h-1.5 rounded-full mt-0.5',
+                          isSelected ? 'bg-primary-foreground' : 'bg-warning'
+                        )} />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          /* Monthly Calendar */
+          <MonthlyCalendar
+            selectedDate={selectedDate}
+            onSelectDate={setSelectedDate}
+            monthlyData={monthlyData}
+            scheduledActivities={scheduledActivities}
+            perfectDaysCount={perfectDaysCount}
+            currentStreak={currentStreak}
+          />
+        )}
+      </div>
 
       {/* Daily Progress */}
       <Card className="glass-card animate-fade-in" style={{ animationDelay: '0.15s' }}>
