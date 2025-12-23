@@ -1,9 +1,10 @@
-import { Home, BookOpen, Apple } from 'lucide-react';
+import { Home, BookOpen, Apple, CalendarCheck } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 
 const navItems = [
   { to: '/app', icon: Home, label: 'בית' },
+  { to: '/app/tracker', icon: CalendarCheck, label: 'מעקב' },
   { to: '/app/content', icon: BookOpen, label: 'תכנים' },
   { to: '/app/nutrition', icon: Apple, label: 'תזונה' },
 ];

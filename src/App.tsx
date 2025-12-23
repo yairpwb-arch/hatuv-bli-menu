@@ -10,6 +10,7 @@ import AppHome from "./pages/AppHome";
 import AppContent from "./pages/AppContent";
 import AppNutrition from "./pages/AppNutrition";
 import AppProfile from "./pages/AppProfile";
+import AppTracker from "./pages/AppTracker";
 import AdminLayout from "./pages/admin/AdminLayout";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminUsers from "./pages/admin/AdminUsers";
@@ -86,6 +87,7 @@ const App = () => (
               <Route index element={<AppHome />} />
               <Route path="content" element={<AppContent />} />
               <Route path="nutrition" element={<AppNutrition />} />
+              <Route path="tracker" element={<AppTracker />} />
               <Route path="profile" element={<AppProfile />} />
             </Route>
             <Route path="/admin" element={<AdminLayout />}>
