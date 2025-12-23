@@ -19,6 +19,49 @@ interface NutritionEntry {
   image_url: string | null;
 }
 
+// Component to handle signed URLs for meal images
+function MealImage({ imagePath }: { imagePath: string }) {
+  const [signedUrl, setSignedUrl] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchSignedUrl = async () => {
+      try {
+        const { data, error } = await supabase.storage
+          .from('meal_photos')
+          .createSignedUrl(imagePath, 3600); // 1 hour expiry
+
+        if (error) throw error;
+        setSignedUrl(data.signedUrl);
+      } catch (error) {
+        console.error('Error getting signed URL:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchSignedUrl();
+  }, [imagePath]);
+
+  if (isLoading) {
+    return <Skeleton className="aspect-video w-full" />;
+  }
+
+  if (!signedUrl) {
+    return null;
+  }
+
+  return (
+    <div className="aspect-video w-full bg-muted">
+      <img
+        src={signedUrl}
+        alt="Meal"
+        className="w-full h-full object-cover"
+      />
+    </div>
+  );
+}
+
 export default function AppNutrition() {
   const { user } = useAuth();
   const [entries, setEntries] = useState<NutritionEntry[]>([]);
@@ -90,11 +133,8 @@ export default function AppNutrition() {
 
       if (uploadError) throw uploadError;
 
-      const { data: { publicUrl } } = supabase.storage
-        .from('meal_photos')
-        .getPublicUrl(fileName);
-
-      return publicUrl;
+      // Return the file path - we'll create signed URLs when displaying
+      return fileName;
     } catch (error) {
       console.error('Error uploading image:', error);
       toast({
@@ -106,6 +146,7 @@ export default function AppNutrition() {
       setIsUploading(false);
     }
   };
+
 
   const addMealWithAI = async () => {
     if (!user || (!mealInput.trim() && !selectedImage)) return;
@@ -292,13 +333,7 @@ export default function AppNutrition() {
                 >
                   {/* Meal Image */}
                   {entry.image_url && (
-                    <div className="aspect-video w-full bg-muted">
-                      <img
-                        src={entry.image_url}
-                        alt="Meal"
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
+                    <MealImage imagePath={entry.image_url} />
                   )}
                   
                   <CardContent className="p-4 space-y-3">
