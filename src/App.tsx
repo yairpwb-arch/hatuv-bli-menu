@@ -11,6 +11,7 @@ import AppContent from "./pages/AppContent";
 import AppNutrition from "./pages/AppNutrition";
 import AppProfile from "./pages/AppProfile";
 import AppTracker from "./pages/AppTracker";
+import AppProgress from "./pages/AppProgress";
 import AdminLayout from "./pages/admin/AdminLayout";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminUsers from "./pages/admin/AdminUsers";
@@ -86,8 +87,8 @@ const App = () => (
             <Route path="/app" element={<ProtectedRoute />}>
               <Route index element={<AppHome />} />
               <Route path="content" element={<AppContent />} />
-              <Route path="nutrition" element={<AppNutrition />} />
               <Route path="tracker" element={<AppTracker />} />
+              <Route path="progress" element={<AppProgress />} />
               <Route path="profile" element={<AppProfile />} />
             </Route>
             <Route path="/admin" element={<AdminLayout />}>
