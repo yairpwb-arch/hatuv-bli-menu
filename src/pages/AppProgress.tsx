@@ -183,10 +183,6 @@ export default function AppProgress() {
   };
 
   const handleWeightButtonClick = () => {
-    if (!isFriday) {
-      toast.error('ניתן לעדכן משקל רק בימי שישי!');
-      return;
-    }
     setIsWeightModalOpen(true);
   };
 
@@ -287,23 +283,17 @@ export default function AppProgress() {
           </h3>
           <Button
             onClick={handleWeightButtonClick}
-            disabled={!isFriday}
-            className={cn(
-              'gap-2',
-              isFriday ? 'gradient-primary shadow-glow' : 'bg-muted text-muted-foreground'
-            )}
+            className="gap-2 gradient-primary shadow-glow"
           >
             <Plus className="h-4 w-4" />
             הוסף שקילה
           </Button>
         </div>
 
-        {!isFriday && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 p-3 rounded-lg">
-            <AlertCircle className="h-4 w-4" />
-            <span>השקילה הבאה תתאפשר ביום שישי</span>
-          </div>
-        )}
+        <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 p-3 rounded-lg">
+          <AlertCircle className="h-4 w-4" />
+          <span>צפ/י במדריך שקילה לפני הוספת המשקל</span>
+        </div>
 
         {/* Weight Stats */}
         <div className="grid grid-cols-3 gap-3">
