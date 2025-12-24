@@ -14,6 +14,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { ActivityScheduler } from '@/components/ActivityScheduler';
 import { TodayActivityTask } from '@/components/TodayActivityTask';
+import { StreakCard } from '@/components/StreakCard';
+import { MorningStreakPopup } from '@/components/MorningStreakPopup';
+import { useStreak } from '@/hooks/useStreak';
 
 interface DailyQuote {
   day_number: number;
@@ -108,6 +111,9 @@ export default function AppHome() {
     fetchQuote();
   }, [currentDay]);
 
+  // Get streak data
+  const { currentStreak, isLoading: isStreakLoading } = useStreak(user?.id, currentWeek);
+
   useEffect(() => {
     const fetchHabits = async () => {
       if (!user) return;
@@ -136,7 +142,12 @@ export default function AppHome() {
 
       const completedIds = new Set(completedHabits?.map((h) => h.habit_id) || []);
 
-      const habitsWithStatus = (habitDefs || []).map((h) => ({
+      // Filter out walk/workout habits (they have their own dedicated card)
+      const staticHabits = (habitDefs || []).filter(h => 
+        !h.name.includes('הליכה') && !h.name.includes('אימון')
+      );
+
+      const habitsWithStatus = staticHabits.map((h) => ({
         id: h.id,
         name: h.name,
         icon: h.icon || 'target',
@@ -223,6 +234,9 @@ export default function AppHome() {
 
   return (
     <div className="min-h-screen pb-20 pt-4 px-4 space-y-4">
+      {/* Morning Streak Popup */}
+      <MorningStreakPopup streak={currentStreak} isLoading={isStreakLoading} />
+
       {/* Header Greeting */}
       <div className="animate-slide-up">
         <h2 className="text-2xl font-bold text-foreground">
@@ -230,6 +244,9 @@ export default function AppHome() {
         </h2>
         <p className="text-muted-foreground">יום {currentDay} במסע שלך</p>
       </div>
+
+      {/* Streak Card */}
+      <StreakCard streak={currentStreak} isLoading={isStreakLoading} />
 
       {/* Progress Card */}
       <Card className="glass-card animate-slide-up" style={{ animationDelay: '0.1s' }}>
