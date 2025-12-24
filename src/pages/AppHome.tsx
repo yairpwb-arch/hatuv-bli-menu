@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
-import { Quote, Droplets, Footprints, Timer, Moon, Target, Apple, Scale, Sparkles } from 'lucide-react';
+import { Quote, Scale, Sparkles, Target } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { ActivityScheduler } from '@/components/ActivityScheduler';
@@ -17,34 +17,18 @@ import { TodayActivityTask } from '@/components/TodayActivityTask';
 import { StreakCard } from '@/components/StreakCard';
 import { MorningStreakPopup } from '@/components/MorningStreakPopup';
 import { useStreak } from '@/hooks/useStreak';
+import { useHabits, iconMap } from '@/hooks/useHabits';
+import { format } from 'date-fns';
 
 interface DailyQuote {
   day_number: number;
   message: string;
 }
 
-interface Habit {
-  id: string;
-  name: string;
-  icon: string;
-  completed: boolean;
-}
-
-const iconMap: Record<string, typeof Droplets> = {
-  droplets: Droplets,
-  footprints: Footprints,
-  timer: Timer,
-  moon: Moon,
-  target: Target,
-  apple: Apple,
-};
-
 export default function AppHome() {
   const { profile, currentDay, user, refreshProfile } = useAuth();
   const [quote, setQuote] = useState<DailyQuote | null>(null);
-  const [habits, setHabits] = useState<Habit[]>([]);
   const [isLoadingQuote, setIsLoadingQuote] = useState(true);
-  const [isLoadingHabits, setIsLoadingHabits] = useState(true);
   const [weight, setWeight] = useState('');
   const [isWeightDialogOpen, setIsWeightDialogOpen] = useState(false);
   const [showConfetti, setShowConfetti] = useState<string | null>(null);
@@ -52,6 +36,13 @@ export default function AppHome() {
   const isWeighInDay = currentDay % 7 === 0;
   const currentWeek = Math.ceil(currentDay / 7);
   const progressPercentage = Math.min((currentDay / 168) * 100, 100);
+  const today = format(new Date(), 'yyyy-MM-dd');
+
+  // Use shared habits hook
+  const { habits, isLoading: isLoadingHabits, toggleHabit: baseToggleHabit } = useHabits(user?.id, currentWeek, today);
+
+  // Get streak data
+  const { currentStreak, isLoading: isStreakLoading } = useStreak(user?.id, currentWeek);
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -111,84 +102,17 @@ export default function AppHome() {
     fetchQuote();
   }, [currentDay]);
 
-  // Get streak data
-  const { currentStreak, isLoading: isStreakLoading } = useStreak(user?.id, currentWeek);
-
-  useEffect(() => {
-    const fetchHabits = async () => {
-      if (!user) return;
-      setIsLoadingHabits(true);
-
-      // Get habit definitions for current week
-      const { data: habitDefs, error: habitsError } = await supabase
-        .from('habit_definitions')
-        .select('*')
-        .lte('week_start', currentWeek)
-        .or(`week_end.gte.${currentWeek},week_end.is.null`);
-
-      if (habitsError) {
-        console.error('Error fetching habits:', habitsError);
-        setIsLoadingHabits(false);
-        return;
-      }
-
-      // Get today's completed habits
-      const today = new Date().toISOString().split('T')[0];
-      const { data: completedHabits } = await supabase
-        .from('daily_habits_log')
-        .select('habit_id')
-        .eq('user_id', user.id)
-        .eq('completed_at', today);
-
-      const completedIds = new Set(completedHabits?.map((h) => h.habit_id) || []);
-
-      // Filter out walk/workout habits (they have their own dedicated card)
-      const staticHabits = (habitDefs || []).filter(h => 
-        !h.name.includes('הליכה') && !h.name.includes('אימון')
-      );
-
-      const habitsWithStatus = staticHabits.map((h) => ({
-        id: h.id,
-        name: h.name,
-        icon: h.icon || 'target',
-        completed: completedIds.has(h.id),
-      }));
-
-      setHabits(habitsWithStatus);
-      setIsLoadingHabits(false);
-    };
-
-    fetchHabits();
-  }, [user, currentWeek]);
-
+  // Wrapper for toggleHabit to add confetti animation
   const toggleHabit = async (habitId: string, completed: boolean) => {
-    if (!user) return;
-
-    const today = new Date().toISOString().split('T')[0];
-
-    if (completed) {
-      // Remove completion
-      await supabase
-        .from('daily_habits_log')
-        .delete()
-        .eq('user_id', user.id)
-        .eq('habit_id', habitId)
-        .eq('completed_at', today);
-    } else {
-      // Add completion
-      await supabase
-        .from('daily_habits_log')
-        .insert({ user_id: user.id, habit_id: habitId, completed_at: today });
-      
-      // Show confetti animation
+    await baseToggleHabit(habitId, completed);
+    
+    if (!completed) {
+      // Show confetti animation when completing
       setShowConfetti(habitId);
       setTimeout(() => setShowConfetti(null), 600);
     }
-
-    setHabits((prev) =>
-      prev.map((h) => (h.id === habitId ? { ...h, completed: !completed } : h))
-    );
   };
+
 
   const handleWeightSubmit = async () => {
     if (!user || !weight) return;

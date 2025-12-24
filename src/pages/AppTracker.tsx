@@ -9,8 +9,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { 
-  ChevronRight, ChevronLeft, Droplets, Footprints, Timer, 
-  Moon, Target, Apple, Dumbbell, Lock, Check, Sparkles,
+  ChevronRight, ChevronLeft, Footprints, 
+  Target, Dumbbell, Check, Sparkles,
   Calendar, CalendarDays
 } from 'lucide-react';
 import { 
@@ -20,15 +20,7 @@ import {
 import { he } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { MonthlyCalendar } from '@/components/MonthlyCalendar';
-
-interface Habit {
-  id: string;
-  name: string;
-  icon: string;
-  completed: boolean;
-  isLocked: boolean;
-  lockReason?: string;
-}
+import { useHabits, iconMap } from '@/hooks/useHabits';
 
 interface ScheduledActivity {
   activity_type: 'walk' | 'workout';
@@ -43,32 +35,42 @@ interface DayCompletionData {
   hasActivity: boolean;
 }
 
-const iconMap: Record<string, typeof Droplets> = {
-  droplets: Droplets,
-  footprints: Footprints,
-  timer: Timer,
-  moon: Moon,
-  target: Target,
-  apple: Apple,
-  dumbbell: Dumbbell,
-};
-
 export default function AppTracker() {
   const { user, currentDay } = useAuth();
   const [selectedDate, setSelectedDate] = useState(new Date());
-  const [habits, setHabits] = useState<Habit[]>([]);
   const [allHabitIds, setAllHabitIds] = useState<string[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [completedContentIds, setCompletedContentIds] = useState<Set<string>>(new Set());
   const [scheduledActivities, setScheduledActivities] = useState<ScheduledActivity[]>([]);
   const [activityCompleted, setActivityCompleted] = useState(false);
   const [viewMode, setViewMode] = useState<'weekly' | 'monthly'>('weekly');
   const [monthlyData, setMonthlyData] = useState<DayCompletionData[]>([]);
+  const [isLoadingExtras, setIsLoadingExtras] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const currentWeek = Math.ceil(currentDay / 7);
   const selectedDayOfWeek = selectedDate.getDay();
   const dateString = format(selectedDate, 'yyyy-MM-dd');
+
+  // Use shared habits hook
+  const { habits, isLoading: isLoadingHabits, toggleHabit: baseToggleHabit } = useHabits(user?.id, currentWeek, dateString);
+
+  // Check if selected date is in the past (not today)
+  const isSelectedDatePast = isBefore(startOfDay(selectedDate), startOfDay(new Date())) && !isToday(selectedDate);
+
+  // Wrapper for toggleHabit with past date check
+  const toggleHabit = async (habitId: string, completed: boolean) => {
+    if (isSelectedDatePast) {
+      toast({ 
+        title: 'לא ניתן לעדכן', 
+        description: 'לא ניתן לעדכן משימות של ימים שעברו.',
+        variant: 'destructive'
+      });
+      return;
+    }
+    await baseToggleHabit(habitId, completed);
+    if (!completed) {
+      toast({ title: 'כל הכבוד! 🎉', description: 'ההרגל סומן כהושלם' });
+    }
+  };
 
   // Generate week dates for horizontal calendar
   const generateWeekDates = () => {
@@ -78,30 +80,13 @@ export default function AppTracker() {
 
   const weekDates = generateWeekDates();
 
-  // Fetch all data
+  // Fetch additional data (activities, schedules)
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchExtras = async () => {
       if (!user) return;
-      setIsLoading(true);
+      setIsLoadingExtras(true);
 
-      const [habitsResult, progressResult, completedHabitsResult, scheduleResult, activityLogResult] = await Promise.all([
-        // Get habit definitions for current week
-        supabase
-          .from('habit_definitions')
-          .select('*')
-          .lte('week_start', currentWeek)
-          .or(`week_end.gte.${currentWeek},week_end.is.null`),
-        // Get completed content
-        supabase
-          .from('content_progress')
-          .select('content_id')
-          .eq('user_id', user.id),
-        // Get completed habits for selected date
-        supabase
-          .from('daily_habits_log')
-          .select('habit_id')
-          .eq('user_id', user.id)
-          .eq('completed_at', dateString),
+      const [scheduleResult, activityLogResult, habitsResult] = await Promise.all([
         // Get user's activity schedule
         supabase
           .from('user_activity_schedule')
@@ -114,38 +99,26 @@ export default function AppTracker() {
           .select('id, activity_type')
           .eq('user_id', user.id)
           .eq('completed_at', dateString),
+        // Get habit definitions to store IDs for monthly view
+        supabase
+          .from('habit_definitions')
+          .select('id, name')
+          .lte('week_start', currentWeek)
+          .or(`week_end.gte.${currentWeek},week_end.is.null`),
       ]);
 
-      const completedIds = new Set(progressResult.data?.map((p) => p.content_id) || []);
-      setCompletedContentIds(completedIds);
+      // Filter out walk/workout habit IDs
+      const staticHabitIds = (habitsResult.data || [])
+        .filter(h => !h.name.includes('הליכה') && !h.name.includes('אימון'))
+        .map(h => h.id);
+      setAllHabitIds(staticHabitIds);
 
-      const completedHabitIds = new Set(completedHabitsResult.data?.map((h) => h.habit_id) || []);
-      
-      // Filter out walk/workout habits (they have their own dedicated card)
-      const staticHabits = (habitsResult.data || []).filter(h => 
-        !h.name.includes('הליכה') && !h.name.includes('אימון')
-      );
-      
-      const habitIds = staticHabits.map(h => h.id);
-      setAllHabitIds(habitIds);
-
-      // Process habits with lock status
-      const processedHabits = staticHabits.map((h) => ({
-        id: h.id,
-        name: h.name,
-        icon: h.icon || 'target',
-        completed: completedHabitIds.has(h.id),
-        isLocked: false,
-        lockReason: undefined,
-      }));
-
-      setHabits(processedHabits);
       setScheduledActivities((scheduleResult.data as ScheduledActivity[]) || []);
       setActivityCompleted(!!activityLogResult.data?.length);
-      setIsLoading(false);
+      setIsLoadingExtras(false);
     };
 
-    fetchData();
+    fetchExtras();
   }, [user, currentWeek, dateString]);
 
   // Fetch monthly data when in monthly view
@@ -241,44 +214,6 @@ export default function AppTracker() {
   // Check if today has a scheduled activity
   const todayActivity = scheduledActivities.find(a => a.day_of_week === selectedDayOfWeek);
 
-  // Check if selected date is in the past (not today)
-  const isSelectedDatePast = isBefore(startOfDay(selectedDate), startOfDay(new Date())) && !isToday(selectedDate);
-
-  const toggleHabit = async (habitId: string, completed: boolean) => {
-    if (!user) return;
-
-    // Block editing past dates
-    if (isSelectedDatePast) {
-      toast({ 
-        title: 'לא ניתן לעדכן', 
-        description: 'לא ניתן לעדכן משימות של ימים שעברו.',
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    if (completed) {
-      await supabase
-        .from('daily_habits_log')
-        .delete()
-        .eq('user_id', user.id)
-        .eq('habit_id', habitId)
-        .eq('completed_at', dateString);
-    } else {
-      await supabase
-        .from('daily_habits_log')
-        .insert({ user_id: user.id, habit_id: habitId, completed_at: dateString });
-    }
-
-    setHabits((prev) =>
-      prev.map((h) => (h.id === habitId ? { ...h, completed: !completed } : h))
-    );
-
-    if (!completed) {
-      toast({ title: 'כל הכבוד! 🎉', description: 'ההרגל סומן כהושלם' });
-    }
-  };
-
   const toggleActivity = async () => {
     if (!user || !todayActivity) return;
 
@@ -323,7 +258,7 @@ export default function AppTracker() {
   const completedTasks = completedHabits + (activityCompleted ? 1 : 0);
   const completionPercentage = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
-  if (isLoading) {
+  if (isLoadingHabits || isLoadingExtras) {
     return (
       <div className="min-h-screen pb-20 pt-4 px-4 space-y-4">
         <Skeleton className="h-8 w-48" />
@@ -532,48 +467,35 @@ export default function AppTracker() {
                   key={habit.id}
                   className={cn(
                     'flex items-center gap-3 p-3 rounded-xl border transition-all duration-200',
-                    habit.isLocked
+                    isSelectedDatePast
                       ? 'bg-muted/50 border-muted cursor-not-allowed'
                       : habit.completed
                       ? 'bg-success/10 border-success/30'
                       : 'bg-card border-border hover:border-primary/30 cursor-pointer'
                   )}
-                  onClick={() => !habit.isLocked && toggleHabit(habit.id, habit.completed)}
+                  onClick={() => toggleHabit(habit.id, habit.completed)}
                 >
-                  {habit.isLocked ? (
-                    <div className="w-6 h-6 rounded-lg bg-muted flex items-center justify-center">
-                      <Lock className="h-4 w-4 text-muted-foreground" />
-                    </div>
-                  ) : (
-                    <Checkbox
-                      checked={habit.completed}
-                      className={cn(
-                        'h-6 w-6 rounded-lg',
-                        habit.completed && 'bg-success border-success'
-                      )}
-                    />
-                  )}
+                  <Checkbox
+                    checked={habit.completed}
+                    disabled={isSelectedDatePast}
+                    className={cn(
+                      'h-6 w-6 rounded-lg',
+                      habit.completed && 'bg-success border-success'
+                    )}
+                  />
                   <IconComponent className={cn(
                     'h-5 w-5',
-                    habit.isLocked 
-                      ? 'text-muted-foreground' 
-                      : habit.completed 
-                      ? 'text-success' 
-                      : 'text-muted-foreground'
+                    habit.completed ? 'text-success' : 'text-muted-foreground'
                   )} />
                   <div className="flex-1">
                     <span className={cn(
                       'font-medium',
-                      habit.isLocked && 'text-muted-foreground',
                       habit.completed && 'text-success line-through'
                     )}>
                       {habit.name}
                     </span>
-                    {habit.isLocked && habit.lockReason && (
-                      <p className="text-xs text-muted-foreground">{habit.lockReason}</p>
-                    )}
                   </div>
-                  {habit.completed && !habit.isLocked && (
+                  {habit.completed && (
                     <Check className="h-5 w-5 text-success" />
                   )}
                 </div>
