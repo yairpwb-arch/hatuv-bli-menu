@@ -347,7 +347,7 @@ export default function AppProgress() {
         <Button
           variant="outline"
           className="w-full border-primary/30 text-primary hover:bg-primary/5"
-          onClick={() => navigate('/app/content')}
+          onClick={() => window.open('https://drive.google.com/file/d/1p3x2BAI9QyTPuX2PD0xuLlDhNnr_r8No/view?usp=sharing', '_blank')}
         >
           <BookOpen className="h-4 w-4 ml-2" />
           מדריך שקילה נכונה
