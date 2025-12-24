@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { 
   format, addDays, subDays, startOfWeek, isSameDay, isToday,
-  startOfMonth, endOfMonth, eachDayOfInterval, isBefore, startOfDay
+  startOfMonth, endOfMonth, eachDayOfInterval, isBefore, isAfter, startOfDay
 } from 'date-fns';
 import { he } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
@@ -55,13 +55,27 @@ export default function AppTracker() {
 
   // Check if selected date is in the past (not today)
   const isSelectedDatePast = isBefore(startOfDay(selectedDate), startOfDay(new Date())) && !isToday(selectedDate);
+  
+  // Check if selected date is in the future (not today)
+  const isSelectedDateFuture = isAfter(startOfDay(selectedDate), startOfDay(new Date()));
+  
+  // Can only edit today's habits
+  const canEditHabits = isToday(selectedDate);
 
-  // Wrapper for toggleHabit with past date check
+  // Wrapper for toggleHabit with date checks
   const toggleHabit = async (habitId: string, completed: boolean) => {
     if (isSelectedDatePast) {
       toast({ 
         title: 'לא ניתן לעדכן', 
         description: 'לא ניתן לעדכן משימות של ימים שעברו.',
+        variant: 'destructive'
+      });
+      return;
+    }
+    if (isSelectedDateFuture) {
+      toast({ 
+        title: 'לא ניתן לעדכן', 
+        description: 'לא ניתן לעדכן משימות של ימים עתידיים.',
         variant: 'destructive'
       });
       return;
@@ -217,11 +231,13 @@ export default function AppTracker() {
   const toggleActivity = async () => {
     if (!user || !todayActivity) return;
 
-    // Block editing past dates
-    if (isSelectedDatePast) {
+    // Block editing past or future dates
+    if (!canEditHabits) {
       toast({ 
         title: 'לא ניתן לעדכן', 
-        description: 'לא ניתן לעדכן משימות של ימים שעברו.',
+        description: isSelectedDateFuture 
+          ? 'לא ניתן לעדכן משימות של ימים עתידיים.'
+          : 'לא ניתן לעדכן משימות של ימים שעברו.',
         variant: 'destructive'
       });
       return;
@@ -401,7 +417,9 @@ export default function AppTracker() {
         <Card 
           className={cn(
             'border-2 animate-fade-in transition-all',
-            activityCompleted 
+            !canEditHabits
+              ? 'bg-muted/50 border-muted'
+              : activityCompleted 
               ? 'bg-success/10 border-success/30' 
               : 'border-warning/50 bg-warning/5'
           )}
@@ -409,11 +427,15 @@ export default function AppTracker() {
         >
           <CardContent className="pt-5">
             <div 
-              className="flex items-center gap-4 cursor-pointer"
-              onClick={toggleActivity}
+              className={cn(
+                'flex items-center gap-4',
+                canEditHabits ? 'cursor-pointer' : 'cursor-not-allowed'
+              )}
+              onClick={() => canEditHabits && toggleActivity()}
             >
               <Checkbox
                 checked={activityCompleted}
+                disabled={!canEditHabits}
                 className={cn(
                   'h-7 w-7 rounded-lg',
                   activityCompleted && 'bg-success border-success'
@@ -421,12 +443,12 @@ export default function AppTracker() {
               />
               <div className={cn(
                 'w-12 h-12 rounded-xl flex items-center justify-center',
-                activityCompleted ? 'bg-success/20' : 'bg-warning/20'
+                !canEditHabits ? 'bg-muted' : activityCompleted ? 'bg-success/20' : 'bg-warning/20'
               )}>
                 {todayActivity.activity_type === 'walk' ? (
-                  <Footprints className={cn('h-6 w-6', activityCompleted ? 'text-success' : 'text-warning')} />
+                  <Footprints className={cn('h-6 w-6', !canEditHabits ? 'text-muted-foreground' : activityCompleted ? 'text-success' : 'text-warning')} />
                 ) : (
-                  <Dumbbell className={cn('h-6 w-6', activityCompleted ? 'text-success' : 'text-warning')} />
+                  <Dumbbell className={cn('h-6 w-6', !canEditHabits ? 'text-muted-foreground' : activityCompleted ? 'text-success' : 'text-warning')} />
                 )}
               </div>
               <div className="flex-1">
@@ -437,7 +459,11 @@ export default function AppTracker() {
                   {todayActivity.activity_type === 'walk' ? 'הליכה יומית' : 'אימון'}
                 </h3>
                 <p className="text-sm text-muted-foreground">
-                  {activityCompleted ? 'הושלם ✓' : 'הגיע הזמן לצאת!'}
+                  {!canEditHabits 
+                    ? (isSelectedDateFuture ? 'יום עתידי' : 'יום שעבר')
+                    : activityCompleted 
+                    ? 'הושלם ✓' 
+                    : 'הגיע הזמן לצאת!'}
                 </p>
               </div>
               {activityCompleted && <Check className="h-6 w-6 text-success" />}
@@ -467,17 +493,17 @@ export default function AppTracker() {
                   key={habit.id}
                   className={cn(
                     'flex items-center gap-3 p-3 rounded-xl border transition-all duration-200',
-                    isSelectedDatePast
+                    !canEditHabits
                       ? 'bg-muted/50 border-muted cursor-not-allowed'
                       : habit.completed
                       ? 'bg-success/10 border-success/30'
                       : 'bg-card border-border hover:border-primary/30 cursor-pointer'
                   )}
-                  onClick={() => toggleHabit(habit.id, habit.completed)}
+                  onClick={() => canEditHabits && toggleHabit(habit.id, habit.completed)}
                 >
                   <Checkbox
                     checked={habit.completed}
-                    disabled={isSelectedDatePast}
+                    disabled={!canEditHabits}
                     className={cn(
                       'h-6 w-6 rounded-lg',
                       habit.completed && 'bg-success border-success'
