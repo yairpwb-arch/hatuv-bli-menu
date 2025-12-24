@@ -4,6 +4,7 @@ import { format, subDays, startOfDay } from 'date-fns';
 
 interface StreakData {
   currentStreak: number;
+  bestStreak: number;
   perfectDaysThisMonth: number;
   isLoading: boolean;
 }
@@ -76,18 +77,20 @@ export function useStreak(userId: string | undefined, currentWeek: number): Stre
     return () => window.removeEventListener('focus', handleFocus);
   }, [fetchData]);
 
-  const { currentStreak, perfectDaysThisMonth } = useMemo(() => {
+  const { currentStreak, bestStreak, perfectDaysThisMonth } = useMemo(() => {
     if (isLoading || habitDefinitions.length === 0) {
-      return { currentStreak: 0, perfectDaysThisMonth: 0 };
+      return { currentStreak: 0, bestStreak: 0, perfectDaysThisMonth: 0 };
     }
 
     const today = startOfDay(new Date());
     let streak = 0;
+    let maxStreak = 0;
+    let tempStreak = 0;
     let perfectDays = 0;
     let checkDate = subDays(today, 1); // Start from yesterday
     let streakBroken = false;
 
-    // Calculate streak going backwards from yesterday
+    // Calculate streak and best streak going backwards from yesterday
     for (let i = 0; i < 60; i++) {
       const dateStr = format(checkDate, 'yyyy-MM-dd');
       const dayOfWeek = checkDate.getDay();
@@ -112,13 +115,21 @@ export function useStreak(userId: string | undefined, currentWeek: number): Stre
         perfectDays++;
       }
       
-      // Calculate streak (only if not broken yet)
+      // Calculate current streak (only if not broken yet)
       if (!streakBroken) {
         if (isPerfectDay) {
           streak++;
         } else if (totalTasks > 0) {
           streakBroken = true;
         }
+      }
+      
+      // Calculate best streak (track all consecutive streaks)
+      if (isPerfectDay) {
+        tempStreak++;
+        maxStreak = Math.max(maxStreak, tempStreak);
+      } else {
+        tempStreak = 0;
       }
       
       checkDate = subDays(checkDate, 1);
@@ -141,8 +152,11 @@ export function useStreak(userId: string | undefined, currentWeek: number): Stre
       }
     }
 
-    return { currentStreak: streak, perfectDaysThisMonth: perfectDays };
+    // Update best streak with current streak if it's better
+    const finalBestStreak = Math.max(maxStreak, streak);
+
+    return { currentStreak: streak, bestStreak: finalBestStreak, perfectDaysThisMonth: perfectDays };
   }, [habitLogs, activityLogs, habitDefinitions, scheduledActivities, isLoading]);
 
-  return { currentStreak, perfectDaysThisMonth, isLoading };
+  return { currentStreak, bestStreak, perfectDaysThisMonth, isLoading };
 }

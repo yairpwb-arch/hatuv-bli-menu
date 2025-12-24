@@ -34,6 +34,7 @@ interface MonthlyCalendarProps {
   scheduledActivities: ScheduledActivity[];
   perfectDaysCount: number;
   currentStreak: number;
+  bestStreak: number;
 }
 
 export function MonthlyCalendar({
@@ -43,6 +44,7 @@ export function MonthlyCalendar({
   scheduledActivities,
   perfectDaysCount,
   currentStreak,
+  bestStreak,
 }: MonthlyCalendarProps) {
   const monthStart = startOfMonth(selectedDate);
   const monthEnd = endOfMonth(selectedDate);
@@ -106,8 +108,8 @@ export function MonthlyCalendar({
                 <Flame className="h-5 w-5 text-warning" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-warning">{currentStreak}</p>
-                <p className="text-xs text-muted-foreground">רצף נוכחי</p>
+                <p className="text-2xl font-bold text-warning">{bestStreak}</p>
+                <p className="text-xs text-muted-foreground">שיא רצף</p>
               </div>
             </div>
           </CardContent>

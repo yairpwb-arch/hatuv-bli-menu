@@ -194,11 +194,13 @@ export default function AppTracker() {
   }, [user, viewMode, selectedDate, allHabitIds, scheduledActivities]);
 
   // Calculate streak and perfect days
-  const { perfectDaysCount, currentStreak } = useMemo(() => {
-    if (monthlyData.length === 0) return { perfectDaysCount: 0, currentStreak: 0 };
+  const { perfectDaysCount, currentStreak, bestStreak } = useMemo(() => {
+    if (monthlyData.length === 0) return { perfectDaysCount: 0, currentStreak: 0, bestStreak: 0 };
 
     let perfect = 0;
     let streak = 0;
+    let maxStreak = 0;
+    let tempStreak = 0;
     let countingStreak = true;
     const today = new Date();
 
@@ -217,12 +219,15 @@ export default function AppTracker() {
       if (isPerfect) {
         perfect++;
         if (countingStreak) streak++;
+        tempStreak++;
+        maxStreak = Math.max(maxStreak, tempStreak);
       } else if (totalTasks > 0) {
         countingStreak = false;
+        tempStreak = 0;
       }
     }
 
-    return { perfectDaysCount: perfect, currentStreak: streak };
+    return { perfectDaysCount: perfect, currentStreak: streak, bestStreak: Math.max(maxStreak, streak) };
   }, [monthlyData, scheduledActivities]);
 
   // Check if today has a scheduled activity
@@ -379,6 +384,7 @@ export default function AppTracker() {
             scheduledActivities={scheduledActivities}
             perfectDaysCount={perfectDaysCount}
             currentStreak={currentStreak}
+            bestStreak={bestStreak}
           />
         )}
       </div>
