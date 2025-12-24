@@ -85,13 +85,26 @@ export default function AppHome() {
   useEffect(() => {
     const fetchQuote = async () => {
       setIsLoadingQuote(true);
-      const dayToFetch = Math.min(currentDay, 14); // We only seeded 14 quotes
       
-      const { data, error } = await supabase
+      // First try to get exact day quote
+      let { data } = await supabase
         .from('daily_quotes')
         .select('*')
-        .eq('day_number', dayToFetch)
+        .eq('day_number', currentDay)
         .maybeSingle();
+
+      // If no quote for this day, get the highest available day quote
+      if (!data) {
+        const { data: fallbackData } = await supabase
+          .from('daily_quotes')
+          .select('*')
+          .lte('day_number', currentDay)
+          .order('day_number', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        
+        data = fallbackData;
+      }
 
       if (data) {
         setQuote(data);
