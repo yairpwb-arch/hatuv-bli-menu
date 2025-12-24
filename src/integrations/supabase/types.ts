@@ -188,6 +188,8 @@ export type Database = {
       }
       profiles: {
         Row: {
+          avatar_url: string | null
+          birthdate: string | null
           created_at: string | null
           current_weight: number | null
           email: string
@@ -198,9 +200,12 @@ export type Database = {
           is_active: boolean | null
           phone_number: string | null
           start_date: string | null
+          target_weight: number | null
           updated_at: string | null
         }
         Insert: {
+          avatar_url?: string | null
+          birthdate?: string | null
           created_at?: string | null
           current_weight?: number | null
           email: string
@@ -211,9 +216,12 @@ export type Database = {
           is_active?: boolean | null
           phone_number?: string | null
           start_date?: string | null
+          target_weight?: number | null
           updated_at?: string | null
         }
         Update: {
+          avatar_url?: string | null
+          birthdate?: string | null
           created_at?: string | null
           current_weight?: number | null
           email?: string
@@ -224,6 +232,7 @@ export type Database = {
           is_active?: boolean | null
           phone_number?: string | null
           start_date?: string | null
+          target_weight?: number | null
           updated_at?: string | null
         }
         Relationships: []
@@ -267,6 +276,36 @@ export type Database = {
           unlock_day?: number
           video_url?: string | null
           week_range?: string
+        }
+        Relationships: []
+      }
+      transformation_photos: {
+        Row: {
+          created_at: string
+          id: string
+          notes: string | null
+          photo_type: string
+          photo_url: string
+          taken_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          notes?: string | null
+          photo_type: string
+          photo_url: string
+          taken_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          notes?: string | null
+          photo_type?: string
+          photo_url?: string
+          taken_at?: string
+          user_id?: string
         }
         Relationships: []
       }
