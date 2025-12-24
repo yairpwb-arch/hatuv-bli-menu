@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { format, subDays, isBefore, startOfDay } from 'date-fns';
+import { format, subDays, startOfDay } from 'date-fns';
 
 interface StreakData {
   currentStreak: number;
@@ -15,57 +15,66 @@ export function useStreak(userId: string | undefined, currentWeek: number): Stre
   const [scheduledActivities, setScheduledActivities] = useState<{ activity_type: string; day_of_week: number }[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      if (!userId) {
-        setIsLoading(false);
-        return;
-      }
-
-      setIsLoading(true);
-      
-      // Get last 60 days of data for streak calculation
-      const startDate = format(subDays(new Date(), 60), 'yyyy-MM-dd');
-      const today = format(new Date(), 'yyyy-MM-dd');
-
-      const [habitsResult, activityResult, habitDefsResult, scheduleResult] = await Promise.all([
-        supabase
-          .from('daily_habits_log')
-          .select('habit_id, completed_at')
-          .eq('user_id', userId)
-          .gte('completed_at', startDate)
-          .lte('completed_at', today),
-        supabase
-          .from('activity_log')
-          .select('activity_type, completed_at')
-          .eq('user_id', userId)
-          .gte('completed_at', startDate)
-          .lte('completed_at', today),
-        supabase
-          .from('habit_definitions')
-          .select('id, name')
-          .lte('week_start', currentWeek)
-          .or(`week_end.gte.${currentWeek},week_end.is.null`),
-        supabase
-          .from('user_activity_schedule')
-          .select('activity_type, day_of_week')
-          .eq('user_id', userId)
-          .eq('is_active', true),
-      ]);
-
-      setHabitLogs(habitsResult.data || []);
-      setActivityLogs(activityResult.data || []);
-      // Filter out walk/workout related habits (those are handled by activity system)
-      const staticHabits = (habitDefsResult.data || []).filter(h => 
-        !h.name.includes('הליכה') && !h.name.includes('אימון')
-      );
-      setHabitDefinitions(staticHabits);
-      setScheduledActivities(scheduleResult.data || []);
+  const fetchData = useCallback(async () => {
+    if (!userId) {
       setIsLoading(false);
-    };
+      return;
+    }
 
-    fetchData();
+    setIsLoading(true);
+    
+    // Get last 60 days of data for streak calculation
+    const startDate = format(subDays(new Date(), 60), 'yyyy-MM-dd');
+    const today = format(new Date(), 'yyyy-MM-dd');
+
+    const [habitsResult, activityResult, habitDefsResult, scheduleResult] = await Promise.all([
+      supabase
+        .from('daily_habits_log')
+        .select('habit_id, completed_at')
+        .eq('user_id', userId)
+        .gte('completed_at', startDate)
+        .lte('completed_at', today),
+      supabase
+        .from('activity_log')
+        .select('activity_type, completed_at')
+        .eq('user_id', userId)
+        .gte('completed_at', startDate)
+        .lte('completed_at', today),
+      supabase
+        .from('habit_definitions')
+        .select('id, name')
+        .lte('week_start', currentWeek)
+        .or(`week_end.gte.${currentWeek},week_end.is.null`),
+      supabase
+        .from('user_activity_schedule')
+        .select('activity_type, day_of_week')
+        .eq('user_id', userId)
+        .eq('is_active', true),
+    ]);
+
+    setHabitLogs(habitsResult.data || []);
+    setActivityLogs(activityResult.data || []);
+    // Filter out walk/workout related habits (those are handled by activity system)
+    const staticHabits = (habitDefsResult.data || []).filter(h => 
+      !h.name.includes('הליכה') && !h.name.includes('אימון')
+    );
+    setHabitDefinitions(staticHabits);
+    setScheduledActivities(scheduleResult.data || []);
+    setIsLoading(false);
   }, [userId, currentWeek]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  // Refetch when window gains focus (for sync between pages)
+  useEffect(() => {
+    const handleFocus = () => {
+      fetchData();
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [fetchData]);
 
   const { currentStreak, perfectDaysThisMonth } = useMemo(() => {
     if (isLoading || habitDefinitions.length === 0) {

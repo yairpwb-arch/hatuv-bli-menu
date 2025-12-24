@@ -85,6 +85,15 @@ export function useHabits(
     fetchHabits();
   }, [fetchHabits]);
 
+  // Also refetch when window gains focus (for sync between pages)
+  useEffect(() => {
+    const handleFocus = () => {
+      fetchHabits();
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [fetchHabits]);
+
   const toggleHabit = async (habitId: string, completed: boolean) => {
     if (!userId) return;
 
