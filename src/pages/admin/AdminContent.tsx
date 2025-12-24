@@ -345,6 +345,7 @@ export default function AdminContent() {
                     )}
                     {formData.part_number === 2 && (
                       <>
+                        <SelectItem value="מבוא">מבוא</SelectItem>
                         <SelectItem value="שבועות 6-7">שבועות 6-7</SelectItem>
                         <SelectItem value="שבועות 8-10">שבועות 8-10</SelectItem>
                         <SelectItem value="שבועות 11-15">שבועות 11-15</SelectItem>
