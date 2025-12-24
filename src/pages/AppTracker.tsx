@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { 
   format, addDays, subDays, startOfWeek, isSameDay, isToday,
-  startOfMonth, endOfMonth, eachDayOfInterval, isBefore, subDays as subDaysFromDate
+  startOfMonth, endOfMonth, eachDayOfInterval, isBefore, startOfDay
 } from 'date-fns';
 import { he } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
@@ -120,11 +120,17 @@ export default function AppTracker() {
       setCompletedContentIds(completedIds);
 
       const completedHabitIds = new Set(completedHabitsResult.data?.map((h) => h.habit_id) || []);
-      const habitIds = (habitsResult.data || []).map(h => h.id);
+      
+      // Filter out walk/workout habits (they have their own dedicated card)
+      const staticHabits = (habitsResult.data || []).filter(h => 
+        !h.name.includes('הליכה') && !h.name.includes('אימון')
+      );
+      
+      const habitIds = staticHabits.map(h => h.id);
       setAllHabitIds(habitIds);
 
       // Process habits with lock status
-      const processedHabits = (habitsResult.data || []).map((h) => ({
+      const processedHabits = staticHabits.map((h) => ({
         id: h.id,
         name: h.name,
         icon: h.icon || 'target',
@@ -167,6 +173,9 @@ export default function AppTracker() {
           .lte('completed_at', endStr),
       ]);
 
+      // Filter out walk/workout habits from monthly data too
+      const staticHabitIds = new Set(allHabitIds);
+      
       const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
       const totalHabits = allHabitIds.length;
 
@@ -175,8 +184,9 @@ export default function AppTracker() {
         const dayOfWeek = day.getDay();
         const hasActivity = scheduledActivities.some(a => a.day_of_week === dayOfWeek);
         
+        // Only count static habits (filtering by the habit IDs we have)
         const completedHabitsForDay = (habitsLogResult.data || [])
-          .filter(h => h.completed_at === dayStr).length;
+          .filter(h => h.completed_at === dayStr && staticHabitIds.has(h.habit_id)).length;
         
         const activityCompletedForDay = (activityLogResult.data || [])
           .some(a => a.completed_at === dayStr);
@@ -231,8 +241,21 @@ export default function AppTracker() {
   // Check if today has a scheduled activity
   const todayActivity = scheduledActivities.find(a => a.day_of_week === selectedDayOfWeek);
 
+  // Check if selected date is in the past (not today)
+  const isSelectedDatePast = isBefore(startOfDay(selectedDate), startOfDay(new Date())) && !isToday(selectedDate);
+
   const toggleHabit = async (habitId: string, completed: boolean) => {
     if (!user) return;
+
+    // Block editing past dates
+    if (isSelectedDatePast) {
+      toast({ 
+        title: 'לא ניתן לעדכן', 
+        description: 'לא ניתן לעדכן משימות של ימים שעברו.',
+        variant: 'destructive'
+      });
+      return;
+    }
 
     if (completed) {
       await supabase
@@ -258,6 +281,16 @@ export default function AppTracker() {
 
   const toggleActivity = async () => {
     if (!user || !todayActivity) return;
+
+    // Block editing past dates
+    if (isSelectedDatePast) {
+      toast({ 
+        title: 'לא ניתן לעדכן', 
+        description: 'לא ניתן לעדכן משימות של ימים שעברו.',
+        variant: 'destructive'
+      });
+      return;
+    }
 
     if (activityCompleted) {
       await supabase
