@@ -9,10 +9,11 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
-import { Plus, Edit, Calendar, Loader2 } from 'lucide-react';
+import { Plus, Edit, Calendar, Loader2, Eye, Download } from 'lucide-react';
 import { format, differenceInDays } from 'date-fns';
 import { he } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
+import { PhotoGallery } from '@/components/profile/PhotoGallery';
 
 interface User {
   id: string;
@@ -31,6 +32,7 @@ export default function AdminUsers() {
   const [isLoading, setIsLoading] = useState(true);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [viewingUser, setViewingUser] = useState<User | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [adminUserIds, setAdminUserIds] = useState<string[]>([]);
 
@@ -305,9 +307,14 @@ export default function AdminUsers() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(user)}>
-                        <Edit className="h-4 w-4" />
-                      </Button>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => setViewingUser(user)}>
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => openEditDialog(user)}>
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -351,6 +358,27 @@ export default function AdminUsers() {
               {isSubmitting && <Loader2 className="h-4 w-4 ml-2 animate-spin" />}
               שמור שינויים
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* View User Dialog */}
+      <Dialog open={!!viewingUser} onOpenChange={() => setViewingUser(null)}>
+        <DialogContent dir="rtl" className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>פרטי משתמש: {viewingUser?.full_name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-4">
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div><strong>אימייל:</strong> {viewingUser?.email}</div>
+              <div><strong>גובה:</strong> {viewingUser?.height ? `${viewingUser.height} ס"מ` : '-'}</div>
+              <div><strong>משקל התחלתי:</strong> {viewingUser?.initial_weight ? `${viewingUser.initial_weight} ק"ג` : '-'}</div>
+              <div><strong>משקל נוכחי:</strong> {viewingUser?.current_weight ? `${viewingUser.current_weight} ק"ג` : '-'}</div>
+              <div><strong>תאריך התחלה:</strong> {viewingUser?.start_date ? format(new Date(viewingUser.start_date), 'dd/MM/yyyy', { locale: he }) : '-'}</div>
+              <div><strong>יום נוכחי:</strong> {calculateCurrentDay(viewingUser?.start_date || null)}</div>
+            </div>
+            
+            {viewingUser && <PhotoGallery userId={viewingUser.id} isAdmin />}
           </div>
         </DialogContent>
       </Dialog>
