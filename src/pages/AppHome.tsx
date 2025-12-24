@@ -185,19 +185,6 @@ export default function AppHome() {
       {/* Streak Card */}
       <StreakCard streak={currentStreak} isLoading={isStreakLoading} />
 
-      {/* Progress Card */}
-      <Card className="glass-card animate-slide-up" style={{ animationDelay: '0.1s' }}>
-        <CardContent className="pt-4">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium">התקדמות כללית</span>
-            <span className="text-sm text-muted-foreground">{Math.round(progressPercentage)}%</span>
-          </div>
-          <Progress value={progressPercentage} className="h-3" />
-          <p className="text-xs text-muted-foreground mt-2">
-            {168 - currentDay > 0 ? `עוד ${168 - currentDay} ימים לסיום התוכנית` : 'סיימת את התוכנית! 🎉'}
-          </p>
-        </CardContent>
-      </Card>
 
       {/* Today's Activity Task (if scheduled for today) */}
       {user && (
