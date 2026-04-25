@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">חטוב בלי תפריט</string>
+    <string name="title_activity_main">חטוב בלי תפריט</string>
+    <string name="package_name">com.hatuv.blimenu</string>
+    <string name="custom_url_scheme">com.hatuv.blimenu</string>
+</resources>
