@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from '@/hooks/use-toast';
-import { Loader2, Dumbbell } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { z } from 'zod';
 
 const loginSchema = z.object({
@@ -70,10 +70,14 @@ export default function Auth() {
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <div className="w-full max-w-md animate-fade-in">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl gradient-primary mb-4">
-            <Dumbbell className="h-8 w-8 text-primary-foreground" />
+          <div className="flex items-center justify-center mb-4">
+            <img
+              src="/logo.jpg"
+              alt="חטוב בלי תפריט"
+              className="w-20 h-20 rounded-full object-cover shadow-glow"
+            />
           </div>
-          <h1 className="text-3xl font-bold text-foreground">הטוב בלי תפריט</h1>
+          <h1 className="text-3xl font-bold text-foreground">חטוב בלי תפריט</h1>
           <p className="text-muted-foreground mt-2">התוכנית שלך לחיים בריאים</p>
         </div>
 

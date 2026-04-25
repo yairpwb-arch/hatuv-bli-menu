@@ -4,6 +4,9 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
+import { ThemeProvider } from "@/hooks/useTheme";
+import { useEffect } from "react";
+import { initNotifications } from "@/lib/notifications";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import AppHome from "./pages/AppHome";
@@ -12,11 +15,16 @@ import AppNutrition from "./pages/AppNutrition";
 import AppProfile from "./pages/AppProfile";
 import AppTracker from "./pages/AppTracker";
 import AppProgress from "./pages/AppProgress";
+import AppWorkouts from "./pages/AppWorkouts";
+import AppSettings from "./pages/AppSettings";
 import AdminLayout from "./pages/admin/AdminLayout";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminUsers from "./pages/admin/AdminUsers";
 import AdminContent from "./pages/admin/AdminContent";
 import AdminQuotes from "./pages/admin/AdminQuotes";
+import AdminHabits from "./pages/admin/AdminHabits";
+import AdminSurveys from "./pages/admin/AdminSurveys";
+import AdminExercises from "./pages/admin/AdminExercises";
 import NotFound from "./pages/NotFound";
 import { BottomNav } from "./components/BottomNav";
 import { AppHeader } from "./components/AppHeader";
@@ -25,6 +33,13 @@ const queryClient = new QueryClient();
 
 function ProtectedRoute() {
   const { user, isLoading, isAdmin } = useAuth();
+
+  // Initialize push notifications once the user is known
+  useEffect(() => {
+    if (user?.id) {
+      initNotifications(user.id);
+    }
+  }, [user?.id]);
 
   if (isLoading) {
     return (
@@ -75,6 +90,7 @@ function AuthRoute() {
 }
 
 const App = () => (
+  <ThemeProvider>
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
@@ -87,15 +103,21 @@ const App = () => (
             <Route path="/app" element={<ProtectedRoute />}>
               <Route index element={<AppHome />} />
               <Route path="content" element={<AppContent />} />
+              <Route path="nutrition" element={<AppNutrition />} />
               <Route path="tracker" element={<AppTracker />} />
               <Route path="progress" element={<AppProgress />} />
+              <Route path="workouts" element={<AppWorkouts />} />
               <Route path="profile" element={<AppProfile />} />
+              <Route path="settings" element={<AppSettings />} />
             </Route>
             <Route path="/admin" element={<AdminLayout />}>
               <Route index element={<AdminDashboard />} />
               <Route path="users" element={<AdminUsers />} />
               <Route path="content" element={<AdminContent />} />
               <Route path="quotes" element={<AdminQuotes />} />
+              <Route path="habits" element={<AdminHabits />} />
+              <Route path="surveys" element={<AdminSurveys />} />
+              <Route path="exercises" element={<AdminExercises />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>
@@ -103,6 +125,7 @@ const App = () => (
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
+  </ThemeProvider>
 );
 
 export default App;

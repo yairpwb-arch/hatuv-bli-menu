@@ -41,11 +41,12 @@ export function useStreak(userId: string | undefined, currentWeek: number): Stre
         .eq('user_id', userId)
         .gte('completed_at', startDate)
         .lte('completed_at', today),
-      supabase
+      (supabase as any)
         .from('habit_definitions')
         .select('id, name')
         .lte('week_start', currentWeek)
-        .or(`week_end.gte.${currentWeek},week_end.is.null`),
+        .or(`week_end.gte.${currentWeek},week_end.is.null`)
+        .or(`user_id.is.null,user_id.eq.${userId}`),
       supabase
         .from('user_activity_schedule')
         .select('activity_type, day_of_week')
@@ -55,9 +56,9 @@ export function useStreak(userId: string | undefined, currentWeek: number): Stre
 
     setHabitLogs(habitsResult.data || []);
     setActivityLogs(activityResult.data || []);
-    // Filter out walk/workout related habits (those are handled by activity system)
-    const staticHabits = (habitDefsResult.data || []).filter(h => 
-      !h.name.includes('הליכה') && !h.name.includes('אימון')
+    // Filter out walk/workout habits (handled by activity system) and bonus habits (optional)
+    const staticHabits = (habitDefsResult.data || []).filter(h =>
+      !h.name.includes('הליכה') && !h.name.includes('אימון') && !h.is_bonus
     );
     setHabitDefinitions(staticHabits);
     setScheduledActivities(scheduleResult.data || []);

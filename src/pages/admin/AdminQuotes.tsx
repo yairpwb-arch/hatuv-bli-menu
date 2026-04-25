@@ -14,6 +14,7 @@ interface Quote {
   id: string;
   day_number: number;
   message: string;
+  description?: string | null;
 }
 
 export default function AdminQuotes() {
@@ -22,7 +23,7 @@ export default function AdminQuotes() {
   const [isLoading, setIsLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingQuote, setEditingQuote] = useState<Quote | null>(null);
-  const [formData, setFormData] = useState({ day_number: 1, message: '' });
+  const [formData, setFormData] = useState({ day_number: 1, message: '', description: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -76,7 +77,7 @@ export default function AdminQuotes() {
 
   const openEditDialog = (quote: Quote) => {
     setEditingQuote(quote);
-    setFormData({ day_number: quote.day_number, message: quote.message });
+    setFormData({ day_number: quote.day_number, message: quote.message, description: quote.description || '' });
     setIsDialogOpen(true);
   };
 
@@ -91,7 +92,7 @@ export default function AdminQuotes() {
     if (editingQuote) {
       const { error } = await supabase
         .from('daily_quotes')
-        .update({ day_number: formData.day_number, message: formData.message })
+        .update({ day_number: formData.day_number, message: formData.message, description: formData.description || null })
         .eq('id', editingQuote.id);
 
       if (error) {
@@ -102,7 +103,11 @@ export default function AdminQuotes() {
         fetchQuotes();
       }
     } else {
-      const { error } = await supabase.from('daily_quotes').insert(formData);
+      const { error } = await supabase.from('daily_quotes').insert({
+        day_number: formData.day_number,
+        message: formData.message,
+        description: formData.description || null,
+      });
 
       if (error) {
         if (error.message.includes('duplicate')) {
@@ -178,16 +183,20 @@ export default function AdminQuotes() {
               <Table>
                 <TableHeader className="sticky top-0 bg-card">
                   <TableRow>
-                    <TableHead className="text-right w-20">יום</TableHead>
-                    <TableHead className="text-right">הודעה</TableHead>
-                    <TableHead className="text-right w-24">פעולות</TableHead>
+                    <TableHead className="text-right w-16">יום</TableHead>
+                    <TableHead className="text-right">משפט</TableHead>
+                    <TableHead className="text-right hidden md:table-cell">הסבר</TableHead>
+                    <TableHead className="text-right w-20">פעולות</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredQuotes.map((quote) => (
                     <TableRow key={quote.id}>
                       <TableCell className="font-bold text-primary">{quote.day_number}</TableCell>
-                      <TableCell className="max-w-md truncate">{quote.message}</TableCell>
+                      <TableCell className="max-w-xs truncate text-sm">{quote.message}</TableCell>
+                      <TableCell className="max-w-xs truncate text-xs text-muted-foreground hidden md:table-cell">
+                        {quote.description || <span className="text-muted-foreground/50">—</span>}
+                      </TableCell>
                       <TableCell>
                         <div className="flex gap-1">
                           <Button variant="ghost" size="icon" onClick={() => openEditDialog(quote)}>
@@ -225,12 +234,21 @@ export default function AdminQuotes() {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">הודעה</label>
+              <label className="text-sm font-medium">משפט (כולל שם המחבר)</label>
               <Textarea
                 value={formData.message}
                 onChange={(e) => setFormData({ ...formData, message: e.target.value })}
-                placeholder="הזן את הציטוט היומי..."
-                rows={4}
+                placeholder="הזן את המשפט היומי..."
+                rows={3}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">הסבר <span className="text-muted-foreground font-normal">(אופציונלי)</span></label>
+              <Textarea
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                placeholder="הזן הסבר / פרשנות לציטוט..."
+                rows={3}
               />
             </div>
             <Button onClick={handleSubmit} className="w-full" disabled={isSubmitting}>

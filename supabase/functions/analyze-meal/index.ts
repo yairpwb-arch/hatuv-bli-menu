@@ -26,7 +26,7 @@ serve(async (req) => {
     // Create Supabase client to verify the user
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
-    
+
     const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       global: {
         headers: { Authorization: authHeader },
@@ -35,7 +35,7 @@ serve(async (req) => {
 
     // Verify the user is authenticated
     const { data: { user }, error: userError } = await supabase.auth.getUser();
-    
+
     if (userError || !user) {
       console.error('User authentication failed:', userError?.message);
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
@@ -47,37 +47,43 @@ serve(async (req) => {
     console.log('Authenticated user:', user.id);
 
     const { meal } = await req.json();
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    
-    if (!LOVABLE_API_KEY) {
-      throw new Error('LOVABLE_API_KEY is not configured');
+    const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
+
+    if (!GEMINI_API_KEY) {
+      throw new Error('GEMINI_API_KEY is not configured');
     }
 
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          {
-            role: 'system',
-            content: `אתה מאמן תזונה תומך ומעודד. נתח את הארוחה על פי עקרונות אכילה בריאה.
-אל תספור קלוריות! 
+    const systemPrompt = `אתה מאמן תזונה תומך ומעודד. נתח את הארוחה על פי עקרונות אכילה בריאה.
+אל תספור קלוריות!
 התמקד באיכות המזון ובאיזון.
 אם הארוחה מאוזנת (חלבון + ירקות), שבח אותה.
 אם יש מקום לשיפור, הצע בעדינות שיפור קטן לפעם הבאה.
-ענה בעברית, בקצרה (2-3 משפטים), ובטון חיובי ומעודד.`
+ענה בעברית, בקצרה (2-3 משפטים), ובטון חיובי ומעודד.`;
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: `${systemPrompt}\n\nהארוחה שלי: ${meal}`,
+                },
+              ],
+            },
+          ],
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 200,
           },
-          {
-            role: 'user',
-            content: `הארוחה שלי: ${meal}`
-          }
-        ],
-      }),
-    });
+        }),
+      }
+    );
 
     if (!response.ok) {
       if (response.status === 429) {
@@ -85,11 +91,11 @@ serve(async (req) => {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
-      throw new Error(`AI gateway error: ${response.status}`);
+      throw new Error(`Gemini API error: ${response.status}`);
     }
 
     const data = await response.json();
-    const feedback = data.choices?.[0]?.message?.content || 'ארוחה נרשמה!';
+    const feedback = data.candidates?.[0]?.content?.parts?.[0]?.text || 'ארוחה נרשמה!';
 
     return new Response(JSON.stringify({ feedback }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

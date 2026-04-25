@@ -8,10 +8,10 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
-import { 
-  ChevronRight, ChevronLeft, Footprints, 
+import {
+  ChevronRight, ChevronLeft, Footprints,
   Target, Dumbbell, Check, Sparkles,
-  Calendar, CalendarDays
+  Calendar, CalendarDays, Lock, Star
 } from 'lucide-react';
 import { 
   format, addDays, subDays, startOfWeek, isSameDay, isToday,
@@ -21,6 +21,7 @@ import { he } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { MonthlyCalendar } from '@/components/MonthlyCalendar';
 import { useHabits, iconMap } from '@/hooks/useHabits';
+import { useStepCounter } from '@/hooks/useStepCounter';
 
 interface ScheduledActivity {
   activity_type: 'walk' | 'workout';
@@ -37,6 +38,7 @@ interface DayCompletionData {
 
 export default function AppTracker() {
   const { user, currentDay } = useAuth();
+  const { stepData, isAvailable, isNative, hasPermission, requestPermission } = useStepCounter(user?.id);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [allHabitIds, setAllHabitIds] = useState<string[]>([]);
   const [scheduledActivities, setScheduledActivities] = useState<ScheduledActivity[]>([]);
@@ -113,12 +115,13 @@ export default function AppTracker() {
           .select('id, activity_type')
           .eq('user_id', user.id)
           .eq('completed_at', dateString),
-        // Get habit definitions to store IDs for monthly view
-        supabase
+        // Get habit definitions — global + personal for this user
+        (supabase as any)
           .from('habit_definitions')
           .select('id, name')
           .lte('week_start', currentWeek)
-          .or(`week_end.gte.${currentWeek},week_end.is.null`),
+          .or(`week_end.gte.${currentWeek},week_end.is.null`)
+          .or(`user_id.is.null,user_id.eq.${user.id}`),
       ]);
 
       // Filter out walk/workout habit IDs
@@ -296,6 +299,74 @@ export default function AppTracker() {
         <h2 className="text-2xl font-bold text-foreground">מעקב יומי</h2>
         <p className="text-muted-foreground">שבוע {currentWeek} | יום {currentDay}</p>
       </div>
+
+      {/* Step Counter Card */}
+      <Card className="glass-card animate-fade-in overflow-hidden">
+        <CardContent className="pt-5 pb-4">
+          <div className="flex items-center gap-4">
+            {/* Circular progress */}
+            <div className="relative w-20 h-20 shrink-0">
+              <svg className="w-20 h-20 -rotate-90" viewBox="0 0 80 80">
+                <circle cx="40" cy="40" r="32" fill="none" stroke="hsl(var(--muted))" strokeWidth="6" />
+                <circle
+                  cx="40" cy="40" r="32" fill="none"
+                  stroke="hsl(var(--primary))"
+                  strokeWidth="6"
+                  strokeLinecap="round"
+                  strokeDasharray={`${2 * Math.PI * 32}`}
+                  strokeDashoffset={`${2 * Math.PI * 32 * (1 - (isNative && hasPermission ? stepData.percentage / 100 : 0))}`}
+                  className="transition-all duration-700"
+                />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <Footprints className="h-5 w-5 text-primary" />
+                <span className="text-xs font-bold text-primary leading-none mt-0.5">
+                  {isNative && hasPermission ? `${stepData.percentage}%` : '—'}
+                </span>
+              </div>
+            </div>
+
+            {/* Info */}
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-muted-foreground mb-0.5">צעדים היום</p>
+              <p className="text-3xl font-bold text-foreground leading-none">
+                {isNative && hasPermission
+                  ? stepData.steps.toLocaleString('he-IL')
+                  : '—'}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                יעד: {(10000).toLocaleString('he-IL')} צעדים
+              </p>
+              {stepData.distance != null && (
+                <p className="text-xs text-muted-foreground">
+                  {(stepData.distance / 1000).toFixed(2)} ק"מ
+                </p>
+              )}
+            </div>
+
+            {/* Status / CTA */}
+            <div className="shrink-0 text-left">
+              {!isNative ? (
+                <div className="flex flex-col items-center gap-1 text-muted-foreground">
+                  <Lock className="h-5 w-5" />
+                  <span className="text-[10px] text-center leading-tight">רק<br/>באפליקציה</span>
+                </div>
+              ) : !isAvailable ? (
+                <span className="text-xs text-muted-foreground text-center">לא זמין<br/>במכשיר</span>
+              ) : !hasPermission ? (
+                <Button size="sm" variant="outline" className="text-xs h-8" onClick={requestPermission}>
+                  אפשר גישה
+                </Button>
+              ) : stepData.percentage >= 100 ? (
+                <div className="flex flex-col items-center gap-1 text-success">
+                  <Check className="h-6 w-6" />
+                  <span className="text-xs font-semibold">הגעת!</span>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* View Toggle */}
       <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as 'weekly' | 'monthly')} className="w-full">
@@ -526,6 +597,12 @@ export default function AppTracker() {
                     )}>
                       {habit.name}
                     </span>
+                    {habit.is_bonus && (
+                      <span className="inline-flex items-center gap-0.5 mr-2 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 rounded-full align-middle">
+                        <Star className="h-2.5 w-2.5" />
+                        בונוס
+                      </span>
+                    )}
                   </div>
                   {habit.completed && (
                     <Check className="h-5 w-5 text-success" />

@@ -1,0 +1,414 @@
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Progress } from '@/components/ui/progress';
+import { Badge } from '@/components/ui/badge';
+import {
+  X, CheckCircle2, Timer, Dumbbell, ChevronLeft, ChevronRight, Trophy,
+  SkipForward
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
+import type { WorkoutPlanDay, WorkoutPlanExercise } from '@/hooks/useWorkoutPlan';
+
+interface Props {
+  planDay: WorkoutPlanDay;
+  exercises: WorkoutPlanExercise[];
+  onClose: () => void;
+  onFinish: (durationMinutes: number, logs: ExerciseLog[]) => void;
+}
+
+export interface ExerciseLog {
+  exerciseId: string;
+  sets: { reps: string; weightKg: string }[];
+}
+
+// ── Utility ──────────────────────────────────────────────────────────────────
+function formatTime(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+function isVideoUrl(url: string): boolean {
+  return /\.(mp4|webm|mov|avi)$/i.test(url);
+}
+
+// ── Rest Timer ────────────────────────────────────────────────────────────────
+function RestTimer({
+  seconds,
+  onDone,
+  onSkip,
+}: {
+  seconds: number;
+  onDone: () => void;
+  onSkip: () => void;
+}) {
+  const [remaining, setRemaining] = useState(seconds);
+
+  useEffect(() => {
+    if (remaining <= 0) {
+      onDone();
+      return;
+    }
+    const t = setTimeout(() => setRemaining((r) => r - 1), 1000);
+    return () => clearTimeout(t);
+  }, [remaining, onDone]);
+
+  const pct = ((seconds - remaining) / seconds) * 100;
+
+  return (
+    <div className="flex flex-col items-center gap-4 py-6">
+      <div className="relative w-32 h-32">
+        <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
+          <circle cx="50" cy="50" r="44" fill="none" stroke="hsl(var(--border))" strokeWidth="8" />
+          <circle
+            cx="50"
+            cy="50"
+            r="44"
+            fill="none"
+            stroke="hsl(var(--primary))"
+            strokeWidth="8"
+            strokeLinecap="round"
+            strokeDasharray={`${2 * Math.PI * 44}`}
+            strokeDashoffset={`${2 * Math.PI * 44 * (1 - pct / 100)}`}
+            className="transition-all duration-1000"
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <Timer className="h-5 w-5 text-primary mb-1" />
+          <span className="text-2xl font-bold tabular-nums">{formatTime(remaining)}</span>
+        </div>
+      </div>
+      <p className="text-muted-foreground font-medium">זמן מנוחה</p>
+      <Button variant="outline" size="sm" onClick={onSkip} className="gap-1.5">
+        <SkipForward className="h-4 w-4" />
+        דלג על המנוחה
+      </Button>
+    </div>
+  );
+}
+
+// ── Main Component ────────────────────────────────────────────────────────────
+export default function WorkoutActiveSession({ planDay, exercises, onClose, onFinish }: Props) {
+  const startTimeRef = useRef(Date.now());
+  const [elapsed, setElapsed] = useState(0);
+
+  // Per-exercise set logs: [exerciseIdx][setIdx] = {reps, weightKg}
+  const initLogs = (): ExerciseLog[] =>
+    exercises.map((ex) => ({
+      exerciseId: ex.exercise_id,
+      sets: Array.from({ length: ex.sets }, () => ({ reps: '', weightKg: '' })),
+    }));
+
+  const [logs, setLogs] = useState<ExerciseLog[]>(initLogs);
+  const [exerciseIdx, setExerciseIdx] = useState(0);
+  const [setIdx, setSetIdx] = useState(0);
+  const [resting, setResting] = useState(false);
+  const [finished, setFinished] = useState(false);
+
+  // Global elapsed timer
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const currentEx = exercises[exerciseIdx];
+  const totalExercises = exercises.length;
+  const progress =
+    totalExercises > 0
+      ? ((exerciseIdx + setIdx / (currentEx?.sets || 1)) / totalExercises) * 100
+      : 0;
+
+  const updateLog = (field: 'reps' | 'weightKg', value: string) => {
+    setLogs((prev) => {
+      const next = prev.map((l, i) =>
+        i === exerciseIdx
+          ? {
+              ...l,
+              sets: l.sets.map((s, j) => (j === setIdx ? { ...s, [field]: value } : s)),
+            }
+          : l
+      );
+      return next;
+    });
+  };
+
+  const handleSetDone = useCallback(() => {
+    const restSecs = currentEx?.rest_seconds ?? 60;
+    // Start rest timer
+    setResting(true);
+  }, [currentEx]);
+
+  const afterRest = useCallback(() => {
+    setResting(false);
+    const totalSets = currentEx?.sets ?? 1;
+    if (setIdx + 1 < totalSets) {
+      setSetIdx((s) => s + 1);
+    } else if (exerciseIdx + 1 < totalExercises) {
+      setExerciseIdx((e) => e + 1);
+      setSetIdx(0);
+    } else {
+      setFinished(true);
+    }
+  }, [currentEx, setIdx, exerciseIdx, totalExercises]);
+
+  const handleFinish = () => {
+    const durationMinutes = Math.max(1, Math.round(elapsed / 60));
+    onFinish(durationMinutes, logs);
+  };
+
+  // ── Finished screen ──
+  if (finished) {
+    const durationMinutes = Math.max(1, Math.round(elapsed / 60));
+    return (
+      <div className="fixed inset-0 z-50 bg-background flex flex-col items-center justify-center gap-6 px-6 text-center" dir="rtl">
+        <div className="w-24 h-24 rounded-full bg-orange-100 dark:bg-orange-950/40 flex items-center justify-center">
+          <Trophy className="h-12 w-12 text-orange-500" />
+        </div>
+        <div>
+          <h2 className="text-3xl font-bold mb-1">כל הכבוד!</h2>
+          <p className="text-muted-foreground">סיימת את האימון</p>
+        </div>
+        <div className="flex gap-6 text-center">
+          <div>
+            <p className="text-3xl font-bold text-primary">{durationMinutes}</p>
+            <p className="text-xs text-muted-foreground mt-1">דקות</p>
+          </div>
+          <div>
+            <p className="text-3xl font-bold text-primary">{totalExercises}</p>
+            <p className="text-xs text-muted-foreground mt-1">תרגילים</p>
+          </div>
+          <div>
+            <p className="text-3xl font-bold text-primary">
+              {exercises.reduce((acc, ex) => acc + ex.sets, 0)}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">סטים</p>
+          </div>
+        </div>
+        <Button size="lg" className="w-full max-w-xs" onClick={handleFinish}>
+          <CheckCircle2 className="h-5 w-5 ml-2" />
+          שמור אימון
+        </Button>
+      </div>
+    );
+  }
+
+  if (!currentEx) {
+    return (
+      <div className="fixed inset-0 z-50 bg-background flex items-center justify-center" dir="rtl">
+        <p className="text-muted-foreground">אין תרגילים לאימון זה</p>
+      </div>
+    );
+  }
+
+  const ex = currentEx.exercises;
+  const hasMedia = !!ex.media_url;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-background flex flex-col overflow-hidden" dir="rtl">
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card shrink-0">
+        <button
+          onClick={onClose}
+          className="p-2 rounded-full hover:bg-muted transition-colors"
+        >
+          <X className="h-5 w-5" />
+        </button>
+        <div className="text-center">
+          <p className="font-semibold text-sm">{planDay.name}</p>
+          <p className="text-xs text-muted-foreground">
+            תרגיל {exerciseIdx + 1} מתוך {totalExercises}
+          </p>
+        </div>
+        <div className="flex items-center gap-1 text-sm font-mono text-muted-foreground">
+          <Timer className="h-4 w-4" />
+          {formatTime(elapsed)}
+        </div>
+      </div>
+
+      {/* ── Progress Bar ── */}
+      <Progress value={progress} className="h-1 rounded-none shrink-0" />
+
+      {/* ── Content (scrollable) ── */}
+      <div className="flex-1 overflow-y-auto pb-4">
+        {resting ? (
+          <RestTimer
+            seconds={currentEx.rest_seconds ?? 60}
+            onDone={afterRest}
+            onSkip={afterRest}
+          />
+        ) : (
+          <div className="flex flex-col">
+            {/* Media */}
+            {hasMedia && (
+              <div className="w-full bg-muted max-h-52 overflow-hidden flex items-center justify-center">
+                {isVideoUrl(ex.media_url!) ? (
+                  <video
+                    src={ex.media_url!}
+                    className="w-full max-h-52 object-contain"
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                  />
+                ) : (
+                  <img
+                    src={ex.media_url!}
+                    alt={ex.name}
+                    className="w-full max-h-52 object-contain"
+                  />
+                )}
+              </div>
+            )}
+
+            {!hasMedia && (
+              <div className="w-full h-32 bg-muted flex items-center justify-center">
+                <Dumbbell className="h-12 w-12 text-muted-foreground/30" />
+              </div>
+            )}
+
+            <div className="px-4 pt-4 space-y-4">
+              {/* Exercise Info */}
+              <div>
+                <h2 className="text-xl font-bold">{ex.name}</h2>
+                <div className="flex flex-wrap gap-2 mt-1.5">
+                  {(ex.muscle_groups || []).map((g) => (
+                    <Badge key={g} variant="secondary" className="text-xs">{g}</Badge>
+                  ))}
+                  {ex.equipment && (
+                    <Badge variant="outline" className="text-xs">{ex.equipment}</Badge>
+                  )}
+                </div>
+                {ex.description && (
+                  <p className="text-muted-foreground text-sm mt-2 leading-relaxed">
+                    {ex.description}
+                  </p>
+                )}
+                {currentEx.notes && (
+                  <p className="text-primary text-sm mt-1 font-medium">
+                    💡 {currentEx.notes}
+                  </p>
+                )}
+              </div>
+
+              {/* Set info */}
+              <div className="bg-card border border-border rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold">
+                    סט {setIdx + 1} מתוך {currentEx.sets}
+                  </span>
+                  <span className="text-sm text-muted-foreground">
+                    {currentEx.reps_min}–{currentEx.reps_max} חזרות
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">משקל (ק"ג)</label>
+                    <Input
+                      type="number"
+                      inputMode="decimal"
+                      placeholder="0"
+                      value={logs[exerciseIdx]?.sets[setIdx]?.weightKg ?? ''}
+                      onChange={(e) => updateLog('weightKg', e.target.value)}
+                      className="text-center text-lg font-semibold"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">חזרות</label>
+                    <Input
+                      type="number"
+                      inputMode="numeric"
+                      placeholder="0"
+                      value={logs[exerciseIdx]?.sets[setIdx]?.reps ?? ''}
+                      onChange={(e) => updateLog('reps', e.target.value)}
+                      className="text-center text-lg font-semibold"
+                    />
+                  </div>
+                </div>
+
+                <Button className="w-full" onClick={handleSetDone}>
+                  <CheckCircle2 className="h-4 w-4 ml-2" />
+                  בצעתי סט זה
+                </Button>
+              </div>
+
+              {/* All sets overview */}
+              <div className="flex gap-2 flex-wrap">
+                {Array.from({ length: currentEx.sets }).map((_, i) => (
+                  <div
+                    key={i}
+                    className={cn(
+                      'w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium border',
+                      i < setIdx
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : i === setIdx
+                        ? 'bg-primary/20 text-primary border-primary'
+                        : 'bg-muted text-muted-foreground border-border'
+                    )}
+                  >
+                    {i + 1}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Bottom nav ── */}
+      {!resting && (
+        <div className="shrink-0 border-t border-border bg-card px-4 py-3 flex items-center justify-between gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={exerciseIdx === 0 && setIdx === 0}
+            onClick={() => {
+              if (setIdx > 0) {
+                setSetIdx((s) => s - 1);
+              } else if (exerciseIdx > 0) {
+                const prevEx = exercises[exerciseIdx - 1];
+                setExerciseIdx((e) => e - 1);
+                setSetIdx(prevEx.sets - 1);
+              }
+            }}
+          >
+            <ChevronRight className="h-4 w-4 ml-1" />
+            קודם
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              // Skip current set / exercise
+              const totalSets = currentEx.sets;
+              if (setIdx + 1 < totalSets) {
+                setSetIdx((s) => s + 1);
+              } else if (exerciseIdx + 1 < totalExercises) {
+                setExerciseIdx((e) => e + 1);
+                setSetIdx(0);
+              } else {
+                setFinished(true);
+              }
+            }}
+          >
+            <SkipForward className="h-4 w-4 ml-1" />
+            דלג
+          </Button>
+
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={() => setFinished(true)}
+          >
+            סיים אימון
+            <ChevronLeft className="h-4 w-4 mr-1" />
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}

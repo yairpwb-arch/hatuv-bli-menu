@@ -4,7 +4,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { useStreak } from '@/hooks/useStreak';
-import { Settings } from 'lucide-react';
 
 import { ProfileHeader } from '@/components/profile/ProfileHeader';
 import { StatsGrid } from '@/components/profile/StatsGrid';
@@ -22,6 +21,7 @@ interface ProfileData {
   target_weight: number | null;
   height: number | null;
   birthdate: string | null;
+  gender: string | null;
 }
 
 interface WeightEntry {
@@ -49,7 +49,7 @@ export default function AppProfile() {
     const [profileRes, weightRes, lessonsRes, progressRes] = await Promise.all([
       supabase
         .from('profiles')
-        .select('full_name, avatar_url, start_date, current_weight, initial_weight, target_weight, height, birthdate')
+        .select('full_name, avatar_url, start_date, current_weight, initial_weight, target_weight, height, birthdate, gender')
         .eq('id', user.id)
         .single(),
       supabase
@@ -100,26 +100,17 @@ export default function AppProfile() {
 
   return (
     <div className="min-h-screen pb-20 pt-4 px-4 space-y-5">
-      {/* Header with Edit Button */}
-      <div className="flex items-start justify-between">
-        <ProfileHeader
-          userId={user?.id || ''}
-          fullName={profileData?.full_name || null}
-          avatarUrl={profileData?.avatar_url || null}
-          startDate={profileData?.start_date || null}
-          currentDay={currentDay}
-          currentStreak={currentStreak}
-          onAvatarUpdate={handleAvatarUpdate}
-        />
-        <Button 
-          variant="ghost" 
-          size="icon"
-          onClick={() => setIsEditOpen(true)}
-          className="mt-2"
-        >
-          <Settings className="h-5 w-5" />
-        </Button>
-      </div>
+      {/* Header */}
+      <ProfileHeader
+        userId={user?.id || ''}
+        fullName={profileData?.full_name || null}
+        avatarUrl={profileData?.avatar_url || null}
+        startDate={profileData?.start_date || null}
+        currentDay={currentDay}
+        currentStreak={currentStreak}
+        onAvatarUpdate={handleAvatarUpdate}
+        onEdit={() => setIsEditOpen(true)}
+      />
 
       {/* Stats Grid */}
       <StatsGrid
@@ -131,6 +122,7 @@ export default function AppProfile() {
         totalStreak={currentStreak}
         lessonsCompleted={lessonsCompleted}
         totalLessons={totalLessons}
+        gender={profileData?.gender || null}
       />
 
       {/* Friday Weigh-In Card */}
@@ -161,6 +153,7 @@ export default function AppProfile() {
           height: profileData?.height || null,
           target_weight: profileData?.target_weight || null,
           birthdate: profileData?.birthdate || null,
+          gender: profileData?.gender || null,
         }}
         onUpdate={fetchData}
       />

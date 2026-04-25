@@ -1,8 +1,8 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import { 
+import {
   Scale, Ruler, Activity, Target, TrendingDown, ArrowDown, ArrowUp,
-  Flame, BookOpen
+  Flame, BookOpen, UserCircle2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -15,7 +15,14 @@ interface StatsGridProps {
   totalStreak: number;
   lessonsCompleted: number;
   totalLessons: number;
+  gender?: string | null;
 }
+
+const GENDER_LABELS: Record<string, string> = {
+  male: 'זכר',
+  female: 'נקבה',
+  other: 'אחר',
+};
 
 export function StatsGrid({
   currentWeight,
@@ -26,6 +33,7 @@ export function StatsGrid({
   totalStreak,
   lessonsCompleted,
   totalLessons,
+  gender,
 }: StatsGridProps) {
   const calculateBMI = () => {
     if (!currentWeight || !height || height === 0) return null;
@@ -120,6 +128,23 @@ export function StatsGrid({
                 <p className="text-xs text-muted-foreground">משקל יעד</p>
                 <p className="text-lg font-bold">
                   {targetWeight ? `${targetWeight} ק"ג` : '-'}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Gender */}
+        <Card className="glass-card">
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                <UserCircle2 className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">מגדר</p>
+                <p className="text-lg font-bold">
+                  {gender ? (GENDER_LABELS[gender] ?? gender) : '-'}
                 </p>
               </div>
             </div>

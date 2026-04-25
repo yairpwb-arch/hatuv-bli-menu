@@ -8,6 +8,8 @@ interface StreakCardProps {
   isLoading: boolean;
 }
 
+const MILESTONE_STREAKS = [7, 14, 21, 30];
+
 export function StreakCard({ streak, isLoading }: StreakCardProps) {
   if (isLoading) {
     return (
@@ -19,22 +21,35 @@ export function StreakCard({ streak, isLoading }: StreakCardProps) {
     );
   }
 
+  const isMilestone = MILESTONE_STREAKS.includes(streak);
+
+  const cardClassName = cn(
+    'animate-slide-up animate-bounce-in border-2 transition-all relative',
+    streak >= 30
+      ? 'gradient-gold text-white border-transparent'
+      : streak >= 7
+      ? 'gradient-premium text-white border-transparent'
+      : streak > 0
+      ? 'bg-gradient-to-br from-warning/10 to-destructive/10 border-warning/30'
+      : 'glass-card'
+  );
+
   return (
-    <Card 
-      className={cn(
-        'animate-slide-up border-2 transition-all',
-        streak > 0 
-          ? 'bg-gradient-to-br from-warning/10 to-destructive/10 border-warning/30' 
-          : 'glass-card'
-      )} 
+    <Card
+      className={cardClassName}
       style={{ animationDelay: '0.15s' }}
     >
+      {isMilestone && (
+        <span className="absolute top-2 left-2 text-lg">🎉</span>
+      )}
       <CardContent className="pt-4 pb-4">
         <div className="flex items-center gap-4">
           <div className={cn(
             'w-14 h-14 rounded-xl flex items-center justify-center',
-            streak > 0 
-              ? 'bg-gradient-to-br from-warning to-destructive' 
+            streak >= 7
+              ? 'bg-white/20'
+              : streak > 0
+              ? 'bg-gradient-to-br from-warning to-destructive'
               : 'bg-muted'
           )}>
             <Flame className={cn(
@@ -46,15 +61,27 @@ export function StreakCard({ streak, isLoading }: StreakCardProps) {
             <div className="flex items-baseline gap-2">
               <span className={cn(
                 'text-3xl font-bold',
-                streak > 0 ? 'text-warning' : 'text-muted-foreground'
+                streak >= 7
+                  ? 'text-white'
+                  : streak > 0
+                  ? 'text-warning'
+                  : 'text-muted-foreground'
               )}>
                 {streak}
               </span>
-              <span className="text-sm text-muted-foreground">
+              <span className={cn(
+                'text-sm',
+                streak >= 7 ? 'text-white/80' : 'text-muted-foreground'
+              )}>
                 {streak === 1 ? 'יום' : 'ימים'}
               </span>
             </div>
-            <p className="text-sm font-medium text-foreground">רצף התמדה 🔥</p>
+            <p className={cn(
+              'text-sm font-medium',
+              streak >= 7 ? 'text-white' : 'text-foreground'
+            )}>
+              רצף התמדה 🔥
+            </p>
           </div>
           {streak >= 7 && (
             <div className="text-2xl">🏆</div>

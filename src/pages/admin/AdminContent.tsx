@@ -13,7 +13,21 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
-import { Plus, Edit, Trash2, Star, Loader2, Upload, Link, CheckCircle2 } from 'lucide-react';
+import { Plus, Edit, Trash2, Loader2, Upload, Link, CheckCircle2, Video, BookOpen, FileText } from 'lucide-react';
+
+type ContentType = 'video' | 'content' | 'guide';
+
+const CONTENT_TYPE_LABELS: Record<ContentType, string> = {
+  video: 'סרטון',
+  content: 'תוכן',
+  guide: 'מדריך',
+};
+
+const CONTENT_TYPE_ICONS: Record<ContentType, typeof Video> = {
+  video: Video,
+  content: FileText,
+  guide: BookOpen,
+};
 
 interface Content {
   id: string;
@@ -25,6 +39,7 @@ interface Content {
   video_url: string | null;
   resource_link: string | null;
   is_bonus: boolean;
+  content_type: ContentType;
   sort_order: number;
 }
 
@@ -37,6 +52,7 @@ const emptyContent: Omit<Content, 'id'> = {
   video_url: '',
   resource_link: '',
   is_bonus: false,
+  content_type: 'video',
   sort_order: 0,
 };
 
@@ -93,6 +109,7 @@ export default function AdminContent() {
       video_url: item.video_url || '',
       resource_link: item.resource_link || '',
       is_bonus: item.is_bonus,
+      content_type: (item.content_type as ContentType) || 'video',
       sort_order: item.sort_order,
     });
     setVideoInputMode(item.video_url?.includes('supabase') ? 'upload' : 'url');
@@ -173,6 +190,23 @@ export default function AdminContent() {
     }
   };
 
+  // Shift all items with sort_order >= targetOrder up by 1 (excluding the item being edited)
+  const shiftSortOrders = async (targetOrder: number, excludeId?: string) => {
+    const conflicts = content.filter(
+      (c) => c.sort_order >= targetOrder && c.id !== excludeId
+    );
+    if (conflicts.length === 0) return;
+
+    await Promise.all(
+      conflicts.map((c) =>
+        supabase
+          .from('program_content')
+          .update({ sort_order: c.sort_order + 1 })
+          .eq('id', c.id)
+      )
+    );
+  };
+
   const handleSubmit = async () => {
     if (!formData.title || !formData.week_range) {
       toast({ title: 'שגיאה', description: 'אנא מלא את כל השדות הנדרשים', variant: 'destructive' });
@@ -180,6 +214,14 @@ export default function AdminContent() {
     }
 
     setIsSubmitting(true);
+
+    // Check if this sort_order is already taken by another item
+    const taken = content.some(
+      (c) => c.sort_order === formData.sort_order && c.id !== editingContent?.id
+    );
+    if (taken) {
+      await shiftSortOrders(formData.sort_order, editingContent?.id);
+    }
 
     if (editingContent) {
       const { error } = await supabase
@@ -272,14 +314,23 @@ export default function AdminContent() {
                     <TableCell className="font-medium">{item.title}</TableCell>
                     <TableCell>{item.unlock_day}</TableCell>
                     <TableCell>
-                      {item.is_bonus ? (
-                        <Badge variant="secondary">
-                          <Star className="h-3 w-3 ml-1" />
-                          בונוס
-                        </Badge>
-                      ) : (
-                        <Badge>רגיל</Badge>
-                      )}
+                      <div className="flex items-center gap-1 flex-wrap">
+                        {(() => {
+                          const ct = (item.content_type as ContentType) || 'video';
+                          const Icon = CONTENT_TYPE_ICONS[ct];
+                          return (
+                            <Badge variant="outline" className="gap-1">
+                              <Icon className="h-3 w-3" />
+                              {CONTENT_TYPE_LABELS[ct]}
+                            </Badge>
+                          );
+                        })()}
+                        {item.is_bonus && item.content_type === 'video' && (
+                          <Badge variant="secondary" className="text-warning border-warning/40 bg-warning/10 text-xs">
+                            בונוס
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1">
@@ -509,20 +560,60 @@ export default function AdminContent() {
               />
             </div>
 
-            {/* Bonus Checkbox */}
-            <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-              <input
-                type="checkbox"
-                id="isBonus"
-                checked={formData.is_bonus}
-                onChange={(e) => setFormData({ ...formData, is_bonus: e.target.checked })}
-                className="h-5 w-5 rounded"
-              />
-              <Label htmlFor="isBonus" className="text-sm font-medium cursor-pointer">
-                תוכן בונוס
-                <span className="text-xs text-muted-foreground block">יוצג עם תגית בונוס מיוחדת</span>
-              </Label>
+            {/* Content Type */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">סוג תוכן</Label>
+              <Select
+                value={formData.content_type}
+                onValueChange={(v) => setFormData({
+                  ...formData,
+                  content_type: v as ContentType,
+                  // reset bonus if switching away from video
+                  is_bonus: v === 'video' ? formData.is_bonus : false,
+                })}
+              >
+                <SelectTrigger className="h-10">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="video">
+                    <div className="flex items-center gap-2">
+                      <Video className="h-4 w-4" />
+                      סרטון
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="content">
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-4 w-4" />
+                      תוכן
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="guide">
+                    <div className="flex items-center gap-2">
+                      <BookOpen className="h-4 w-4" />
+                      מדריך
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
             </div>
+
+            {/* Bonus — only for videos */}
+            {formData.content_type === 'video' && (
+              <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
+                <input
+                  type="checkbox"
+                  id="isBonus"
+                  checked={formData.is_bonus}
+                  onChange={(e) => setFormData({ ...formData, is_bonus: e.target.checked })}
+                  className="h-5 w-5 rounded"
+                />
+                <Label htmlFor="isBonus" className="text-sm font-medium cursor-pointer">
+                  סרטון בונוס
+                  <span className="text-xs text-muted-foreground block">יוצג עם תגית בונוס מיוחדת</span>
+                </Label>
+              </div>
+            )}
 
             {/* Submit Button */}
             <Button onClick={handleSubmit} className="w-full gradient-primary h-11 mt-2" disabled={isSubmitting || isUploading}>

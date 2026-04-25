@@ -1,0 +1,84 @@
+import { useState, useEffect, useCallback } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
+import { format, subDays } from 'date-fns';
+import { toast } from 'sonner';
+
+export interface StepLog {
+  id: string;
+  user_id: string;
+  date: string;
+  step_count: number;
+}
+
+interface UseStepLogsResult {
+  logs: StepLog[];
+  todaySteps: number;
+  updateSteps: (date: string, stepCount: number) => Promise<void>;
+  isLoading: boolean;
+}
+
+export function useStepLogs(): UseStepLogsResult {
+  const { user } = useAuth();
+  const [logs, setLogs] = useState<StepLog[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const today = format(new Date(), 'yyyy-MM-dd');
+
+  const sevenDaysAgo = format(subDays(new Date(), 6), 'yyyy-MM-dd');
+
+  const fetchLogs = useCallback(async () => {
+    if (!user) {
+      setIsLoading(false);
+      return;
+    }
+
+    setIsLoading(true);
+
+    const { data, error } = await supabase
+      .from('step_logs')
+      .select('*')
+      .eq('user_id', user.id)
+      .gte('date', sevenDaysAgo)
+      .lte('date', today)
+      .order('date', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching step logs:', error);
+      setIsLoading(false);
+      return;
+    }
+
+    setLogs((data as StepLog[]) || []);
+    setIsLoading(false);
+  }, [user, today, sevenDaysAgo]);
+
+  useEffect(() => {
+    fetchLogs();
+  }, [fetchLogs]);
+
+  const updateSteps = async (date: string, stepCount: number) => {
+    if (!user) return;
+
+    const { error } = await supabase
+      .from('step_logs')
+      .upsert(
+        { user_id: user.id, date, step_count: stepCount },
+        { onConflict: 'user_id,date' }
+      );
+
+    if (error) {
+      console.error('Error updating step logs:', error);
+      toast.error('שגיאה בעדכון הצעדים');
+      return;
+    }
+
+    toast.success('הצעדים עודכנו בהצלחה');
+    await fetchLogs();
+  };
+
+  const todayLog = logs.find((log) => log.date === today);
+  const todaySteps = todayLog?.step_count ?? 0;
+
+  return { logs, todaySteps, updateSteps, isLoading };
+}

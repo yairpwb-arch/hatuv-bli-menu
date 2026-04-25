@@ -1,25 +1,24 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Calendar } from '@/components/ui/calendar';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { 
+import {
   Scale, TrendingDown, ArrowDown, ArrowUp, Plus, Calendar as CalendarIcon,
-  Footprints, Dumbbell, Sparkles, ExternalLink, BookOpen, AlertCircle
+  Footprints, Dumbbell, Sparkles, ExternalLink, BookOpen, AlertCircle, BarChart2
 } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, subDays } from 'date-fns';
 import { he } from 'date-fns/locale';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
+import { useStepLogs } from '@/hooks/useStepLogs';
 
 interface WeightEntry {
   id: string;
@@ -45,6 +44,10 @@ interface ScheduledActivity {
   day_of_week: number;
 }
 
+const STEP_GOAL = 10000;
+const CIRCLE_RADIUS = 40;
+const CIRCLE_CIRCUMFERENCE = 2 * Math.PI * CIRCLE_RADIUS; // ~251.3
+
 export default function AppProgress() {
   const { user, currentDay } = useAuth();
   const navigate = useNavigate();
@@ -54,17 +57,82 @@ export default function AppProgress() {
   const [todayActivity, setTodayActivity] = useState<ScheduledActivity | null>(null);
   const [activityCompleted, setActivityCompleted] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  
+
   // Weight modal state
   const [isWeightModalOpen, setIsWeightModalOpen] = useState(false);
   const [newWeight, setNewWeight] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Steps state
+  const { logs: stepLogs, todaySteps, isLoading: stepsLoading } = useStepLogs();
+
+  // Step averages (from steps_log — auto-counted by pedometer)
+  const [stepAverages, setStepAverages] = useState<{
+    weekly: number | null;
+    monthly: number | null;
+    fromStart: number | null;
+  }>({ weekly: null, monthly: null, fromStart: null });
 
   const currentWeek = Math.ceil(currentDay / 7);
   const today = new Date();
   const todayDayOfWeek = today.getDay();
   const isFriday = todayDayOfWeek === 5;
   const dateString = format(today, 'yyyy-MM-dd');
+
+  // Build last-7-days scaffold for bar chart (fills missing days with 0)
+  const last7Days = Array.from({ length: 7 }, (_, i) => {
+    const d = subDays(today, 6 - i);
+    const dateKey = format(d, 'yyyy-MM-dd');
+    const label = format(d, 'd/M');
+    const found = stepLogs.find((log) => log.date === dateKey);
+    return { date: label, steps: found?.step_count ?? 0 };
+  });
+
+  const stepProgress = Math.min((todaySteps / STEP_GOAL) * CIRCLE_CIRCUMFERENCE, CIRCLE_CIRCUMFERENCE);
+  const strokeDashoffset = CIRCLE_CIRCUMFERENCE - stepProgress;
+
+  const fetchStepAverages = useCallback(async () => {
+    if (!user) return;
+    const now = new Date();
+    const sevenDaysAgo = format(subDays(now, 6), 'yyyy-MM-dd');
+    const thirtyDaysAgo = format(subDays(now, 29), 'yyyy-MM-dd');
+
+    const [weeklyRes, monthlyRes] = await Promise.all([
+      (supabase as any).from('steps_log').select('steps').eq('user_id', user.id).gte('date', sevenDaysAgo),
+      (supabase as any).from('steps_log').select('steps').eq('user_id', user.id).gte('date', thirtyDaysAgo),
+    ]);
+
+    const avg = (rows: { steps: number }[] | null) => {
+      if (!rows || rows.length === 0) return null;
+      return Math.round(rows.reduce((s: number, r: { steps: number }) => s + r.steps, 0) / rows.length);
+    };
+
+    // fromStart requires start_date — defer to profileData effect
+    setStepAverages(prev => ({
+      ...prev,
+      weekly: avg(weeklyRes.data),
+      monthly: avg(monthlyRes.data),
+    }));
+  }, [user]);
+
+  // Fetch from-start average once profileData is known
+  useEffect(() => {
+    if (!user || !profileData?.start_date) return;
+    (supabase as any)
+      .from('steps_log')
+      .select('steps')
+      .eq('user_id', user.id)
+      .gte('date', profileData.start_date)
+      .then(({ data }: { data: { steps: number }[] | null }) => {
+        if (!data || data.length === 0) return;
+        const avg = Math.round(data.reduce((s, r) => s + r.steps, 0) / data.length);
+        setStepAverages(prev => ({ ...prev, fromStart: avg }));
+      });
+  }, [user, profileData?.start_date]);
+
+  useEffect(() => {
+    fetchStepAverages();
+  }, [fetchStepAverages]);
 
   const fetchData = async () => {
     if (!user) return;
@@ -81,11 +149,12 @@ export default function AppProgress() {
         .select('id, recorded_at, weight')
         .eq('user_id', user.id)
         .order('recorded_at', { ascending: true }),
-      supabase
+      (supabase as any)
         .from('habit_definitions')
         .select('id, name')
         .lte('week_start', currentWeek)
-        .or(`week_end.gte.${currentWeek},week_end.is.null`),
+        .or(`week_end.gte.${currentWeek},week_end.is.null`)
+        .or(`user_id.is.null,user_id.eq.${user.id}`),
       supabase
         .from('daily_habits_log')
         .select('habit_id')
@@ -143,7 +212,7 @@ export default function AppProgress() {
 
   const handleAddWeight = async () => {
     if (!user || !newWeight) return;
-    
+
     const weightValue = parseFloat(newWeight);
     if (isNaN(weightValue) || weightValue <= 0) {
       toast.error('נא להזין משקל תקין');
@@ -151,7 +220,7 @@ export default function AppProgress() {
     }
 
     setIsSubmitting(true);
-    
+
     try {
       const { error: logError } = await supabase
         .from('weight_log')
@@ -229,8 +298,8 @@ export default function AppProgress() {
                     אל תשכח לסמן ביומן המעקב
                   </p>
                 </div>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   size="sm"
                   onClick={() => navigate('/app/tracker')}
                   className="border-warning text-warning hover:bg-warning/10"
@@ -258,8 +327,8 @@ export default function AppProgress() {
               </span>
             </div>
             <div className="relative">
-              <Progress 
-                value={habitCompletionPercentage} 
+              <Progress
+                value={habitCompletionPercentage}
                 className={cn('h-3', habitCompletionPercentage === 100 && '[&>div]:bg-success')}
               />
             </div>
@@ -273,6 +342,129 @@ export default function AppProgress() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Steps Section */}
+      <Card className="shadow-md">
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Footprints className="h-5 w-5 text-primary" />
+            ספירת צעדים
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Circular progress + number display */}
+          <div className="flex flex-col items-center gap-2">
+            <div className="relative w-28 h-28">
+              <svg
+                className="w-full h-full -rotate-90"
+                viewBox="0 0 100 100"
+                aria-label={`${todaySteps} מתוך ${STEP_GOAL.toLocaleString()} צעדים`}
+              >
+                {/* Track circle */}
+                <circle
+                  cx="50"
+                  cy="50"
+                  r={CIRCLE_RADIUS}
+                  fill="none"
+                  stroke="hsl(var(--muted))"
+                  strokeWidth="10"
+                />
+                {/* Progress circle */}
+                <circle
+                  cx="50"
+                  cy="50"
+                  r={CIRCLE_RADIUS}
+                  fill="none"
+                  stroke="hsl(var(--primary))"
+                  strokeWidth="10"
+                  strokeLinecap="round"
+                  strokeDasharray={CIRCLE_CIRCUMFERENCE}
+                  strokeDashoffset={strokeDashoffset}
+                  style={{ transition: 'stroke-dashoffset 0.5s ease' }}
+                />
+              </svg>
+              {/* Center text */}
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span className="text-lg font-bold leading-none">
+                  {Math.round((todaySteps / STEP_GOAL) * 100)}%
+                </span>
+              </div>
+            </div>
+            <p className="text-sm text-muted-foreground" dir="rtl">
+              <span className="font-bold text-foreground">{todaySteps.toLocaleString()}</span>
+              {' / '}
+              {STEP_GOAL.toLocaleString()} צעדים
+            </p>
+          </div>
+
+          {/* Bar chart – last 7 days */}
+          <div>
+            <p className="text-xs text-muted-foreground mb-2 text-right">7 הימים האחרונים</p>
+            {stepsLoading ? (
+              <Skeleton className="h-28 w-full" />
+            ) : (
+              <div className="h-28">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={last7Days} margin={{ top: 4, right: 4, left: 4, bottom: 4 }}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
+                    <XAxis
+                      dataKey="date"
+                      tick={{ fontSize: 10 }}
+                      className="fill-muted-foreground"
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis hide />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: 'hsl(var(--card))',
+                        border: '1px solid hsl(var(--border))',
+                        borderRadius: '8px',
+                        direction: 'rtl',
+                        fontSize: 12,
+                      }}
+                      formatter={(value: number) => [value.toLocaleString(), 'צעדים']}
+                      cursor={{ fill: 'hsl(var(--muted))' }}
+                    />
+                    <Bar
+                      dataKey="steps"
+                      fill="hsl(var(--primary))"
+                      radius={[4, 4, 0, 0]}
+                      maxBarSize={32}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+
+          {/* Step Averages */}
+          <div>
+            <p className="text-xs text-muted-foreground mb-2 text-right flex items-center justify-end gap-1">
+              <BarChart2 className="h-3 w-3" />
+              ממוצעי צעדים
+            </p>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { label: 'שבוע', value: stepAverages.weekly },
+                { label: '30 יום', value: stepAverages.monthly },
+                { label: 'מתחילת תהליך', value: stepAverages.fromStart },
+              ].map(({ label, value }) => (
+                <div
+                  key={label}
+                  className="rounded-xl bg-muted/40 border border-border/40 p-2 text-center"
+                >
+                  <p className="text-[10px] text-muted-foreground mb-1">{label}</p>
+                  <p className="text-sm font-bold text-primary leading-none">
+                    {value != null ? value.toLocaleString() : '—'}
+                  </p>
+                  <p className="text-[9px] text-muted-foreground mt-0.5">צעד/יום</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Weight Tracking Section */}
       <div className="space-y-4">
@@ -332,7 +524,7 @@ export default function AppProgress() {
                 )}
                 <p className={cn(
                   'text-xl font-bold',
-                  weightDifference && Number(weightDifference) < 0 ? 'text-success' : 
+                  weightDifference && Number(weightDifference) < 0 ? 'text-success' :
                   weightDifference && Number(weightDifference) > 0 ? 'text-destructive' : ''
                 )}>
                   {weightDifference || '-'}
@@ -428,8 +620,8 @@ export default function AppProgress() {
                 className="text-lg h-12"
               />
             </div>
-            <Button 
-              onClick={handleAddWeight} 
+            <Button
+              onClick={handleAddWeight}
               className="w-full gradient-primary"
               disabled={isSubmitting || !newWeight}
             >

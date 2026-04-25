@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
-import { Quote, Scale, Sparkles, Target } from 'lucide-react';
+import { Footprints, Quote, Scale, Sparkles, Star, Target } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { ActivityScheduler } from '@/components/ActivityScheduler';
@@ -23,15 +23,18 @@ import { format } from 'date-fns';
 interface DailyQuote {
   day_number: number;
   message: string;
+  description?: string | null;
 }
 
 export default function AppHome() {
   const { profile, currentDay, user, refreshProfile } = useAuth();
   const [quote, setQuote] = useState<DailyQuote | null>(null);
   const [isLoadingQuote, setIsLoadingQuote] = useState(true);
+  const [quoteTab, setQuoteTab] = useState<'quote' | 'explain'>('quote');
   const [weight, setWeight] = useState('');
   const [isWeightDialogOpen, setIsWeightDialogOpen] = useState(false);
   const [showConfetti, setShowConfetti] = useState<string | null>(null);
+  const [todaySteps, setTodaySteps] = useState<number | null>(null);
 
   const isWeighInDay = currentDay % 7 === 0;
   const currentWeek = Math.ceil(currentDay / 7);
@@ -52,35 +55,20 @@ export default function AppHome() {
     return 'לילה טוב';
   };
 
-  // Parse quote message to separate the main quote from the explanation
-  const parseQuoteMessage = (message: string): { quote: string; explanation: string } => {
-    // Remove "המשפט היומי:" prefix if exists
-    let cleanMessage = message.replace(/^המשפט היומי:\s*/i, '').trim();
-    
-    // Try to find quoted text (between " " or « » or " ")
-    const quotedMatch = cleanMessage.match(/["״«"]([^"״»"]+)["״»"]/);
-    
-    if (quotedMatch) {
-      const mainQuote = quotedMatch[1].trim();
-      // Get everything after the quoted text as explanation
-      const afterQuote = cleanMessage.substring(cleanMessage.indexOf(quotedMatch[0]) + quotedMatch[0].length).trim();
-      // Remove leading dash or period
-      const explanation = afterQuote.replace(/^[-–—.]\s*/, '').trim();
-      return { quote: mainQuote, explanation };
-    }
-    
-    // If no quotes found, try to split by first period or dash
-    const splitMatch = cleanMessage.match(/^([^.–—]+[.])(.+)$/);
-    if (splitMatch) {
-      return { 
-        quote: splitMatch[1].trim(), 
-        explanation: splitMatch[2].trim() 
-      };
-    }
-    
-    // Fallback: return full message as quote
-    return { quote: cleanMessage, explanation: '' };
-  };
+
+  useEffect(() => {
+    const fetchSteps = async () => {
+      if (!user) return;
+      const { data } = await supabase
+        .from('steps_log')
+        .select('steps')
+        .eq('user_id', user.id)
+        .eq('date', today)
+        .maybeSingle();
+      if (data) setTodaySteps(data.steps);
+    };
+    fetchSteps();
+  }, [user, today]);
 
   useEffect(() => {
     const fetchQuote = async () => {
@@ -185,6 +173,39 @@ export default function AppHome() {
       {/* Streak Card */}
       <StreakCard streak={currentStreak} isLoading={isStreakLoading} />
 
+      {/* Daily Steps */}
+      {todaySteps !== null && todaySteps > 0 && (
+        <Card className="glass-card animate-slide-up" style={{ animationDelay: '0.15s' }}>
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl gradient-primary flex items-center justify-center flex-shrink-0">
+                <Footprints className="h-6 w-6 text-primary-foreground" />
+              </div>
+              <div className="flex-1">
+                <p className="text-xs text-muted-foreground font-medium">צעדים היום</p>
+                <p className="text-2xl font-bold text-foreground">
+                  {todaySteps.toLocaleString('he-IL')}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-muted-foreground">יעד</p>
+                <p className="text-sm font-semibold text-primary">10,000</p>
+              </div>
+            </div>
+            <div className="mt-3">
+              <div className="h-2 bg-muted rounded-full overflow-hidden">
+                <div
+                  className="h-full gradient-primary rounded-full transition-all"
+                  style={{ width: `${Math.min((todaySteps / 10000) * 100, 100)}%` }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground mt-1 text-left ltr:text-right">
+                {Math.round((todaySteps / 10000) * 100)}% מהיעד
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Today's Activity Task (if scheduled for today) */}
       {user && (
@@ -202,39 +223,60 @@ export default function AppHome() {
 
       {/* Daily Quote */}
       <Card className="gradient-primary text-primary-foreground animate-slide-up overflow-hidden" style={{ animationDelay: '0.2s' }}>
-        <CardContent className="pt-6 pb-5">
+        <CardContent className="pt-4 pb-5">
           {isLoadingQuote ? (
             <div className="space-y-3">
               <Skeleton className="h-8 w-full bg-primary-foreground/20" />
               <Skeleton className="h-16 w-full bg-primary-foreground/20" />
             </div>
           ) : (
-            (() => {
-              const parsed = parseQuoteMessage(quote?.message || 'כל יום הוא הזדמנות חדשה לשינוי');
-              return (
-                <div className="space-y-4">
-                  {/* Main Quote */}
-                  <div className="flex items-start gap-3">
-                    <Quote className="h-7 w-7 flex-shrink-0 opacity-80 mt-1" />
-                    <p className="text-xl font-bold leading-relaxed">
-                      {parsed.quote}
-                    </p>
-                  </div>
-                  
-                  {/* Explanation */}
-                  {parsed.explanation && (
-                    <div className="border-t border-primary-foreground/20 pt-4 mt-3">
-                      <div className="flex items-start gap-2">
-                        <span className="text-primary-foreground/60 mt-1">◆</span>
-                        <p className="text-sm leading-relaxed opacity-90">
-                          {parsed.explanation}
-                        </p>
-                      </div>
-                    </div>
-                  )}
+            <div className="space-y-4">
+              {/* Tab pills */}
+              {quote?.description && (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setQuoteTab('quote')}
+                    className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
+                      quoteTab === 'quote'
+                        ? 'bg-primary-foreground text-primary'
+                        : 'bg-primary-foreground/20 text-primary-foreground/80 hover:bg-primary-foreground/30'
+                    }`}
+                  >
+                    📌 המשפט
+                  </button>
+                  <button
+                    onClick={() => setQuoteTab('explain')}
+                    className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
+                      quoteTab === 'explain'
+                        ? 'bg-primary-foreground text-primary'
+                        : 'bg-primary-foreground/20 text-primary-foreground/80 hover:bg-primary-foreground/30'
+                    }`}
+                  >
+                    💡 הסבר
+                  </button>
                 </div>
-              );
-            })()
+              )}
+
+              {/* Quote tab */}
+              {quoteTab === 'quote' && (
+                <div className="flex items-start gap-3">
+                  <Quote className="h-7 w-7 flex-shrink-0 opacity-80 mt-1" />
+                  <p className="text-xl font-bold leading-relaxed">
+                    {quote?.message || 'כל יום הוא הזדמנות חדשה לשינוי'}
+                  </p>
+                </div>
+              )}
+
+              {/* Explanation tab */}
+              {quoteTab === 'explain' && quote?.description && (
+                <div className="flex items-start gap-3">
+                  <span className="text-2xl flex-shrink-0 mt-0.5">🔹</span>
+                  <p className="text-sm leading-relaxed opacity-95">
+                    {quote.description}
+                  </p>
+                </div>
+              )}
+            </div>
           )}
         </CardContent>
       </Card>
@@ -287,6 +329,12 @@ export default function AppHome() {
                     habit.completed && 'text-success'
                   )}>
                     {habit.name}
+                    {habit.is_bonus && (
+                      <span className="inline-flex items-center gap-0.5 mr-2 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 rounded-full align-middle">
+                        <Star className="h-2.5 w-2.5" />
+                        בונוס
+                      </span>
+                    )}
                   </span>
                   {habit.completed && (
                     <span className="text-success text-sm">✓</span>

@@ -7,6 +7,7 @@ export interface Habit {
   name: string;
   icon: string;
   completed: boolean;
+  is_bonus: boolean;
 }
 
 export const iconMap: Record<string, typeof Droplets> = {
@@ -42,12 +43,13 @@ export function useHabits(
     
     setIsLoading(true);
 
-    // Get habit definitions for current week (cumulative - all habits from week_start <= currentWeek)
+    // Get habit definitions for current week — global (user_id IS NULL) + personal for this user
     const { data: habitDefs, error: habitsError } = await supabase
       .from('habit_definitions')
       .select('*')
       .lte('week_start', currentWeek)
-      .or(`week_end.gte.${currentWeek},week_end.is.null`);
+      .or(`week_end.gte.${currentWeek},week_end.is.null`)
+      .or(`user_id.is.null,user_id.eq.${userId}`);
 
     if (habitsError) {
       console.error('Error fetching habits:', habitsError);
@@ -75,6 +77,7 @@ export function useHabits(
       name: h.name,
       icon: h.icon || 'target',
       completed: completedIds.has(h.id),
+      is_bonus: h.is_bonus || false,
     }));
 
     setHabits(habitsWithStatus);

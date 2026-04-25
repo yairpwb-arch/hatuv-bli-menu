@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
-import { Dumbbell, ArrowLeft, Sparkles, Target, Apple } from 'lucide-react';
+import { ArrowLeft, Sparkles, Target, Apple } from 'lucide-react';
 
 export default function Index() {
   const navigate = useNavigate();
@@ -10,12 +10,16 @@ export default function Index() {
       {/* Hero Section */}
       <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 text-center">
         <div className="animate-slide-up">
-          <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl gradient-primary mb-6 shadow-glow">
-            <Dumbbell className="h-10 w-10 text-primary-foreground" />
+          <div className="flex items-center justify-center mb-6">
+            <img
+              src="/logo.jpg"
+              alt="חטוב בלי תפריט"
+              className="w-28 h-28 rounded-full object-cover shadow-glow"
+            />
           </div>
-          
+
           <h1 className="text-4xl font-bold text-foreground mb-3">
-            הטוב בלי תפריט
+            חטוב בלי תפריט
           </h1>
           <p className="text-xl text-muted-foreground mb-8 max-w-sm">
             התוכנית שתשנה את חייך ב-168 ימים
@@ -56,7 +60,7 @@ export default function Index() {
 
       {/* Footer */}
       <footer className="py-6 text-center text-sm text-muted-foreground">
-        © 2024 הטוב בלי תפריט
+        © 2025 חטוב בלי תפריט
       </footer>
     </div>
   );

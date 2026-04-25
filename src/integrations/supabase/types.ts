@@ -139,21 +139,27 @@ export type Database = {
         Row: {
           icon: string | null
           id: string
+          is_bonus: boolean
           name: string
+          user_id: string | null
           week_end: number | null
           week_start: number
         }
         Insert: {
           icon?: string | null
           id?: string
+          is_bonus?: boolean
           name: string
+          user_id?: string | null
           week_end?: number | null
           week_start: number
         }
         Update: {
           icon?: string | null
           id?: string
+          is_bonus?: boolean
           name?: string
+          user_id?: string | null
           week_end?: number | null
           week_start?: number
         }
@@ -239,6 +245,7 @@ export type Database = {
       }
       program_content: {
         Row: {
+          content_type: string
           created_at: string | null
           description: string | null
           id: string
@@ -252,6 +259,7 @@ export type Database = {
           week_range: string
         }
         Insert: {
+          content_type?: string
           created_at?: string | null
           description?: string | null
           id?: string
@@ -265,6 +273,7 @@ export type Database = {
           week_range: string
         }
         Update: {
+          content_type?: string
           created_at?: string | null
           description?: string | null
           id?: string

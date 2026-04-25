@@ -68,6 +68,7 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
+        gold: 'hsl(var(--color-gold))',
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -105,6 +106,11 @@ export default {
           "0%, 100%": { opacity: "1" },
           "50%": { opacity: "0.7" },
         },
+        "bounce-in": {
+          "0%": { transform: "scale(0.8)", opacity: "0" },
+          "70%": { transform: "scale(1.05)" },
+          "100%": { transform: "scale(1)", opacity: "1" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -113,6 +119,7 @@ export default {
         "slide-up": "slide-up 0.5s ease-out forwards",
         "scale-in": "scale-in 0.3s ease-out forwards",
         "pulse-soft": "pulse-soft 2s ease-in-out infinite",
+        "bounce-in": "bounce-in 0.4s ease-out forwards",
       },
     },
   },

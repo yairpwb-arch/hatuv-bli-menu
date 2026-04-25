@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import WeeklySurveyModal from '@/components/WeeklySurveyModal';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -38,6 +39,7 @@ const PART_NAMES: Record<number, { title: string; subtitle: string }> = {
 
 export default function AppContent() {
   const { currentDay, user } = useAuth();
+  const currentWeek = Math.ceil(currentDay / 7);
   const [allContent, setAllContent] = useState<ContentItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedContent, setSelectedContent] = useState<ContentItem | null>(null);
@@ -45,6 +47,7 @@ export default function AppContent() {
   const [expandedParts, setExpandedParts] = useState<Set<number>>(new Set([1]));
   const [weeklySurveyLink, setWeeklySurveyLink] = useState('');
   const [snacksBookLink, setSnacksBookLink] = useState('');
+  const [surveyOpen, setSurveyOpen] = useState(false);
 
   useEffect(() => {
     const fetchContent = async () => {
@@ -98,8 +101,8 @@ export default function AppContent() {
 
   // Filter content by type
   const filteredContent = allContent.filter((item) => {
-    if (activeTab === 'videos') return item.video_url;
-    if (activeTab === 'guides') return !item.video_url;
+    if (activeTab === 'videos') return !!item.video_url;
+    if (activeTab === 'guides') return !!item.resource_link && !item.video_url;
     return true;
   });
 
@@ -190,14 +193,7 @@ export default function AppContent() {
   };
 
   const handleWeeklySurveyClick = () => {
-    if (weeklySurveyLink) {
-      window.open(weeklySurveyLink, '_blank');
-    } else {
-      toast({
-        title: 'שאלון מעקב שבועי',
-        description: 'הקישור לשאלון לא הוגדר עדיין',
-      });
-    }
+    setSurveyOpen(true);
   };
 
   const handleSnacksBookClick = () => {
@@ -471,30 +467,29 @@ export default function AppContent() {
         </Button>
       </div>
 
+      {/* Weekly Survey Modal */}
+      <WeeklySurveyModal
+        open={surveyOpen}
+        onClose={() => setSurveyOpen(false)}
+        currentWeek={currentWeek}
+      />
+
       {/* Content Detail Dialog */}
       <Dialog open={!!selectedContent} onOpenChange={() => setSelectedContent(null)}>
-        <DialogContent dir="rtl" className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent
+          dir="rtl"
+          className={cn(
+            'max-h-[92vh] overflow-y-auto',
+            selectedContent?.video_url ? 'max-w-sm p-0' : 'max-w-lg'
+          )}
+        >
           {selectedContent && (
             <>
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2 text-right">
-                  {selectedContent.title}
-                  {selectedContent.is_bonus && (
-                    <Badge
-                      variant="outline"
-                      className="bg-warning/10 text-warning border-warning/30"
-                    >
-                      <Star className="h-3 w-3 ml-1" />
-                      בונוס
-                    </Badge>
-                  )}
-                </DialogTitle>
-              </DialogHeader>
-
-              <div className="space-y-4 pt-4">
-                {/* Video Player or Placeholder */}
-                {selectedContent.video_url ? (
-                  <div className="aspect-video bg-muted rounded-xl overflow-hidden">
+              {selectedContent.video_url ? (
+                /* ── VIDEO layout (portrait / reels) ── */
+                <>
+                  {/* Video — portrait 9:16 */}
+                  <div className="w-full bg-black" style={{ aspectRatio: '9/16', maxHeight: '68vh' }}>
                     {selectedContent.video_url.includes('youtube') ||
                     selectedContent.video_url.includes('youtu.be') ? (
                       <iframe
@@ -507,66 +502,90 @@ export default function AppContent() {
                       />
                     ) : selectedContent.video_url.includes('vimeo') ? (
                       <iframe
-                        src={selectedContent.video_url.replace(
-                          'vimeo.com/',
-                          'player.vimeo.com/video/'
-                        )}
+                        src={selectedContent.video_url.replace('vimeo.com/', 'player.vimeo.com/video/')}
                         className="w-full h-full"
                         allow="autoplay; fullscreen; picture-in-picture"
                         allowFullScreen
                       />
                     ) : (
-                      <video src={selectedContent.video_url} controls className="w-full h-full" />
+                      <video
+                        src={selectedContent.video_url}
+                        controls
+                        autoPlay
+                        playsInline
+                        className="w-full h-full object-contain"
+                      />
                     )}
                   </div>
-                ) : (
-                  <div className="aspect-video bg-accent/10 rounded-xl flex items-center justify-center">
-                    <FileText className="h-16 w-16 text-accent/50" />
+
+                  {/* Info below video */}
+                  <div className="p-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-bold text-foreground flex-1">{selectedContent.title}</h3>
+                      {selectedContent.is_bonus && (
+                        <Badge variant="outline" className="bg-warning/10 text-warning border-warning/30 text-xs">
+                          <Star className="h-3 w-3 ml-1" />
+                          בונוס
+                        </Badge>
+                      )}
+                    </div>
+                    {selectedContent.description && (
+                      <p className="text-muted-foreground text-sm leading-relaxed">{selectedContent.description}</p>
+                    )}
+                    <Button
+                      className={cn('w-full', selectedContent.isCompleted ? 'bg-success hover:bg-success/90' : 'gradient-primary')}
+                      onClick={() => toggleCompletion(selectedContent.id, selectedContent.isCompleted)}
+                    >
+                      <Check className="h-4 w-4 ml-2" />
+                      {selectedContent.isCompleted ? 'סומן כהושלם - לחץ לביטול' : 'סמן כהושלם'}
+                    </Button>
                   </div>
-                )}
+                </>
+              ) : (
+                /* ── GUIDE layout ── */
+                <>
+                  <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2 text-right">
+                      {selectedContent.title}
+                      {selectedContent.is_bonus && (
+                        <Badge variant="outline" className="bg-warning/10 text-warning border-warning/30">
+                          <Star className="h-3 w-3 ml-1" />
+                          בונוס
+                        </Badge>
+                      )}
+                    </DialogTitle>
+                  </DialogHeader>
 
-                {/* Description */}
-                {selectedContent.description && (
-                  <p className="text-muted-foreground text-sm leading-relaxed">
-                    {selectedContent.description}
-                  </p>
-                )}
+                  <div className="space-y-4 pt-4">
+                    {/* Direct guide link — prominent */}
+                    {selectedContent.resource_link && (
+                      <Button
+                        className="w-full gradient-primary text-primary-foreground shadow-glow"
+                        size="lg"
+                        onClick={() => window.open(selectedContent.resource_link!, '_blank')}
+                      >
+                        <ExternalLink className="h-5 w-5 ml-2" />
+                        פתח מדריך
+                      </Button>
+                    )}
 
-                {/* Resource Link */}
-                {selectedContent.resource_link && (
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={() => window.open(selectedContent.resource_link!, '_blank')}
-                  >
-                    <ExternalLink className="h-4 w-4 ml-2" />
-                    פתח מדריך / קובץ
-                  </Button>
-                )}
+                    {selectedContent.description && (
+                      <p className="text-muted-foreground text-sm leading-relaxed">
+                        {selectedContent.description}
+                      </p>
+                    )}
 
-                {/* Completion Toggle */}
-                <Button
-                  className={cn(
-                    'w-full',
-                    selectedContent.isCompleted
-                      ? 'bg-success hover:bg-success/90'
-                      : 'gradient-primary'
-                  )}
-                  onClick={() => toggleCompletion(selectedContent.id, selectedContent.isCompleted)}
-                >
-                  {selectedContent.isCompleted ? (
-                    <>
+                    {/* Completion Toggle */}
+                    <Button
+                      className={cn('w-full', selectedContent.isCompleted ? 'bg-success hover:bg-success/90' : 'gradient-primary')}
+                      onClick={() => toggleCompletion(selectedContent.id, selectedContent.isCompleted)}
+                    >
                       <Check className="h-4 w-4 ml-2" />
-                      סומן כהושלם - לחץ לביטול
-                    </>
-                  ) : (
-                    <>
-                      <Check className="h-4 w-4 ml-2" />
-                      סמן כהושלם
-                    </>
-                  )}
-                </Button>
-              </div>
+                      {selectedContent.isCompleted ? 'סומן כהושלם - לחץ לביטול' : 'סמן כהושלם'}
+                    </Button>
+                  </div>
+                </>
+              )}
             </>
           )}
         </DialogContent>

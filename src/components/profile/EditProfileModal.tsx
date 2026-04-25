@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
@@ -11,6 +12,7 @@ interface ProfileData {
   height: number | null;
   target_weight: number | null;
   birthdate: string | null;
+  gender: string | null;
 }
 
 interface EditProfileModalProps {
@@ -34,6 +36,7 @@ export function EditProfileModal({
     height: '',
     targetWeight: '',
     birthdate: '',
+    gender: '',
   });
 
   useEffect(() => {
@@ -43,6 +46,7 @@ export function EditProfileModal({
         height: initialData.height?.toString() || '',
         targetWeight: initialData.target_weight?.toString() || '',
         birthdate: initialData.birthdate || '',
+        gender: initialData.gender || '',
       });
     }
   }, [open, initialData]);
@@ -56,6 +60,7 @@ export function EditProfileModal({
         height: formData.height ? parseFloat(formData.height) : null,
         target_weight: formData.targetWeight ? parseFloat(formData.targetWeight) : null,
         birthdate: formData.birthdate || null,
+        gender: formData.gender || null,
       };
 
       const { error } = await supabase
@@ -123,7 +128,24 @@ export function EditProfileModal({
             />
           </div>
 
-          <Button 
+          <div className="space-y-2">
+            <Label>מגדר</Label>
+            <Select
+              value={formData.gender}
+              onValueChange={(value) => setFormData({ ...formData, gender: value })}
+            >
+              <SelectTrigger dir="rtl">
+                <SelectValue placeholder="בחר מגדר" />
+              </SelectTrigger>
+              <SelectContent dir="rtl">
+                <SelectItem value="male">זכר</SelectItem>
+                <SelectItem value="female">נקבה</SelectItem>
+                <SelectItem value="other">אחר</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <Button
             onClick={handleSubmit} 
             className="w-full gradient-primary"
             disabled={isSubmitting}

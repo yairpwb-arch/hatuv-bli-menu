@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Camera, User, Calendar, Award } from 'lucide-react';
+import { Camera, User, Calendar, Award, Pencil } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -16,6 +16,7 @@ interface ProfileHeaderProps {
   currentDay: number;
   currentStreak: number;
   onAvatarUpdate: (url: string) => void;
+  onEdit?: () => void;
 }
 
 export function ProfileHeader({
@@ -26,6 +27,7 @@ export function ProfileHeader({
   currentDay,
   currentStreak,
   onAvatarUpdate,
+  onEdit,
 }: ProfileHeaderProps) {
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -89,6 +91,18 @@ export function ProfileHeader({
 
   return (
     <div className="relative bg-gradient-to-br from-primary/10 via-primary/5 to-transparent rounded-2xl p-6 animate-fade-in">
+      {/* Edit button — top left corner (RTL = visual top-right of card) */}
+      {onEdit && (
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={onEdit}
+          className="absolute top-3 left-3 h-8 w-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-primary/10"
+        >
+          <Pencil className="h-4 w-4" />
+        </Button>
+      )}
+
       <div className="flex items-start gap-4">
         {/* Avatar */}
         <div className="relative">
