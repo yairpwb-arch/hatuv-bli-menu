@@ -174,38 +174,38 @@ export default function AppHome() {
       <StreakCard streak={currentStreak} isLoading={isStreakLoading} />
 
       {/* Daily Steps */}
-      {todaySteps !== null && todaySteps > 0 && (
-        <Card className="glass-card animate-slide-up" style={{ animationDelay: '0.15s' }}>
-          <CardContent className="pt-4 pb-4">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl gradient-primary flex items-center justify-center flex-shrink-0">
-                <Footprints className="h-6 w-6 text-primary-foreground" />
-              </div>
-              <div className="flex-1">
-                <p className="text-xs text-muted-foreground font-medium">צעדים היום</p>
-                <p className="text-2xl font-bold text-foreground">
-                  {todaySteps.toLocaleString('he-IL')}
-                </p>
-              </div>
-              <div className="text-right">
-                <p className="text-xs text-muted-foreground">יעד</p>
-                <p className="text-sm font-semibold text-primary">10,000</p>
-              </div>
+      <Card className="glass-card animate-slide-up" style={{ animationDelay: '0.15s' }}>
+        <CardContent className="pt-4 pb-4">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl gradient-primary flex items-center justify-center flex-shrink-0">
+              <Footprints className="h-6 w-6 text-primary-foreground" />
             </div>
-            <div className="mt-3">
-              <div className="h-2 bg-muted rounded-full overflow-hidden">
-                <div
-                  className="h-full gradient-primary rounded-full transition-all"
-                  style={{ width: `${Math.min((todaySteps / 10000) * 100, 100)}%` }}
-                />
-              </div>
-              <p className="text-xs text-muted-foreground mt-1 text-left ltr:text-right">
-                {Math.round((todaySteps / 10000) * 100)}% מהיעד
+            <div className="flex-1">
+              <p className="text-xs text-muted-foreground font-medium">צעדים היום</p>
+              <p className="text-2xl font-bold text-foreground">
+                {(todaySteps ?? 0).toLocaleString('he-IL')}
               </p>
             </div>
-          </CardContent>
-        </Card>
-      )}
+            <div className="text-right">
+              <p className="text-xs text-muted-foreground">יעד</p>
+              <p className="text-sm font-semibold text-primary">10,000</p>
+            </div>
+          </div>
+          <div className="mt-3">
+            <div className="h-2 bg-muted rounded-full overflow-hidden">
+              <div
+                className="h-full gradient-primary rounded-full transition-all"
+                style={{ width: `${Math.min(((todaySteps ?? 0) / 10000) * 100, 100)}%` }}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {todaySteps && todaySteps > 0
+                ? `${Math.round((todaySteps / 10000) * 100)}% מהיעד`
+                : 'לא נמדדו צעדים היום'}
+            </p>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Today's Activity Task (if scheduled for today) */}
       {user && (
