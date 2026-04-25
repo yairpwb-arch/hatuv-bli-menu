@@ -420,7 +420,7 @@ function WeekTab({ planDays, todayPlanDayId }: WeekTabProps) {
             key={day.id}
             className={cn(
               'transition-all cursor-pointer',
-              isToday && 'border-2 border-orange-400 bg-orange-50'
+              isToday && 'border-2 border-orange-500 bg-orange-500/10'
             )}
             onClick={() => setExpandedDayId(isExpanded ? null : day.id)}
           >
