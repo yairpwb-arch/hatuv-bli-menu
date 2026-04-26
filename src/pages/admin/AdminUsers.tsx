@@ -26,6 +26,7 @@ import { toast } from '@/hooks/use-toast';
 import {
   Plus, Edit, Loader2, RefreshCw, Trash2, ChevronDown, ChevronUp, Dumbbell,
   User as UserIcon, Scale, Repeat2, ClipboardList, X, Sparkles, Footprints,
+  History, Clock,
 } from 'lucide-react';
 import { format, differenceInDays, startOfWeek, addDays } from 'date-fns';
 import { he } from 'date-fns/locale';
@@ -110,6 +111,21 @@ interface CheckinRow {
   met_last_goal: boolean | null;
 }
 
+interface AdminWorkoutSession {
+  id: string;
+  completed_at: string;
+  duration_minutes: number | null;
+  workout_plan_days: { name: string; day_number: number } | null;
+}
+
+interface AdminExerciseLog {
+  exercise_id: string;
+  set_number: number;
+  reps: number;
+  weight_kg: number;
+  exercises: { name: string } | null;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const GENDER_LABELS: Record<string, string> = { male: 'זכר', female: 'נקבה', other: 'אחר' };
@@ -177,6 +193,11 @@ export default function AdminUsers() {
 
   // Survey tab
   const [checkins, setCheckins] = useState<CheckinRow[]>([]);
+
+  // Workout history tab
+  const [workoutSessions, setWorkoutSessions] = useState<AdminWorkoutSession[]>([]);
+  const [sessionLogsMap, setSessionLogsMap] = useState<Record<string, AdminExerciseLog[]>>({});
+  const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
 
   // ── Fetch all users ──────────────────────────────────────────────────────────
 
@@ -247,6 +268,17 @@ export default function AdminUsers() {
       .limit(5);
     setCheckins((ci || []) as CheckinRow[]);
 
+    // Workout sessions history
+    const { data: ws } = await (supabase as any)
+      .from('workout_session_logs')
+      .select('id, completed_at, duration_minutes, workout_plan_days(name, day_number)')
+      .eq('user_id', user.id)
+      .order('completed_at', { ascending: false })
+      .limit(15);
+    setWorkoutSessions((ws || []) as AdminWorkoutSession[]);
+    setSessionLogsMap({});
+    setExpandedSessionId(null);
+
     // Exercise library for plan builder
     const { data: exLib } = await (supabase as any)
       .from('exercises')
@@ -267,6 +299,9 @@ export default function AdminUsers() {
     setIsAddingPersonalHabit(false);
     setNewHabitName('');
     setStepsData([]);
+    setWorkoutSessions([]);
+    setSessionLogsMap({});
+    setExpandedSessionId(null);
   };
 
   // ── Habits ──────────────────────────────────────────────────────────────────
@@ -453,6 +488,18 @@ export default function AdminUsers() {
   const handleDeleteExercise = async (dayId: string, exId: string) => {
     await (supabase as any).from('workout_plan_exercises').delete().eq('id', exId);
     setPlanExercisesMap(prev => ({ ...prev, [dayId]: (prev[dayId] || []).filter(e => e.id !== exId) }));
+  };
+
+  // ── Workout session logs ──────────────────────────────────────────────────────
+
+  const loadSessionLogs = async (sessionId: string) => {
+    if (sessionLogsMap[sessionId] !== undefined) return;
+    const { data } = await (supabase as any)
+      .from('workout_exercise_logs')
+      .select('exercise_id, set_number, reps, weight_kg, exercises(name)')
+      .eq('session_id', sessionId)
+      .order('set_number', { ascending: true });
+    setSessionLogsMap(prev => ({ ...prev, [sessionId]: (data || []) as AdminExerciseLog[] }));
   };
 
   // ── Personal info save ───────────────────────────────────────────────────────
@@ -1129,6 +1176,112 @@ export default function AdminUsers() {
                   )}
                 </div>
               )}
+              {/* ── Workout History ── */}
+              <div className="border-t border-border pt-4 mt-2">
+                <p className="text-sm font-semibold mb-3 flex items-center gap-2">
+                  <History className="h-4 w-4 text-primary" />
+                  היסטוריית אימונים
+                  <span className="text-xs font-normal text-muted-foreground mr-auto">
+                    {workoutSessions.length} אימונים אחרונים
+                  </span>
+                </p>
+                {workoutSessions.length === 0 ? (
+                  <p className="text-muted-foreground text-sm text-center py-4">לא בוצעו אימונים עדיין</p>
+                ) : (
+                  <div className="space-y-2">
+                    {workoutSessions.map(ws => {
+                      const isExpanded = expandedSessionId === ws.id;
+                      const logs = sessionLogsMap[ws.id];
+                      const dateStr = format(new Date(ws.completed_at), 'dd/MM/yy HH:mm', { locale: he });
+                      const dayName = ws.workout_plan_days?.name ?? 'אימון';
+
+                      const byExercise: Record<string, AdminExerciseLog[]> = {};
+                      if (logs) {
+                        logs.forEach(l => {
+                          if (!byExercise[l.exercise_id]) byExercise[l.exercise_id] = [];
+                          byExercise[l.exercise_id].push(l);
+                        });
+                      }
+
+                      return (
+                        <div key={ws.id} className="border border-border rounded-xl overflow-hidden">
+                          <div
+                            className="flex items-center justify-between px-3 py-2.5 cursor-pointer hover:bg-muted/50 transition-colors"
+                            onClick={() => {
+                              if (isExpanded) {
+                                setExpandedSessionId(null);
+                              } else {
+                                setExpandedSessionId(ws.id);
+                                loadSessionLogs(ws.id);
+                              }
+                            }}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-7 h-7 rounded-lg bg-orange-500/20 flex items-center justify-center flex-shrink-0">
+                                <Dumbbell className="h-3.5 w-3.5 text-orange-500" />
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium">{dayName}</p>
+                                <p className="text-xs text-muted-foreground">{dateStr}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {ws.duration_minutes != null && ws.duration_minutes > 0 && (
+                                <Badge variant="outline" className="text-xs gap-1">
+                                  <Clock className="h-2.5 w-2.5" />
+                                  {ws.duration_minutes} דק'
+                                </Badge>
+                              )}
+                              {isExpanded
+                                ? <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                                : <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                              }
+                            </div>
+                          </div>
+
+                          {isExpanded && (
+                            <div className="px-3 pb-3 pt-2 border-t border-border bg-muted/20">
+                              {logs === undefined ? (
+                                <div className="flex justify-center py-3">
+                                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                                </div>
+                              ) : Object.keys(byExercise).length === 0 ? (
+                                <p className="text-xs text-muted-foreground text-center py-2">אין פרטי תרגילים</p>
+                              ) : (
+                                <div className="space-y-3">
+                                  {Object.entries(byExercise).map(([exerciseId, sets]) => {
+                                    const exerciseName = sets[0]?.exercises?.name ?? 'תרגיל';
+                                    return (
+                                      <div key={exerciseId}>
+                                        <p className="text-xs font-semibold mb-1.5">{exerciseName}</p>
+                                        <div className="grid grid-cols-4 gap-1.5">
+                                          {sets.map(s => (
+                                            <div
+                                              key={s.set_number}
+                                              className="bg-card border border-border/60 rounded-lg px-1.5 py-2 text-center"
+                                            >
+                                              <p className="text-xs text-muted-foreground mb-0.5">סט {s.set_number}</p>
+                                              <p className="text-sm font-bold">{s.reps}</p>
+                                              <p className="text-xs text-muted-foreground">חז'</p>
+                                              {s.weight_kg > 0 && (
+                                                <p className="text-xs text-orange-500 font-medium mt-0.5">{s.weight_kg}ק"ג</p>
+                                              )}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </TabsContent>
 
             {/* ── Tab 5: Survey ── */}

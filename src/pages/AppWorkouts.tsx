@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Dumbbell, CheckCircle, Clock, History, Play, ChevronDown, Pencil, X } from 'lucide-react';
+import { Dumbbell, CheckCircle, Clock, History, Play, ChevronDown, ChevronUp, Pencil, X } from 'lucide-react';
 import type { WorkoutPlanDay, WorkoutPlanExercise } from '@/hooks/useWorkoutPlan';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
@@ -393,7 +393,40 @@ interface HistoryTabProps {
   isLoading: boolean;
 }
 
+interface ExerciseLogEntry {
+  exercise_id: string;
+  set_number: number;
+  reps: number;
+  weight_kg: number;
+  exercises: { name: string } | null;
+}
+
 function HistoryTab({ sessions, isLoading }: HistoryTabProps) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [logsMap, setLogsMap] = useState<Record<string, ExerciseLogEntry[]>>({});
+  const [loadingId, setLoadingId] = useState<string | null>(null);
+
+  const loadLogs = async (sessionId: string) => {
+    if (logsMap[sessionId] !== undefined) return;
+    setLoadingId(sessionId);
+    const { data } = await (supabase as any)
+      .from('workout_exercise_logs')
+      .select('exercise_id, set_number, reps, weight_kg, exercises(name)')
+      .eq('session_id', sessionId)
+      .order('set_number', { ascending: true });
+    setLogsMap(prev => ({ ...prev, [sessionId]: (data ?? []) as ExerciseLogEntry[] }));
+    setLoadingId(null);
+  };
+
+  const handleToggle = (sessionId: string) => {
+    if (expandedId === sessionId) {
+      setExpandedId(null);
+    } else {
+      setExpandedId(sessionId);
+      loadLogs(sessionId);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="space-y-3 pt-2">
@@ -422,13 +455,26 @@ function HistoryTab({ sessions, isLoading }: HistoryTabProps) {
         const dateFormatted = format(new Date(session.completed_at), 'EEEE, d בMMMM', { locale: he });
         const timeFormatted = format(new Date(session.completed_at), 'HH:mm', { locale: he });
         const dayName = session.workout_plan_days?.name ?? 'אימון';
+        const isExpanded = expandedId === session.id;
+        const logs = logsMap[session.id];
+        const isLoadingLogs = loadingId === session.id;
+
+        // Group logs by exercise_id
+        const byExercise: Record<string, ExerciseLogEntry[]> = {};
+        if (logs) {
+          logs.forEach(l => {
+            if (!byExercise[l.exercise_id]) byExercise[l.exercise_id] = [];
+            byExercise[l.exercise_id].push(l);
+          });
+        }
 
         return (
-          <Card key={session.id}>
+          <Card key={session.id} className="overflow-hidden">
             <CardContent className="p-4">
+              {/* Session header */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center flex-shrink-0">
+                  <div className="w-10 h-10 rounded-xl bg-orange-500/20 flex items-center justify-center flex-shrink-0">
                     <Dumbbell className="h-5 w-5 text-orange-500" />
                   </div>
                   <div>
@@ -440,17 +486,65 @@ function HistoryTab({ sessions, isLoading }: HistoryTabProps) {
                 </div>
                 <div className="flex flex-col items-end gap-1">
                   {session.duration_minutes && session.duration_minutes > 0 && (
-                    <Badge variant="outline" className="gap-1 text-xs border-orange-300 text-orange-700">
+                    <Badge variant="outline" className="gap-1 text-xs border-orange-500/30 text-orange-400">
                       <Clock className="h-3 w-3" />
                       {session.duration_minutes} דק'
                     </Badge>
                   )}
-                  <Badge className="bg-green-100 text-green-700 border-green-200 text-xs">
+                  <Badge className="bg-green-500/20 text-green-500 border-0 text-xs">
                     <CheckCircle className="h-3 w-3 ml-1" />
                     הושלם
                   </Badge>
                 </div>
               </div>
+
+              {/* Toggle details */}
+              <button
+                onClick={() => handleToggle(session.id)}
+                className="w-full flex items-center justify-center gap-1.5 mt-3 pt-3 border-t border-border/50 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {isExpanded
+                  ? <><ChevronUp className="h-3.5 w-3.5" />הסתר פרטים</>
+                  : <><ChevronDown className="h-3.5 w-3.5" />הצג פרטי תרגילים</>
+                }
+              </button>
+
+              {/* Exercise detail */}
+              {isExpanded && (
+                <div className="mt-3 space-y-3">
+                  {isLoadingLogs || (!logs && loadingId === session.id) ? (
+                    <Skeleton className="h-16 w-full rounded-xl" />
+                  ) : !logs || Object.keys(byExercise).length === 0 ? (
+                    <p className="text-xs text-muted-foreground text-center py-2">אין פרטי תרגילים</p>
+                  ) : (
+                    Object.entries(byExercise).map(([exerciseId, sets]) => {
+                      const exerciseName = sets[0]?.exercises?.name ?? 'תרגיל';
+                      return (
+                        <div key={exerciseId} className="bg-muted/40 rounded-xl p-3">
+                          <p className="text-sm font-semibold mb-2">{exerciseName}</p>
+                          <div className="grid grid-cols-3 gap-1.5">
+                            {sets.map(s => (
+                              <div
+                                key={s.set_number}
+                                className="bg-background border border-border/60 rounded-lg px-2 py-2 text-center"
+                              >
+                                <p className="text-xs text-muted-foreground mb-0.5">סט {s.set_number}</p>
+                                <p className="text-sm font-bold text-foreground">
+                                  {s.reps}
+                                  <span className="text-xs font-normal text-muted-foreground"> חז'</span>
+                                </p>
+                                {s.weight_kg > 0 && (
+                                  <p className="text-xs text-orange-400 mt-0.5">{s.weight_kg} ק"ג</p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
         );

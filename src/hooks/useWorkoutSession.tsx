@@ -45,7 +45,7 @@ export function useWorkoutSession() {
         `)
         .eq('user_id', user.id)
         .order('completed_at', { ascending: false })
-        .limit(5);
+        .limit(20);
 
       if (error) {
         console.error('Error fetching workout sessions:', error);

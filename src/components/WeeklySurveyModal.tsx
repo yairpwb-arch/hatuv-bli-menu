@@ -7,8 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Slider } from '@/components/ui/slider';
-import { Progress } from '@/components/ui/progress';
-import { CheckCircle2, ChevronRight, ChevronLeft } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 
 interface Props {
   open: boolean;
@@ -28,17 +27,13 @@ interface CheckinQuestion {
 export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props) {
   const { user } = useAuth();
 
-  // Questions from DB
   const [questions, setQuestions] = useState<CheckinQuestion[]>([]);
-  // Answers keyed by column_key
   const [answers, setAnswers] = useState<Record<string, string | number | boolean | null>>({});
   const [existingId, setExistingId] = useState<string | null>(null);
-  const [step, setStep] = useState(0);
   const [showAlreadyDone, setShowAlreadyDone] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // ── Load questions + existing checkin ──────────────────────────────────────
   useEffect(() => {
     if (!open || !user) return;
     loadData();
@@ -47,7 +42,6 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
   const loadData = async () => {
     setIsLoading(true);
 
-    // Fetch questions
     const { data: qs } = await (supabase as any)
       .from('checkin_questions')
       .select('id, sort_order, question_text, question_type, column_key')
@@ -57,13 +51,11 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
     const qList = (qs || []) as CheckinQuestion[];
     setQuestions(qList);
 
-    // Default answers
     const defaults: Record<string, string | number | boolean | null> = {};
     qList.forEach(q => {
       defaults[q.column_key] = q.question_type === 'scale' ? 5 : q.question_type === 'yesno' ? null : '';
     });
 
-    // Fetch existing checkin for this week
     const { data: existing } = await (supabase as any)
       .from('weekly_checkin')
       .select('*')
@@ -74,14 +66,11 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
     if (existing) {
       setExistingId(existing.id);
       setShowAlreadyDone(true);
-      // Fill answers from existing row
       const filled: Record<string, string | number | boolean | null> = { ...defaults };
       qList.forEach(q => {
         const val = existing[q.column_key];
         if (val !== undefined && val !== null) {
-          filled[q.column_key] = q.question_type === 'number'
-            ? String(val)
-            : val;
+          filled[q.column_key] = q.question_type === 'number' ? String(val) : val;
         }
       });
       setAnswers(filled);
@@ -91,22 +80,11 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
       setAnswers(defaults);
     }
 
-    setStep(0);
     setIsLoading(false);
   };
 
   const updateAnswer = (columnKey: string, value: string | number | boolean | null) => {
     setAnswers(prev => ({ ...prev, [columnKey]: value }));
-  };
-
-  const canProceed = () => {
-    if (!questions[step]) return false;
-    const q = questions[step];
-    const val = answers[q.column_key];
-    if (q.question_type === 'text' || q.question_type === 'textarea') return String(val || '').trim().length > 0;
-    if (q.question_type === 'number') return String(val || '').trim().length > 0;
-    if (q.question_type === 'yesno') return val !== null && val !== '';
-    return true; // scale always valid
   };
 
   const handleSubmit = async () => {
@@ -173,7 +151,7 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
             <p className="text-center text-muted-foreground text-sm">תוכל לעדכן את תשובותיך בכל עת</p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" className="flex-1" onClick={() => { setShowAlreadyDone(false); setStep(0); }}>
+            <Button variant="outline" className="flex-1" onClick={() => setShowAlreadyDone(false)}>
               עדכן תשובות
             </Button>
             <Button className="flex-1" onClick={onClose}>סגור</Button>
@@ -195,112 +173,121 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
     );
   }
 
-  const q = questions[step];
-  const isLast = step === questions.length - 1;
-  const progress = ((step + 1) / questions.length) * 100;
-  const val = answers[q.column_key];
-
+  // ── Main: all questions on one scrollable page ─────────────────────────────
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-sm" dir="rtl">
-        <DialogHeader>
+      <DialogContent
+        className="max-w-sm flex flex-col p-0 gap-0"
+        dir="rtl"
+        style={{ maxHeight: '90vh' }}
+      >
+        {/* Fixed header */}
+        <DialogHeader className="px-5 pt-5 pb-3 shrink-0 border-b border-border">
           <DialogTitle>שאלון שבועי — שבוע {currentWeek}</DialogTitle>
+          <p className="text-xs text-muted-foreground mt-0.5">{questions.length} שאלות</p>
         </DialogHeader>
 
-        {/* Progress */}
-        <div className="space-y-1">
-          <div className="flex justify-between text-xs text-muted-foreground">
-            <span>שאלה {step + 1} מתוך {questions.length}</span>
-            <span>{Math.round(progress)}%</span>
-          </div>
-          <Progress value={progress} className="h-2" />
+        {/* Scrollable questions */}
+        <div className="flex-1 overflow-y-auto min-h-0 px-5 py-4 space-y-6">
+          {questions.map((q, idx) => {
+            const val = answers[q.column_key];
+            return (
+              <div key={q.id} className="space-y-3">
+                {/* Question label */}
+                <p className="font-semibold text-sm leading-snug">
+                  <span className="text-muted-foreground text-xs ml-1">{idx + 1}.</span>
+                  {q.question_text}
+                </p>
+
+                {q.question_type === 'text' && (
+                  <Input
+                    value={String(val ?? '')}
+                    onChange={e => updateAnswer(q.column_key, e.target.value)}
+                    placeholder="הקלד כאן..."
+                  />
+                )}
+
+                {q.question_type === 'number' && (
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    value={String(val ?? '')}
+                    onChange={e => updateAnswer(q.column_key, e.target.value)}
+                    placeholder="0"
+                  />
+                )}
+
+                {q.question_type === 'textarea' && (
+                  <Textarea
+                    value={String(val ?? '')}
+                    onChange={e => updateAnswer(q.column_key, e.target.value)}
+                    placeholder="כתוב כאן..."
+                    rows={3}
+                  />
+                )}
+
+                {q.question_type === 'scale' && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-center gap-2">
+                      <span className="text-3xl font-bold text-primary tabular-nums">
+                        {Number(val ?? 5)}
+                      </span>
+                      <span className="text-muted-foreground text-sm">/ 10</span>
+                    </div>
+                    <Slider
+                      value={[Number(val ?? 5)]}
+                      min={1}
+                      max={10}
+                      step={1}
+                      onValueChange={([v]) => updateAnswer(q.column_key, v)}
+                    />
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>1 — נמוך</span>
+                      <span>10 — גבוה</span>
+                    </div>
+                  </div>
+                )}
+
+                {q.question_type === 'yesno' && (
+                  <div className="flex gap-3">
+                    <Button
+                      variant={val === true ? 'default' : 'outline'}
+                      className="flex-1 h-11 text-base"
+                      onClick={() => updateAnswer(q.column_key, true)}
+                    >
+                      כן
+                    </Button>
+                    <Button
+                      variant={val === false ? 'default' : 'outline'}
+                      className="flex-1 h-11 text-base"
+                      onClick={() => updateAnswer(q.column_key, false)}
+                    >
+                      לא
+                    </Button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Bottom padding so last question isn't hidden behind submit bar */}
+          <div className="h-2" />
         </div>
 
-        {/* Question */}
-        <div className="min-h-[160px] flex flex-col justify-center gap-4 py-2">
-          <p className="font-semibold text-base leading-snug">{q.question_text}</p>
-
-          {q.question_type === 'text' && (
-            <Input
-              value={String(val ?? '')}
-              onChange={e => updateAnswer(q.column_key, e.target.value)}
-              placeholder="הקלד כאן..."
-            />
-          )}
-
-          {q.question_type === 'number' && (
-            <Input
-              type="number"
-              inputMode="decimal"
-              value={String(val ?? '')}
-              onChange={e => updateAnswer(q.column_key, e.target.value)}
-              placeholder="0"
-            />
-          )}
-
-          {q.question_type === 'textarea' && (
-            <Textarea
-              value={String(val ?? '')}
-              onChange={e => updateAnswer(q.column_key, e.target.value)}
-              placeholder="כתוב כאן..."
-              rows={3}
-            />
-          )}
-
-          {q.question_type === 'scale' && (
-            <div className="space-y-3">
-              <div className="text-center">
-                <span className="text-4xl font-bold text-primary">{Number(val ?? 5)}</span>
-                <span className="text-muted-foreground text-sm"> / 10</span>
-              </div>
-              <Slider
-                value={[Number(val ?? 5)]}
-                min={1}
-                max={10}
-                step={1}
-                onValueChange={([v]) => updateAnswer(q.column_key, v)}
-              />
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>1 — נמוך</span>
-                <span>10 — גבוה</span>
-              </div>
-            </div>
-          )}
-
-          {q.question_type === 'yesno' && (
-            <div className="flex gap-3">
-              <Button
-                variant={val === true ? 'default' : 'outline'}
-                className="flex-1 h-12 text-base"
-                onClick={() => updateAnswer(q.column_key, true)}
-              >
-                כן
-              </Button>
-              <Button
-                variant={val === false ? 'default' : 'outline'}
-                className="flex-1 h-12 text-base"
-                onClick={() => updateAnswer(q.column_key, false)}
-              >
-                לא
-              </Button>
-            </div>
-          )}
-        </div>
-
-        {/* Navigation */}
-        <div className="flex gap-2 pt-2">
-          {step > 0 && (
-            <Button variant="outline" size="icon" onClick={() => setStep(s => s - 1)}>
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          )}
+        {/* Fixed submit button */}
+        <div className="shrink-0 px-5 pb-5 pt-3 border-t border-border bg-background">
           <Button
-            className="flex-1"
-            disabled={!canProceed() || isSaving}
-            onClick={isLast ? handleSubmit : () => setStep(s => s + 1)}
+            className="w-full h-12 text-base font-bold"
+            onClick={handleSubmit}
+            disabled={isSaving}
           >
-            {isSaving ? 'שומר...' : isLast ? 'שלח שאלון' : (
-              <span className="flex items-center gap-1">הבא <ChevronLeft className="h-4 w-4" /></span>
+            {isSaving ? (
+              <span className="flex items-center gap-2">
+                <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                שולח...
+              </span>
+            ) : (
+              'שלח שאלון'
             )}
           </Button>
         </div>
