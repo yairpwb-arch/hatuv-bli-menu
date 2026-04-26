@@ -48,6 +48,14 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
   const [showAlreadyDone, setShowAlreadyDone] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [attempted, setAttempted] = useState(false);
+
+  const isAnswered = (q: CheckinQuestion): boolean => {
+    const val = answers[q.column_key];
+    if (q.question_type === 'scale') return true; // always has default
+    if (q.question_type === 'yesno') return val === true || val === false;
+    return val !== null && val !== undefined && String(val).trim() !== '';
+  };
 
   useEffect(() => {
     if (!open || !user) return;
@@ -104,6 +112,12 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
 
   const handleSubmit = async () => {
     if (!user || questions.length === 0) return;
+    setAttempted(true);
+    const missing = questions.filter(q => !isAnswered(q));
+    if (missing.length > 0) {
+      toast({ title: 'שאלות חסרות', description: `יש למלא את כל ${missing.length} השאלות החסרות`, variant: 'destructive' });
+      return;
+    }
     setIsSaving(true);
 
     const payload: Record<string, unknown> = {
@@ -215,12 +229,14 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
         <div className="flex-1 overflow-y-auto min-h-0 px-5 py-4 space-y-6">
           {questions.map((q, idx) => {
             const val = answers[q.column_key];
+            const invalid = attempted && !isAnswered(q);
             return (
               <div key={q.id} className="space-y-3">
                 {/* Question label */}
-                <p className="font-semibold text-sm leading-snug">
+                <p className={`font-semibold text-sm leading-snug ${invalid ? 'text-red-500' : ''}`}>
                   <span className="text-muted-foreground text-xs ml-1">{idx + 1}.</span>
                   {q.question_text}
+                  <span className="text-red-500 mr-0.5">*</span>
                 </p>
 
                 {q.question_type === 'text' && (
@@ -228,6 +244,7 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
                     value={String(val ?? '')}
                     onChange={e => updateAnswer(q.column_key, e.target.value)}
                     placeholder="הקלד כאן..."
+                    className={invalid ? 'border-red-500 focus-visible:ring-red-500' : ''}
                   />
                 )}
 
@@ -238,6 +255,7 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
                     value={String(val ?? '')}
                     onChange={e => updateAnswer(q.column_key, e.target.value)}
                     placeholder="0"
+                    className={invalid ? 'border-red-500 focus-visible:ring-red-500' : ''}
                   />
                 )}
 
@@ -247,6 +265,7 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
                     onChange={e => updateAnswer(q.column_key, e.target.value)}
                     placeholder="כתוב כאן..."
                     rows={3}
+                    className={invalid ? 'border-red-500 focus-visible:ring-red-500' : ''}
                   />
                 )}
 
@@ -273,7 +292,7 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
                 )}
 
                 {q.question_type === 'yesno' && (
-                  <div className="flex gap-3">
+                  <div className={`flex gap-3 ${invalid ? 'rounded-lg ring-2 ring-red-500 p-1' : ''}`}>
                     <Button
                       variant={val === true ? 'default' : 'outline'}
                       className="flex-1 h-11 text-base"
@@ -289,6 +308,10 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
                       לא
                     </Button>
                   </div>
+                )}
+
+                {invalid && (
+                  <p className="text-red-500 text-xs">שדה חובה</p>
                 )}
               </div>
             );
