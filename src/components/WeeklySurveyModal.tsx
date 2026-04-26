@@ -7,7 +7,22 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Slider } from '@/components/ui/slider';
-import { CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, Lock, Calendar } from 'lucide-react';
+
+function getNextFriday(): Date {
+  const d = new Date();
+  const day = d.getDay(); // 0=Sun … 5=Fri … 6=Sat
+  const daysToAdd = day === 5 ? 7 : (5 - day + 7) % 7;
+  const next = new Date(d);
+  next.setDate(d.getDate() + daysToAdd);
+  return next;
+}
+
+const HEBREW_MONTHS = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+
+function formatHebrew(d: Date): string {
+  return `${d.getDate()} ב${HEBREW_MONTHS[d.getMonth()]}`;
+}
 
 interface Props {
   open: boolean;
@@ -137,25 +152,34 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
     );
   }
 
-  // ── Already submitted ──────────────────────────────────────────────────────
+  // ── Already submitted — locked until next Friday ──────────────────────────
   if (showAlreadyDone) {
+    const nextFri = getNextFriday();
     return (
       <Dialog open={open} onOpenChange={onClose}>
         <DialogContent className="max-w-sm" dir="rtl">
           <DialogHeader>
             <DialogTitle>שאלון שבועי — שבוע {currentWeek}</DialogTitle>
           </DialogHeader>
-          <div className="flex flex-col items-center gap-4 py-4">
-            <CheckCircle2 className="h-16 w-16 text-green-500" />
-            <p className="text-center font-semibold text-lg">תשובותיך לשבוע {currentWeek} נשמרו ✓</p>
-            <p className="text-center text-muted-foreground text-sm">תוכל לעדכן את תשובותיך בכל עת</p>
+          <div className="flex flex-col items-center gap-5 py-5">
+            <div className="relative">
+              <CheckCircle2 className="h-16 w-16 text-green-500" />
+              <div className="absolute -bottom-1 -left-1 bg-background rounded-full p-0.5">
+                <Lock className="h-5 w-5 text-muted-foreground" />
+              </div>
+            </div>
+            <div className="text-center space-y-1">
+              <p className="font-semibold text-lg">ענית על השאלון השבועי ✓</p>
+              <p className="text-muted-foreground text-sm">השאלון נעול עד לשישי הקרוב</p>
+            </div>
+            <div className="flex items-center gap-2 bg-muted rounded-xl px-4 py-3 w-full justify-center">
+              <Calendar className="h-4 w-4 text-primary shrink-0" />
+              <p className="text-sm font-medium">
+                יפתח ביום שישי, <span className="text-primary">{formatHebrew(nextFri)}</span>
+              </p>
+            </div>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" className="flex-1" onClick={() => setShowAlreadyDone(false)}>
-              עדכן תשובות
-            </Button>
-            <Button className="flex-1" onClick={onClose}>סגור</Button>
-          </div>
+          <Button className="w-full" onClick={onClose}>סגור</Button>
         </DialogContent>
       </Dialog>
     );
