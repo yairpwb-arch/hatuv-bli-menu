@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Sparkles, Target, Apple } from 'lucide-react';
+import { ArrowLeft, Target, Dumbbell, Video } from 'lucide-react';
 
 export default function Index() {
   const navigate = useNavigate();
@@ -22,7 +22,7 @@ export default function Index() {
             חטוב בלי תפריט
           </h1>
           <p className="text-xl text-muted-foreground mb-8 max-w-sm">
-            התוכנית שתשנה את חייך ב-168 ימים
+            התוכנית שתחטב אותך בעזרת שינוי הרגלים
           </p>
         </div>
 
@@ -30,8 +30,8 @@ export default function Index() {
         <div className="grid gap-4 w-full max-w-sm mb-8 animate-slide-up" style={{ animationDelay: '0.2s' }}>
           {[
             { icon: Target, text: 'הרגלים יומיים מותאמים אישית' },
-            { icon: Apple, text: 'מעקב תזונה ללא ספירת קלוריות' },
-            { icon: Sparkles, text: 'ניתוח AI חכם לארוחות' },
+            { icon: Dumbbell, text: 'מעקב אימונים, צעדים ומשקל' },
+            { icon: Video, text: 'ספריית סרטונים ומדריכים לכל בעיה' },
           ].map((feature, i) => (
             <div
               key={i}
@@ -60,7 +60,7 @@ export default function Index() {
 
       {/* Footer */}
       <footer className="py-6 text-center text-sm text-muted-foreground">
-        © 2025 חטוב בלי תפריט
+        © 2026 חטוב בלי תפריט
       </footer>
     </div>
   );
