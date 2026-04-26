@@ -476,117 +476,51 @@ export default function AppContent() {
 
       {/* Content Detail Dialog */}
       <Dialog open={!!selectedContent} onOpenChange={() => setSelectedContent(null)}>
-        <DialogContent
-          dir="rtl"
-          className={cn(
-            'max-h-[92vh] overflow-y-auto',
-            selectedContent?.video_url ? 'max-w-sm p-0' : 'max-w-lg'
-          )}
-        >
+        <DialogContent dir="rtl" className="max-w-lg max-h-[92vh] overflow-y-auto p-0">
           {selectedContent && (
-            <>
-              {selectedContent.video_url ? (
-                /* ── VIDEO layout (portrait / reels) ── */
-                <>
-                  {/* Video — portrait 9:16 */}
-                  <div className="w-full bg-black" style={{ aspectRatio: '9/16', maxHeight: '68vh' }}>
-                    {selectedContent.video_url.includes('youtube') ||
-                    selectedContent.video_url.includes('youtu.be') ? (
-                      <iframe
-                        src={selectedContent.video_url
-                          .replace('watch?v=', 'embed/')
-                          .replace('youtu.be/', 'youtube.com/embed/')}
-                        className="w-full h-full"
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                        allowFullScreen
-                      />
-                    ) : selectedContent.video_url.includes('vimeo') ? (
-                      <iframe
-                        src={selectedContent.video_url.replace('vimeo.com/', 'player.vimeo.com/video/')}
-                        className="w-full h-full"
-                        allow="autoplay; fullscreen; picture-in-picture"
-                        allowFullScreen
-                      />
-                    ) : (
-                      <video
-                        src={selectedContent.video_url}
-                        controls
-                        autoPlay
-                        playsInline
-                        className="w-full h-full object-contain"
-                      />
-                    )}
-                  </div>
+            <div className="p-6 pt-10 space-y-4">
+              {/* Title row */}
+              <div className="flex items-start gap-2">
+                <div className="flex-1 min-w-0">
+                  <h2 className="text-lg font-bold text-foreground leading-snug">
+                    {selectedContent.title}
+                  </h2>
+                  {selectedContent.is_bonus && (
+                    <Badge variant="outline" className="mt-1 bg-warning/10 text-warning border-warning/30">
+                      <Star className="h-3 w-3 ml-1" />
+                      בונוס
+                    </Badge>
+                  )}
+                </div>
+              </div>
 
-                  {/* Info below video */}
-                  <div className="p-4 space-y-3">
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-bold text-foreground flex-1">{selectedContent.title}</h3>
-                      {selectedContent.is_bonus && (
-                        <Badge variant="outline" className="bg-warning/10 text-warning border-warning/30 text-xs">
-                          <Star className="h-3 w-3 ml-1" />
-                          בונוס
-                        </Badge>
-                      )}
-                    </div>
-                    {selectedContent.description && (
-                      <p className="text-muted-foreground text-sm leading-relaxed">{selectedContent.description}</p>
-                    )}
-                    <Button
-                      className={cn('w-full', selectedContent.isCompleted ? 'bg-success hover:bg-success/90' : 'gradient-primary')}
-                      onClick={() => toggleCompletion(selectedContent.id, selectedContent.isCompleted)}
-                    >
-                      <Check className="h-4 w-4 ml-2" />
-                      {selectedContent.isCompleted ? 'סומן כהושלם - לחץ לביטול' : 'סמן כהושלם'}
-                    </Button>
-                  </div>
-                </>
-              ) : (
-                /* ── GUIDE layout ── */
-                <>
-                  <DialogHeader>
-                    <DialogTitle className="flex items-center gap-2 text-right">
-                      {selectedContent.title}
-                      {selectedContent.is_bonus && (
-                        <Badge variant="outline" className="bg-warning/10 text-warning border-warning/30">
-                          <Star className="h-3 w-3 ml-1" />
-                          בונוס
-                        </Badge>
-                      )}
-                    </DialogTitle>
-                  </DialogHeader>
-
-                  <div className="space-y-4 pt-4">
-                    {/* Direct guide link — prominent */}
-                    {selectedContent.resource_link && (
-                      <Button
-                        className="w-full gradient-primary text-primary-foreground shadow-glow"
-                        size="lg"
-                        onClick={() => window.open(selectedContent.resource_link!, '_blank')}
-                      >
-                        <ExternalLink className="h-5 w-5 ml-2" />
-                        פתח מדריך
-                      </Button>
-                    )}
-
-                    {selectedContent.description && (
-                      <p className="text-muted-foreground text-sm leading-relaxed">
-                        {selectedContent.description}
-                      </p>
-                    )}
-
-                    {/* Completion Toggle */}
-                    <Button
-                      className={cn('w-full', selectedContent.isCompleted ? 'bg-success hover:bg-success/90' : 'gradient-primary')}
-                      onClick={() => toggleCompletion(selectedContent.id, selectedContent.isCompleted)}
-                    >
-                      <Check className="h-4 w-4 ml-2" />
-                      {selectedContent.isCompleted ? 'סומן כהושלם - לחץ לביטול' : 'סמן כהושלם'}
-                    </Button>
-                  </div>
-                </>
+              {/* Direct link button — video or guide */}
+              {(selectedContent.video_url || selectedContent.resource_link) && (
+                <Button
+                  className="w-full gradient-primary text-primary-foreground shadow-glow"
+                  size="lg"
+                  onClick={() => window.open((selectedContent.video_url || selectedContent.resource_link)!, '_blank')}
+                >
+                  <ExternalLink className="h-5 w-5 ml-2" />
+                  {selectedContent.video_url ? 'פתח סרטון' : 'פתח מדריך'}
+                </Button>
               )}
-            </>
+
+              {selectedContent.description && (
+                <p className="text-muted-foreground text-sm leading-relaxed">
+                  {selectedContent.description}
+                </p>
+              )}
+
+              {/* Completion Toggle */}
+              <Button
+                className={cn('w-full', selectedContent.isCompleted ? 'bg-success hover:bg-success/90' : 'gradient-primary')}
+                onClick={() => toggleCompletion(selectedContent.id, selectedContent.isCompleted)}
+              >
+                <Check className="h-4 w-4 ml-2" />
+                {selectedContent.isCompleted ? 'סומן כהושלם - לחץ לביטול' : 'סמן כהושלם'}
+              </Button>
+            </div>
           )}
         </DialogContent>
       </Dialog>

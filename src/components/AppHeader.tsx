@@ -1,4 +1,4 @@
-import { Settings, User, Sun, Moon, SlidersHorizontal } from 'lucide-react';
+import { Settings, User, SlidersHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -9,12 +9,10 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useAuth } from '@/hooks/useAuth';
-import { useTheme } from '@/hooks/useTheme';
 import { useNavigate } from 'react-router-dom';
 
 export function AppHeader() {
   const { profile, signOut, isAdmin } = useAuth();
-  const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
 
   const handleSignOut = async () => {
@@ -37,19 +35,6 @@ export function AppHeader() {
 
         {/* Actions */}
         <div className="flex items-center gap-1">
-          {/* Theme toggle */}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={toggleTheme}
-            className="rounded-full w-8 h-8 text-muted-foreground hover:text-foreground"
-          >
-            {theme === 'dark'
-              ? <Sun className="h-4 w-4" />
-              : <Moon className="h-4 w-4" />
-            }
-          </Button>
-
           {/* User menu */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
