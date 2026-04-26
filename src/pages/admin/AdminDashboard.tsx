@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
-import { Users, BookOpen, Quote, TrendingUp, UtensilsCrossed, UserPlus } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
+import { Users, BookOpen, Quote, TrendingUp, UserPlus, Link, Pencil, Check, X, ExternalLink } from 'lucide-react';
 
 const ADMIN_EMAIL = 'yairpwb@gmail.com';
 
@@ -26,6 +28,30 @@ export default function AdminDashboard() {
   });
   const [isLoading, setIsLoading] = useState(true);
 
+  // Links state
+  const [snacksLink, setSnacksLink] = useState('');
+  const [weighingLink, setWeighingLink] = useState('');
+  const [editingSnacks, setEditingSnacks] = useState(false);
+  const [editingWeighing, setEditingWeighing] = useState(false);
+  const [snacksDraft, setSnacksDraft] = useState('');
+  const [weighingDraft, setWeighingDraft] = useState('');
+  const [isSavingLinks, setIsSavingLinks] = useState(false);
+
+  const saveLink = async (key: string, value: string) => {
+    setIsSavingLinks(true);
+    const { error } = await (supabase as any)
+      .from('app_settings')
+      .upsert({ key, value }, { onConflict: 'key' });
+    if (error) {
+      toast({ title: 'שגיאה', description: 'לא ניתן לשמור', variant: 'destructive' });
+    } else {
+      if (key === 'snacks_book_link') { setSnacksLink(value); setEditingSnacks(false); }
+      if (key === 'weighing_guide_link') { setWeighingLink(value); setEditingWeighing(false); }
+      toast({ title: 'נשמר ✓' });
+    }
+    setIsSavingLinks(false);
+  };
+
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
@@ -33,12 +59,18 @@ export default function AdminDashboard() {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
-      const [usersRes, contentRes, quotesRes, mealsRes] = await Promise.all([
+      const [usersRes, contentRes, quotesRes, mealsRes, linksRes] = await Promise.all([
         supabase.from('profiles').select('id, is_active, email', { count: 'exact' }),
         supabase.from('program_content').select('id', { count: 'exact' }),
         supabase.from('daily_quotes').select('id', { count: 'exact' }),
         supabase.from('nutrition_log').select('id', { count: 'exact' }).gte('recorded_at', today.toISOString()),
+        (supabase as any).from('app_settings').select('key, value').in('key', ['snacks_book_link', 'weighing_guide_link']),
       ]);
+
+      const linkMap: Record<string, string> = {};
+      (linksRes.data || []).forEach((r: { key: string; value: string }) => { linkMap[r.key] = r.value; });
+      setSnacksLink(linkMap['snacks_book_link'] || '');
+      setWeighingLink(linkMap['weighing_guide_link'] || '');
 
       const nonAdminUsers = usersRes.data?.filter((u) => u.email.toLowerCase() !== ADMIN_EMAIL) || [];
 
@@ -104,6 +136,96 @@ export default function AdminDashboard() {
               <Quote className="h-4 w-4 ml-2" />
               נהל ציטוטים
             </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Resource Links */}
+      <Card className="card-elevated">
+        <CardContent className="pt-6 space-y-4">
+          <div className="flex items-center gap-2">
+            <Link className="h-5 w-5 text-primary" />
+            <h3 className="text-lg font-semibold">לינקים למשאבים</h3>
+          </div>
+
+          {/* Snacks Book */}
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-muted-foreground">ספר נשנושים</p>
+            {editingSnacks ? (
+              <div className="flex gap-2">
+                <Input
+                  dir="ltr"
+                  className="text-left flex-1"
+                  placeholder="https://..."
+                  value={snacksDraft}
+                  onChange={e => setSnacksDraft(e.target.value)}
+                  autoFocus
+                />
+                <Button size="icon" variant="ghost" disabled={isSavingLinks}
+                  onClick={() => saveLink('snacks_book_link', snacksDraft)}>
+                  <Check className="h-4 w-4 text-green-500" />
+                </Button>
+                <Button size="icon" variant="ghost" onClick={() => setEditingSnacks(false)}>
+                  <X className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                {snacksLink ? (
+                  <a href={snacksLink} target="_blank" rel="noopener noreferrer"
+                    className="text-sm text-primary hover:underline flex items-center gap-1 truncate max-w-xs">
+                    <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                    {snacksLink}
+                  </a>
+                ) : (
+                  <span className="text-sm text-muted-foreground italic">לא הוגדר לינק</span>
+                )}
+                <Button size="icon" variant="ghost" className="shrink-0 h-7 w-7"
+                  onClick={() => { setSnacksDraft(snacksLink); setEditingSnacks(true); }}>
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            )}
+          </div>
+
+          {/* Weighing Guide */}
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-muted-foreground">מדריך שקילות</p>
+            {editingWeighing ? (
+              <div className="flex gap-2">
+                <Input
+                  dir="ltr"
+                  className="text-left flex-1"
+                  placeholder="https://..."
+                  value={weighingDraft}
+                  onChange={e => setWeighingDraft(e.target.value)}
+                  autoFocus
+                />
+                <Button size="icon" variant="ghost" disabled={isSavingLinks}
+                  onClick={() => saveLink('weighing_guide_link', weighingDraft)}>
+                  <Check className="h-4 w-4 text-green-500" />
+                </Button>
+                <Button size="icon" variant="ghost" onClick={() => setEditingWeighing(false)}>
+                  <X className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                {weighingLink ? (
+                  <a href={weighingLink} target="_blank" rel="noopener noreferrer"
+                    className="text-sm text-primary hover:underline flex items-center gap-1 truncate max-w-xs">
+                    <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                    {weighingLink}
+                  </a>
+                ) : (
+                  <span className="text-sm text-muted-foreground italic">לא הוגדר לינק</span>
+                )}
+                <Button size="icon" variant="ghost" className="shrink-0 h-7 w-7"
+                  onClick={() => { setWeighingDraft(weighingLink); setEditingWeighing(true); }}>
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
