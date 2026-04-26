@@ -285,7 +285,7 @@ export default function AppContent() {
 
       {/* Content Roadmap */}
       <div className="space-y-4">
-        {[1, 2, 3, 4].map((partNumber, partIndex) => {
+        {[1, 2, 3].map((partNumber, partIndex) => {
           const partContent = groupedContent[partNumber];
           if (!partContent) return null;
 
@@ -452,6 +452,52 @@ export default function AppContent() {
             </div>
           );
         })}
+
+        {/* Part 4 — static milestone, no content items */}
+        {(() => {
+          const unlocked = currentDay >= 168;
+          const daysLeft = Math.max(0, 168 - currentDay);
+          return (
+            <div className="animate-fade-in" style={{ animationDelay: '0.5s' }}>
+              <div className={cn(
+                'w-full glass-card p-4 flex items-center justify-between',
+                unlocked ? 'border-yellow-500/40' : 'opacity-60'
+              )}>
+                <div className="flex items-center gap-3">
+                  <div className={cn(
+                    'w-10 h-10 rounded-xl flex items-center justify-center',
+                    unlocked ? 'bg-yellow-500' : 'bg-muted'
+                  )}>
+                    {unlocked
+                      ? <Trophy className="h-5 w-5 text-white" />
+                      : <Lock className="h-5 w-5 text-muted-foreground" />
+                    }
+                  </div>
+                  <div className="text-right">
+                    <h3 className="font-bold text-foreground">שלב סיכום</h3>
+                    <p className="text-sm text-muted-foreground">
+                      {unlocked
+                        ? 'יום 168 — סוף התוכנית'
+                        : `ייפתח בעוד ${daysLeft} ימים`}
+                    </p>
+                  </div>
+                </div>
+                {unlocked && (
+                  <span className="text-yellow-500 text-xs font-semibold">🎉 הושלמה</span>
+                )}
+              </div>
+              {unlocked && (
+                <div className="mt-3 pr-2 border-r-2 border-yellow-500/30 mr-5">
+                  <div className="glass-card p-4 text-center space-y-2">
+                    <Trophy className="h-10 w-10 text-yellow-500 mx-auto" />
+                    <p className="font-bold text-foreground">כל הכבוד! סיימת את 168 ימי התוכנית</p>
+                    <p className="text-sm text-muted-foreground">לא ניתן להוסיף תכנים לשלב זה — הוא ציון דרך</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {Object.keys(groupedContent).length === 0 && (
