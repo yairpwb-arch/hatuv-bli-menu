@@ -8,8 +8,8 @@ import { Progress } from '@/components/ui/progress';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
-import { 
-  Lock, Play, Check, Star, FileText, BookOpen, 
+import {
+  Lock, Play, Check, Star, FileText, BookOpen, Trophy,
   ChevronDown, ChevronUp, ExternalLink, ClipboardList, BookText
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -35,6 +35,7 @@ const PART_NAMES: Record<number, { title: string; subtitle: string }> = {
   1: { title: 'חלק 1', subtitle: 'בניית היסודות' },
   2: { title: 'חלק 2', subtitle: 'אדפטציה ושדרוג תזונתי' },
   3: { title: 'חלק 3', subtitle: 'הטמעה ושיפור ביצועים' },
+  4: { title: 'שלב סיכום', subtitle: 'יום 168 — סוף התוכנית' },
 };
 
 export default function AppContent() {
@@ -284,7 +285,7 @@ export default function AppContent() {
 
       {/* Content Roadmap */}
       <div className="space-y-4">
-        {[1, 2, 3].map((partNumber, partIndex) => {
+        {[1, 2, 3, 4].map((partNumber, partIndex) => {
           const partContent = groupedContent[partNumber];
           if (!partContent) return null;
 
@@ -314,10 +315,14 @@ export default function AppContent() {
                 <div className="flex items-center gap-3">
                   <div className={cn(
                     'w-10 h-10 rounded-xl flex items-center justify-center',
-                    partUnlocked ? 'gradient-primary' : 'bg-muted'
+                    partUnlocked
+                      ? partNumber === 4 ? 'bg-yellow-500' : 'gradient-primary'
+                      : 'bg-muted'
                   )}>
                     {partUnlocked ? (
-                      <BookOpen className="h-5 w-5 text-primary-foreground" />
+                      partNumber === 4
+                        ? <Trophy className="h-5 w-5 text-white" />
+                        : <BookOpen className="h-5 w-5 text-primary-foreground" />
                     ) : (
                       <Lock className="h-5 w-5 text-muted-foreground" />
                     )}
