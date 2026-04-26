@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Dumbbell, CheckCircle, Clock, History, Play, ChevronDown } from 'lucide-react';
+import { Dumbbell, CheckCircle, Clock, History, Play, ChevronDown, Pencil, X } from 'lucide-react';
 import type { WorkoutPlanDay, WorkoutPlanExercise } from '@/hooks/useWorkoutPlan';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
@@ -71,7 +71,7 @@ interface WorkoutDayCardProps {
   alreadyDoneToday: boolean;
   isExpanded: boolean;
   onToggleExpand: () => void;
-  onSchedule: (weekday: number) => void;
+  onSaveSchedule: (weekday: number | null) => void;
   onStartSession: () => void;
 }
 
@@ -82,10 +82,29 @@ function WorkoutDayCard({
   alreadyDoneToday,
   isExpanded,
   onToggleExpand,
-  onSchedule,
+  onSaveSchedule,
   onStartSession,
 }: WorkoutDayCardProps) {
   const isScheduledToday = scheduledWeekday === todayWeekday;
+  const [isEditingDay, setIsEditingDay] = useState(false);
+  const [pendingWeekday, setPendingWeekday] = useState<number | null>(null);
+
+  const startEditing = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setPendingWeekday(scheduledWeekday ?? null);
+    setIsEditingDay(true);
+  };
+
+  const cancelEditing = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsEditingDay(false);
+  };
+
+  const saveEditing = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onSaveSchedule(pendingWeekday);
+    setIsEditingDay(false);
+  };
 
   // Fetch exercises only when card is expanded
   const { data: exercises, isLoading: isLoadingExercises } = useQuery({
@@ -133,11 +152,11 @@ function WorkoutDayCard({
                   </Badge>
                 )}
               </div>
-              {scheduledWeekday !== undefined && (
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  מתוכנן ליום {WEEKDAY_LABELS[scheduledWeekday]}
-                </p>
-              )}
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {scheduledWeekday !== undefined
+                  ? `מתוכנן ליום ${WEEKDAY_LABELS[scheduledWeekday]}`
+                  : 'לא נקבע יום אימון'}
+              </p>
             </div>
           </div>
           <ChevronDown
@@ -148,25 +167,73 @@ function WorkoutDayCard({
           />
         </div>
 
-        {/* ── Weekday pills ── */}
-        <div className="flex gap-1">
-          {WEEKDAY_LABELS.map((label, wd) => (
+        {/* ── Day scheduler: view / edit ── */}
+        {!isEditingDay ? (
+          <div className="flex items-center justify-between">
+            <div className="flex gap-1 flex-1 ml-2">
+              {WEEKDAY_LABELS.map((label, wd) => (
+                <div
+                  key={wd}
+                  className={cn(
+                    'flex-1 py-1.5 rounded-lg text-xs font-semibold text-center',
+                    scheduledWeekday === wd
+                      ? 'bg-orange-500 text-white'
+                      : wd === todayWeekday
+                      ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 border border-orange-300 dark:border-orange-700'
+                      : 'bg-muted text-muted-foreground'
+                  )}
+                >
+                  {label}
+                </div>
+              ))}
+            </div>
             <button
-              key={wd}
-              onClick={() => onSchedule(wd)}
-              className={cn(
-                'flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all',
-                scheduledWeekday === wd
-                  ? 'bg-orange-500 text-white shadow-sm'
-                  : wd === todayWeekday
-                  ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 border border-orange-300 dark:border-orange-700'
-                  : 'bg-muted text-muted-foreground hover:bg-muted/80'
-              )}
+              onClick={startEditing}
+              className="flex items-center gap-1 text-xs text-orange-500 font-medium px-2 py-1.5 rounded-lg hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors flex-shrink-0"
             >
-              {label}
+              <Pencil className="h-3.5 w-3.5" />
+              ערוך
             </button>
-          ))}
-        </div>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <div className="flex gap-1">
+              {WEEKDAY_LABELS.map((label, wd) => (
+                <button
+                  key={wd}
+                  onClick={(e) => { e.stopPropagation(); setPendingWeekday(pendingWeekday === wd ? null : wd); }}
+                  className={cn(
+                    'flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all',
+                    pendingWeekday === wd
+                      ? 'bg-orange-500 text-white shadow-sm'
+                      : wd === todayWeekday
+                      ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 border border-orange-300 dark:border-orange-700'
+                      : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                className="flex-1 h-8 bg-orange-500 hover:bg-orange-600 text-white text-xs rounded-lg"
+                onClick={saveEditing}
+              >
+                שמור
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 px-3 text-xs rounded-lg"
+                onClick={cancelEditing}
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* ── Expanded: exercise list + start button ── */}
         {isExpanded && (
@@ -260,10 +327,8 @@ function WorkoutsTab({ userId, planDays, sessions, onStartSession }: WorkoutsTab
 
   const scheduleMap = new Map((scheduleRows ?? []).map((r) => [r.plan_day_id, r.weekday]));
 
-  const handleScheduleDay = async (planDayId: string, weekday: number) => {
-    const current = scheduleMap.get(planDayId);
-    if (current === weekday) {
-      // Same pill tapped → deselect
+  const handleSaveSchedule = async (planDayId: string, weekday: number | null) => {
+    if (weekday === null) {
       await (supabase as any)
         .from('workout_day_schedule')
         .delete()
@@ -293,9 +358,6 @@ function WorkoutsTab({ userId, planDays, sessions, onStartSession }: WorkoutsTab
 
   return (
     <div className="space-y-3 pt-2">
-      <p className="text-xs text-muted-foreground text-center">
-        בחר יום שבוע לכל אימון כדי לקבל תזכורת בדף הבית
-      </p>
       {planDays.map((day) => {
         const alreadyDoneToday = sessions.some(
           (s) => s.completed_at.split('T')[0] === today && s.plan_day_id === day.id
@@ -309,7 +371,7 @@ function WorkoutsTab({ userId, planDays, sessions, onStartSession }: WorkoutsTab
             alreadyDoneToday={alreadyDoneToday}
             isExpanded={expandedDayId === day.id}
             onToggleExpand={() => setExpandedDayId(expandedDayId === day.id ? null : day.id)}
-            onSchedule={(wd) => handleScheduleDay(day.id, wd)}
+            onSaveSchedule={(wd) => handleSaveSchedule(day.id, wd)}
             onStartSession={() => onStartSession(day)}
           />
         );
