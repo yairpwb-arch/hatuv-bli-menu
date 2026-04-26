@@ -308,89 +308,46 @@ interface WalkEntry {
   is_active: boolean;
 }
 
-function WalkCard({ walk, onSaved }: { walk: WalkEntry; onSaved: () => void }) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [pending, setPending] = useState<number | null>(walk.day_of_week ?? null);
-  const [isSaving, setIsSaving] = useState(false);
+function WalkCard({ walk }: { walk: WalkEntry }) {
   const todayWd = new Date().getDay();
   const isToday = walk.day_of_week === todayWd;
-
-  const saveDay = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setIsSaving(true);
-    await (supabase as any).from('user_walking_schedule').update({ day_of_week: pending }).eq('id', walk.id);
-    setIsEditing(false);
-    setIsSaving(false);
-    onSaved();
-  };
 
   return (
     <Card className={cn('transition-all', isToday && 'border-2 border-orange-500')}>
       <CardContent className="p-4 space-y-3">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className={cn('w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0',
-              isToday ? 'bg-orange-500 text-white' : 'bg-muted text-muted-foreground')}>
-              <Footprints className="h-4 w-4" />
+        <div className="flex items-center gap-3">
+          <div className={cn('w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0',
+            isToday ? 'bg-orange-500 text-white' : 'bg-muted text-muted-foreground')}>
+            <Footprints className="h-4 w-4" />
+          </div>
+          <div>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <h4 className="font-semibold text-foreground">
+                הליכה {walk.walk_number === 1 ? 'ראשונה' : 'שנייה'}
+              </h4>
+              {isToday && <Badge className="bg-orange-500 text-white text-xs px-2 py-0">היום</Badge>}
             </div>
-            <div>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <h4 className="font-semibold text-foreground">
-                  הליכה {walk.walk_number === 1 ? 'ראשונה' : 'שנייה'}
-                </h4>
-                {isToday && <Badge className="bg-orange-500 text-white text-xs px-2 py-0">היום</Badge>}
-              </div>
-              <p className="text-xs text-muted-foreground mt-0.5">20-30 דקות • קצב רגיל</p>
-              <p className="text-xs text-muted-foreground">
-                {walk.day_of_week !== null
-                  ? `מתוכנן ליום ${WEEKDAY_LABELS[walk.day_of_week]}`
-                  : 'טרם נקבע יום הליכה'}
-              </p>
-            </div>
+            <p className="text-xs text-muted-foreground mt-0.5">20-30 דקות • קצב רגיל</p>
+            <p className="text-xs text-muted-foreground">
+              {walk.day_of_week !== null
+                ? `מתוכנן ליום ${WEEKDAY_LABELS[walk.day_of_week]}`
+                : 'טרם נקבע יום הליכה'}
+            </p>
           </div>
         </div>
 
-        {/* Day scheduler */}
-        {!isEditing ? (
-          <div className="flex items-center justify-between">
-            <div className="flex gap-1 flex-1 ml-2">
-              {WEEKDAY_LABELS.map((label, wd) => (
-                <div key={wd} className={cn(
-                  'flex-1 py-1.5 rounded-lg text-xs font-semibold text-center',
-                  walk.day_of_week === wd ? 'bg-orange-500 text-white'
-                  : wd === todayWd ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 border border-orange-300 dark:border-orange-700'
-                  : 'bg-muted text-muted-foreground'
-                )}>{label}</div>
-              ))}
-            </div>
-            <button onClick={() => { setPending(walk.day_of_week ?? null); setIsEditing(true); }}
-              className="flex items-center gap-1 text-xs text-orange-500 font-medium px-2 py-1.5 rounded-lg hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors flex-shrink-0">
-              <Pencil className="h-3.5 w-3.5" />ערוך
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            <div className="flex gap-1">
-              {WEEKDAY_LABELS.map((label, wd) => (
-                <button key={wd}
-                  onClick={() => setPending(pending === wd ? null : wd)}
-                  className={cn('flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all',
-                    pending === wd ? 'bg-orange-500 text-white shadow-sm'
-                    : wd === todayWd ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 border border-orange-300 dark:border-orange-700'
-                    : 'bg-muted text-muted-foreground hover:bg-muted/80'
-                  )}>{label}</button>
-              ))}
-            </div>
-            <div className="flex gap-2">
-              <Button size="sm" disabled={isSaving}
-                className="flex-1 h-8 bg-orange-500 hover:bg-orange-600 text-white text-xs rounded-lg"
-                onClick={saveDay}>שמור</Button>
-              <Button size="sm" variant="outline" className="h-8 px-3 text-xs rounded-lg"
-                onClick={() => setIsEditing(false)}><X className="h-3.5 w-3.5" /></Button>
-            </div>
-          </div>
-        )}
+        {/* Day display (read-only) */}
+        <div className="flex gap-1">
+          {WEEKDAY_LABELS.map((label, wd) => (
+            <div key={wd} className={cn(
+              'flex-1 py-1.5 rounded-lg text-xs font-semibold text-center',
+              walk.day_of_week === wd ? 'bg-orange-500 text-white'
+              : wd === todayWd ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 border border-orange-300 dark:border-orange-700'
+              : 'bg-muted text-muted-foreground'
+            )}>{label}</div>
+          ))}
+        </div>
       </CardContent>
     </Card>
   );
@@ -456,7 +413,7 @@ function WalkingSection({ userId }: { userId: string }) {
         <Footprints className="h-4 w-4 text-orange-500" />
         <h3 className="text-sm font-semibold text-muted-foreground">הליכות שבועיות</h3>
       </div>
-      {walks.map(w => <WalkCard key={w.id} walk={w} onSaved={load} />)}
+      {walks.map(w => <WalkCard key={w.id} walk={w} />)}
     </div>
   );
 }
