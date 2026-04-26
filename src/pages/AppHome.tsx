@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
-import { Footprints, Quote, Scale, Sparkles, Star, Target } from 'lucide-react';
+import { Dumbbell, Footprints, Quote, Scale, Sparkles, Star, Target } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { ActivityScheduler } from '@/components/ActivityScheduler';
@@ -35,6 +35,7 @@ export default function AppHome() {
   const [isWeightDialogOpen, setIsWeightDialogOpen] = useState(false);
   const [showConfetti, setShowConfetti] = useState<string | null>(null);
   const [todaySteps, setTodaySteps] = useState<number | null>(null);
+  const [todayWorkoutName, setTodayWorkoutName] = useState<string | null>(null);
 
   const isWeighInDay = currentDay % 7 === 0;
   const currentWeek = Math.ceil(currentDay / 7);
@@ -69,6 +70,23 @@ export default function AppHome() {
     };
     fetchSteps();
   }, [user, today]);
+
+  useEffect(() => {
+    const fetchTodayWorkout = async () => {
+      if (!user) return;
+      const weekday = new Date().getDay(); // 0=Sun … 6=Sat
+      const { data } = await (supabase as any)
+        .from('workout_day_schedule')
+        .select('workout_plan_days(name)')
+        .eq('user_id', user.id)
+        .eq('weekday', weekday)
+        .maybeSingle();
+      if (data?.workout_plan_days?.name) {
+        setTodayWorkoutName(data.workout_plan_days.name);
+      }
+    };
+    fetchTodayWorkout();
+  }, [user]);
 
   useEffect(() => {
     const fetchQuote = async () => {
@@ -219,6 +237,23 @@ export default function AppHome() {
           currentWeek={currentWeek} 
           completedContentIds={new Set()} 
         />
+      )}
+
+      {/* Today's Workout Reminder */}
+      {todayWorkoutName && (
+        <Card className="border-2 border-orange-400 bg-orange-500/10 animate-slide-up" style={{ animationDelay: '0.18s' }}>
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-xl bg-orange-500 flex items-center justify-center flex-shrink-0">
+                <Dumbbell className="h-5 w-5 text-white" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground font-medium">אימון להיום</p>
+                <p className="font-bold text-foreground">{todayWorkoutName}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* Daily Quote */}

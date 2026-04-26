@@ -1,15 +1,12 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Dumbbell, CheckCircle, Clock, CalendarDays, History, ChevronLeft, Play, ChevronDown } from 'lucide-react';
-import type { WorkoutPlanDay } from '@/hooks/useWorkoutPlan';
+import { Dumbbell, CheckCircle, Clock, History, Play, ChevronDown } from 'lucide-react';
+import type { WorkoutPlanDay, WorkoutPlanExercise } from '@/hooks/useWorkoutPlan';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { he } from 'date-fns/locale';
@@ -19,32 +16,11 @@ import { useWorkoutPlan } from '@/hooks/useWorkoutPlan';
 import { useWorkoutSession } from '@/hooks/useWorkoutSession';
 import WorkoutActiveSession, { type ExerciseLog } from '@/components/WorkoutActiveSession';
 
-// ---------------------------------------------------------------------------
-// Local types
-// ---------------------------------------------------------------------------
-
-interface Exercise {
-  id: string;
-  name: string;
-  description: string | null;
-  muscle_groups: string[] | null;
-  media_url: string | null;
-}
-
-interface WorkoutPlanExercise {
-  id: string;
-  plan_day_id: string;
-  exercise_id: string;
-  sets: number;
-  reps_min: number;
-  reps_max: number;
-  rest_seconds: number | null;
-  sort_order: number | null;
-  exercises: Exercise;
-}
+// Hebrew weekday labels (JS getDay(): 0=Sun=א׳ … 6=Sat=ש׳)
+const WEEKDAY_LABELS = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳'];
 
 // ---------------------------------------------------------------------------
-// Helper: format rest time in Hebrew
+// Helpers
 // ---------------------------------------------------------------------------
 function formatRest(seconds: number | null): string | null {
   if (!seconds) return null;
@@ -55,23 +31,18 @@ function formatRest(seconds: number | null): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// Loading skeleton
+// Skeletons / empty states
 // ---------------------------------------------------------------------------
 function WorkoutSkeleton() {
   return (
     <div className="space-y-4">
-      <Skeleton className="h-24 w-full rounded-2xl" />
-      <Skeleton className="h-10 w-full rounded-xl" />
       {Array.from({ length: 3 }).map((_, i) => (
-        <Skeleton key={i} className="h-20 w-full rounded-xl" />
+        <Skeleton key={i} className="h-36 w-full rounded-2xl" />
       ))}
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Empty state — no active plan
-// ---------------------------------------------------------------------------
 function NoActivePlan() {
   return (
     <div className="min-h-screen pb-20 pt-6 px-4 flex items-center justify-center">
@@ -91,406 +62,256 @@ function NoActivePlan() {
 }
 
 // ---------------------------------------------------------------------------
-// Tab 1 — Today's workout (with day selector + exercise detail dialog)
+// WorkoutDayCard — single card for one plan day
 // ---------------------------------------------------------------------------
-interface TodayTabProps {
-  planName: string;
-  planDays: WorkoutPlanDay[];
-  todayDayId: string | null;
-  logSession: (planDayId: string, durationMinutes: number, exerciseLogs: { exerciseId: string; sets: { reps: number; weightKg: number }[] }[]) => Promise<void>;
+interface WorkoutDayCardProps {
+  day: WorkoutPlanDay;
+  scheduledWeekday: number | undefined;
+  todayWeekday: number;
   alreadyDoneToday: boolean;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
+  onSchedule: (weekday: number) => void;
   onStartSession: () => void;
 }
 
-function TodayTab({ planName, planDays, todayDayId, logSession, alreadyDoneToday, onStartSession }: TodayTabProps) {
-  const [selectedDayId, setSelectedDayId] = useState<string | null>(todayDayId);
-  const [isFinishDialogOpen, setIsFinishDialogOpen] = useState(false);
-  const [durationInput, setDurationInput] = useState('');
-  const [exerciseDetail, setExerciseDetail] = useState<WorkoutPlanExercise | null>(null);
+function WorkoutDayCard({
+  day,
+  scheduledWeekday,
+  todayWeekday,
+  alreadyDoneToday,
+  isExpanded,
+  onToggleExpand,
+  onSchedule,
+  onStartSession,
+}: WorkoutDayCardProps) {
+  const isScheduledToday = scheduledWeekday === todayWeekday;
 
-  const activeDayId = selectedDayId ?? planDays[0]?.id ?? null;
-  const activeDay = planDays.find((d) => d.id === activeDayId) ?? null;
-
-  const { data: planExercises, isLoading } = useQuery({
-    queryKey: ['plan-exercises', activeDayId],
+  // Fetch exercises only when card is expanded
+  const { data: exercises, isLoading: isLoadingExercises } = useQuery({
+    queryKey: ['plan-exercises', day.id],
     queryFn: async () => {
-      if (!activeDayId) return [];
       const { data, error } = await (supabase as any)
         .from('workout_plan_exercises')
-        .select('*, exercises (*)')
-        .eq('plan_day_id', activeDayId)
+        .select('*, exercises(*)')
+        .eq('plan_day_id', day.id)
         .order('sort_order', { ascending: true });
       if (error) return [];
       return (data ?? []) as WorkoutPlanExercise[];
     },
-    enabled: !!activeDayId,
+    enabled: isExpanded,
   });
 
-  const handleFinish = async () => {
-    if (!activeDayId) return;
-    const duration = parseInt(durationInput, 10);
-    await logSession(activeDayId, isNaN(duration) ? 0 : duration, []);
-    setIsFinishDialogOpen(false);
-    setDurationInput('');
-  };
-
   return (
-    <div className="space-y-4 pt-2">
+    <Card className={cn('transition-all', isScheduledToday && 'border-2 border-orange-500')}>
+      <CardContent className="p-4 space-y-3">
 
-      {/* Day selector — horizontal scroll */}
-      {planDays.length > 1 && (
-        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-          {planDays.map((day) => {
-            const isToday = day.id === todayDayId;
-            const isSelected = day.id === activeDayId;
-            return (
-              <button
-                key={day.id}
-                onClick={() => setSelectedDayId(day.id)}
-                className={cn(
-                  'flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-all',
-                  isSelected
-                    ? 'bg-orange-500 text-white shadow-md'
-                    : isToday
-                    ? 'bg-orange-100 text-orange-700 border border-orange-300'
-                    : 'bg-muted text-muted-foreground hover:bg-muted/80'
+        {/* ── Header ── */}
+        <div
+          className="flex items-center justify-between cursor-pointer"
+          onClick={onToggleExpand}
+        >
+          <div className="flex items-center gap-3">
+            <div
+              className={cn(
+                'w-9 h-9 rounded-xl flex items-center justify-center font-bold text-sm flex-shrink-0',
+                isScheduledToday ? 'bg-orange-500 text-white' : 'bg-muted text-muted-foreground'
+              )}
+            >
+              {day.day_number}
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <h4 className="font-semibold text-foreground">{day.name}</h4>
+                {isScheduledToday && (
+                  <Badge className="bg-orange-500 text-white text-xs px-2 py-0">היום</Badge>
                 )}
-              >
-                {isToday ? '⚡ ' : ''}{day.name}
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Header card */}
-      {activeDay && (
-        <Card className="border-2 border-orange-500 bg-orange-500/10">
-          <CardContent className="pt-4 pb-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground font-medium">{planName}</p>
-                <h3 className="text-lg font-bold text-foreground">
-                  יום {activeDay.day_number} — {activeDay.name}
-                </h3>
+                {alreadyDoneToday && (
+                  <Badge className="bg-green-500 text-white text-xs px-2 py-0 gap-0.5">
+                    <CheckCircle className="h-3 w-3" />
+                    בוצע
+                  </Badge>
+                )}
               </div>
-              {alreadyDoneToday && activeDayId === todayDayId && (
-                <Badge className="bg-green-500 text-white gap-1 px-3 py-1">
-                  <CheckCircle className="h-3.5 w-3.5" />
-                  בוצע היום ✓
-                </Badge>
+              {scheduledWeekday !== undefined && (
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  מתוכנן ליום {WEEKDAY_LABELS[scheduledWeekday]}
+                </p>
               )}
             </div>
-          </CardContent>
-        </Card>
-      )}
+          </div>
+          <ChevronDown
+            className={cn(
+              'h-4 w-4 text-muted-foreground transition-transform flex-shrink-0',
+              isExpanded && 'rotate-180'
+            )}
+          />
+        </div>
 
-      {/* Exercise list */}
-      {isLoading ? (
-        <WorkoutSkeleton />
-      ) : !planExercises || planExercises.length === 0 ? (
-        <Card>
-          <CardContent className="pt-6 pb-6 text-center text-muted-foreground">
-            לא נמצאו תרגילים לאימון זה
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-3">
-          {planExercises.map((pe, idx) => {
-            const ex = pe.exercises;
-            const repsLabel =
-              pe.reps_min === pe.reps_max
-                ? `${pe.sets}×${pe.reps_min}`
-                : `${pe.sets}×${pe.reps_min}-${pe.reps_max}`;
-            const restLabel = formatRest(pe.rest_seconds);
+        {/* ── Weekday pills ── */}
+        <div className="flex gap-1">
+          {WEEKDAY_LABELS.map((label, wd) => (
+            <button
+              key={wd}
+              onClick={() => onSchedule(wd)}
+              className={cn(
+                'flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all',
+                scheduledWeekday === wd
+                  ? 'bg-orange-500 text-white shadow-sm'
+                  : wd === todayWeekday
+                  ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 border border-orange-300 dark:border-orange-700'
+                  : 'bg-muted text-muted-foreground hover:bg-muted/80'
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
 
-            return (
-              <Card
-                key={pe.id}
-                className="overflow-hidden cursor-pointer hover:border-orange-400 transition-colors active:scale-[0.99]"
-                onClick={() => setExerciseDetail(pe)}
-              >
-                <CardContent className="p-0">
-                  <div className="flex gap-3 p-4">
-                    {/* Number / thumbnail */}
-                    {ex.media_url && !ex.media_url.includes('.mp4') && !ex.media_url.includes('video') ? (
-                      <img
-                        src={ex.media_url}
-                        alt={ex.name}
-                        className="w-16 h-16 object-cover rounded-xl flex-shrink-0 bg-muted"
-                      />
-                    ) : (
-                      <div className="w-16 h-16 rounded-xl bg-orange-500 flex items-center justify-center flex-shrink-0 shadow-sm">
-                        <span className="text-2xl font-bold text-white">{idx + 1}</span>
-                      </div>
-                    )}
-
-                    {/* Info */}
+        {/* ── Expanded: exercise list + start button ── */}
+        {isExpanded && (
+          <div className="border-t border-border pt-3 space-y-2">
+            {isLoadingExercises ? (
+              <Skeleton className="h-20 w-full" />
+            ) : !exercises || exercises.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-2">לא נמצאו תרגילים לאימון זה</p>
+            ) : (
+              exercises.map((pe, idx) => {
+                const ex = pe.exercises;
+                const repsLabel =
+                  pe.reps_min === pe.reps_max
+                    ? `${pe.sets}×${pe.reps_min}`
+                    : `${pe.sets}×${pe.reps_min}-${pe.reps_max}`;
+                const restLabel = formatRest(pe.rest_seconds);
+                return (
+                  <div key={pe.id} className="flex items-start gap-3 p-2.5 rounded-xl bg-muted/40">
+                    <div className="w-7 h-7 rounded-lg bg-orange-500 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <span className="text-xs font-bold text-white">{idx + 1}</span>
+                    </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2">
-                        <h4 className="font-semibold text-foreground leading-tight">{ex.name}</h4>
-                        <Badge className="text-xs flex-shrink-0 bg-orange-500 text-white border-0">
-                          {repsLabel}
-                        </Badge>
+                        <p className="text-sm font-medium text-foreground">{ex.name}</p>
+                        <Badge className="bg-orange-500 text-white text-xs flex-shrink-0">{repsLabel}</Badge>
                       </div>
                       {restLabel && (
-                        <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                        <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
                           <Clock className="h-3 w-3" />
                           {restLabel}
                         </p>
                       )}
+                      {ex.description && (
+                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{ex.description}</p>
+                      )}
                       {ex.muscle_groups && ex.muscle_groups.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-1.5">
+                        <div className="flex flex-wrap gap-1 mt-1">
                           {ex.muscle_groups.map((mg) => (
-                            <Badge key={mg} variant="secondary" className="text-xs">
-                              {mg}
-                            </Badge>
+                            <Badge key={mg} variant="secondary" className="text-xs py-0">{mg}</Badge>
                           ))}
                         </div>
                       )}
                     </div>
-                    <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0 self-center -rotate-90" />
                   </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      )}
+                );
+              })
+            )}
 
-      {/* Start / finish buttons */}
-      {!(alreadyDoneToday && activeDayId === todayDayId) && activeDayId === todayDayId && (
-        <div className="flex gap-2">
-          <Button
-            className="flex-1 h-12 bg-orange-500 hover:bg-orange-600 text-white font-bold text-base rounded-xl shadow-md"
-            onClick={onStartSession}
-          >
-            <Play className="h-5 w-5 ml-2" />
-            התחל אימון
-          </Button>
-          <Button
-            variant="outline"
-            className="h-12 px-4 rounded-xl border-orange-400 text-orange-600"
-            onClick={() => setIsFinishDialogOpen(true)}
-          >
-            <CheckCircle className="h-5 w-5" />
-          </Button>
-        </div>
-      )}
-
-      {/* Finish dialog */}
-      <Dialog open={isFinishDialogOpen} onOpenChange={setIsFinishDialogOpen}>
-        <DialogContent dir="rtl" className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>סיום אימון</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 pt-2">
-            <p className="text-muted-foreground text-sm">כל הכבוד! רוצה לרשום כמה זמן אימנת?</p>
-            <div className="space-y-2">
-              <Label htmlFor="duration">משך האימון (דקות) — אופציונלי</Label>
-              <Input
-                id="duration"
-                type="number"
-                min="1"
-                max="300"
-                placeholder="לדוגמה: 45"
-                value={durationInput}
-                onChange={(e) => setDurationInput(e.target.value)}
-                dir="ltr"
-                className="text-left"
-              />
-            </div>
-          </div>
-          <DialogFooter className="gap-2 pt-2">
-            <Button variant="outline" onClick={() => setIsFinishDialogOpen(false)} className="flex-1">ביטול</Button>
-            <Button className="flex-1 bg-orange-500 hover:bg-orange-600 text-white" onClick={handleFinish}>
-              שמור אימון
+            <Button
+              className="w-full mt-1 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl h-11"
+              onClick={onStartSession}
+            >
+              <Play className="h-4 w-4 ml-2" />
+              התחל אימון
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Exercise detail dialog */}
-      <Dialog open={!!exerciseDetail} onOpenChange={() => setExerciseDetail(null)}>
-        <DialogContent dir="rtl" className="max-w-sm max-h-[92vh] overflow-y-auto p-0">
-          {exerciseDetail && (() => {
-            const ex = exerciseDetail.exercises;
-            const repsLabel = exerciseDetail.reps_min === exerciseDetail.reps_max
-              ? `${exerciseDetail.sets}×${exerciseDetail.reps_min}`
-              : `${exerciseDetail.sets}×${exerciseDetail.reps_min}-${exerciseDetail.reps_max}`;
-            const restLabel = formatRest(exerciseDetail.rest_seconds);
-            return (
-              <>
-                {/* Video — portrait (reels) */}
-                {ex.media_url && (ex.media_url.includes('.mp4') || ex.media_url.includes('video') || ex.media_url.includes('supabase')) ? (
-                  <div className="w-full bg-black" style={{ aspectRatio: '9/16' }}>
-                    <video
-                      src={ex.media_url}
-                      controls
-                      autoPlay
-                      playsInline
-                      className="w-full h-full object-contain"
-                    />
-                  </div>
-                ) : ex.media_url ? (
-                  <div className="w-full aspect-video bg-black">
-                    <img src={ex.media_url} alt={ex.name} className="w-full h-full object-cover" />
-                  </div>
-                ) : null}
-
-                <div className="p-4 space-y-3">
-                  {/* Title + reps */}
-                  <div className="flex items-center justify-between gap-2">
-                    <h2 className="text-lg font-bold">{ex.name}</h2>
-                    <Badge className="bg-orange-500 text-white text-sm px-3">{repsLabel}</Badge>
-                  </div>
-
-                  {restLabel && (
-                    <p className="text-sm text-muted-foreground flex items-center gap-1.5">
-                      <Clock className="h-4 w-4" />
-                      {restLabel}
-                    </p>
-                  )}
-
-                  {ex.muscle_groups && ex.muscle_groups.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {ex.muscle_groups.map((mg) => (
-                        <Badge key={mg} variant="secondary">{mg}</Badge>
-                      ))}
-                    </div>
-                  )}
-
-                  {ex.description && (
-                    <div className="bg-muted/40 rounded-xl p-3">
-                      <p className="text-sm font-medium mb-1">📋 הוראות ביצוע</p>
-                      <p className="text-sm text-muted-foreground leading-relaxed">{ex.description}</p>
-                    </div>
-                  )}
-                </div>
-              </>
-            );
-          })()}
-        </DialogContent>
-      </Dialog>
-    </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Tab 2 — Full week overview
+// WorkoutsTab — lists all plan days
 // ---------------------------------------------------------------------------
-interface WeekTabProps {
-  planDays: {
-    id: string;
-    day_number: number;
-    name: string;
-    description: string | null;
-    plan_id: string;
-  }[];
-  todayPlanDayId: string | null;
+interface WorkoutsTabProps {
+  userId: string;
+  planDays: WorkoutPlanDay[];
+  sessions: { id: string; completed_at: string; plan_day_id: string }[];
+  onStartSession: (planDay: WorkoutPlanDay) => void;
 }
 
-function WeekTab({ planDays, todayPlanDayId }: WeekTabProps) {
+function WorkoutsTab({ userId, planDays, sessions, onStartSession }: WorkoutsTabProps) {
+  const queryClient = useQueryClient();
   const [expandedDayId, setExpandedDayId] = useState<string | null>(null);
 
-  // Fetch exercises for expanded day
-  const { data: expandedExercises } = useQuery({
-    queryKey: ['plan-exercises', expandedDayId],
+  const today = new Date().toISOString().split('T')[0];
+  const todayWeekday = new Date().getDay(); // 0=Sun … 6=Sat
+
+  // Fetch user's schedule (planDayId → weekday)
+  const { data: scheduleRows } = useQuery({
+    queryKey: ['workout-day-schedule', userId],
     queryFn: async () => {
-      if (!expandedDayId) return [];
-      const { data, error } = await (supabase as any)
-        .from('workout_plan_exercises')
-        .select(`*, exercises(*)`)
-        .eq('plan_day_id', expandedDayId)
-        .order('sort_order', { ascending: true });
-      if (error) return [];
-      return (data ?? []) as WorkoutPlanExercise[];
+      const { data } = await (supabase as any)
+        .from('workout_day_schedule')
+        .select('plan_day_id, weekday')
+        .eq('user_id', userId);
+      return (data ?? []) as { plan_day_id: string; weekday: number }[];
     },
-    enabled: !!expandedDayId,
   });
+
+  const scheduleMap = new Map((scheduleRows ?? []).map((r) => [r.plan_day_id, r.weekday]));
+
+  const handleScheduleDay = async (planDayId: string, weekday: number) => {
+    const current = scheduleMap.get(planDayId);
+    if (current === weekday) {
+      // Same pill tapped → deselect
+      await (supabase as any)
+        .from('workout_day_schedule')
+        .delete()
+        .eq('user_id', userId)
+        .eq('plan_day_id', planDayId);
+    } else {
+      await (supabase as any)
+        .from('workout_day_schedule')
+        .upsert(
+          { user_id: userId, plan_day_id: planDayId, weekday },
+          { onConflict: 'user_id,plan_day_id' }
+        );
+    }
+    queryClient.invalidateQueries({ queryKey: ['workout-day-schedule', userId] });
+    queryClient.invalidateQueries({ queryKey: ['today-workout', userId] });
+  };
+
+  if (planDays.length === 0) {
+    return (
+      <Card className="mt-4">
+        <CardContent className="pt-6 pb-6 text-center text-muted-foreground">
+          לא הוגדרו ימים בתוכנית האימון
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <div className="space-y-3 pt-2">
+      <p className="text-xs text-muted-foreground text-center">
+        בחר יום שבוע לכל אימון כדי לקבל תזכורת בדף הבית
+      </p>
       {planDays.map((day) => {
-        const isToday = day.id === todayPlanDayId;
-        const isExpanded = expandedDayId === day.id;
-
+        const alreadyDoneToday = sessions.some(
+          (s) => s.completed_at.split('T')[0] === today && s.plan_day_id === day.id
+        );
         return (
-          <Card
+          <WorkoutDayCard
             key={day.id}
-            className={cn(
-              'transition-all cursor-pointer',
-              isToday && 'border-2 border-orange-500 bg-orange-500/10'
-            )}
-            onClick={() => setExpandedDayId(isExpanded ? null : day.id)}
-          >
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div
-                    className={cn(
-                      'w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm flex-shrink-0',
-                      isToday
-                        ? 'bg-orange-500 text-white'
-                        : 'bg-muted text-muted-foreground'
-                    )}
-                  >
-                    {day.day_number}
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h4 className="font-semibold text-foreground">{day.name}</h4>
-                      {isToday && (
-                        <Badge className="bg-orange-500 text-white text-xs px-2 py-0">
-                          היום
-                        </Badge>
-                      )}
-                    </div>
-                    {day.description && (
-                      <p className="text-xs text-muted-foreground mt-0.5">{day.description}</p>
-                    )}
-                  </div>
-                </div>
-                <ChevronLeft
-                  className={cn(
-                    'h-4 w-4 text-muted-foreground transition-transform',
-                    isExpanded && '-rotate-90'
-                  )}
-                />
-              </div>
-
-              {/* Expanded: exercise list */}
-              {isExpanded && expandedExercises && expandedExercises.length > 0 && (
-                <div className="mt-3 pt-3 border-t border-border space-y-2">
-                  {expandedExercises.map((pe) => {
-                    const repsLabel =
-                      pe.reps_min === pe.reps_max
-                        ? `${pe.sets}×${pe.reps_min}`
-                        : `${pe.sets}×${pe.reps_min}-${pe.reps_max}`;
-
-                    return (
-                      <div key={pe.id} className="flex items-center justify-between gap-2">
-                        <span className="text-sm text-foreground">{pe.exercises.name}</span>
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          <Badge
-                            variant="outline"
-                            className="text-xs border-orange-300 text-orange-700"
-                          >
-                            {repsLabel}
-                          </Badge>
-                          {pe.exercises.muscle_groups?.map((mg) => (
-                            <Badge key={mg} variant="secondary" className="text-xs">
-                              {mg}
-                            </Badge>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+            day={day}
+            scheduledWeekday={scheduleMap.get(day.id)}
+            todayWeekday={todayWeekday}
+            alreadyDoneToday={alreadyDoneToday}
+            isExpanded={expandedDayId === day.id}
+            onToggleExpand={() => setExpandedDayId(expandedDayId === day.id ? null : day.id)}
+            onSchedule={(wd) => handleScheduleDay(day.id, wd)}
+            onStartSession={() => onStartSession(day)}
+          />
         );
       })}
     </div>
@@ -498,7 +319,7 @@ function WeekTab({ planDays, todayPlanDayId }: WeekTabProps) {
 }
 
 // ---------------------------------------------------------------------------
-// Tab 3 — History
+// HistoryTab
 // ---------------------------------------------------------------------------
 interface HistoryTabProps {
   sessions: {
@@ -581,18 +402,23 @@ function HistoryTab({ sessions, isLoading }: HistoryTabProps) {
 // ---------------------------------------------------------------------------
 export default function AppWorkouts() {
   const { user } = useAuth();
-  const { assignment, plan, planDays, todayPlanDay, todayExercises, isLoading } = useWorkoutPlan();
+  const { assignment, plan, planDays, isLoading } = useWorkoutPlan();
   const { sessions, logSession, isLoading: isSessionsLoading } = useWorkoutSession();
-  const [activeSession, setActiveSession] = useState(false);
+  const [activePlanDay, setActivePlanDay] = useState<WorkoutPlanDay | null>(null);
 
-  // Check whether today's workout was already done
-  const today = new Date().toISOString().split('T')[0];
-  const alreadyDoneToday = sessions.some((s) => {
-    const sessionDate = s.completed_at.split('T')[0];
-    return sessionDate === today && s.plan_day_id === todayPlanDay?.id;
-  }) || sessions.some((s) => {
-    const sessionDate = new Date(s.completed_at).toISOString().split('T')[0];
-    return sessionDate === today && s.workout_plan_days?.id === todayPlanDay?.id;
+  // Exercises for the currently active session (fetched on demand)
+  const { data: activeDayExercises } = useQuery({
+    queryKey: ['plan-exercises', activePlanDay?.id],
+    queryFn: async () => {
+      if (!activePlanDay) return [];
+      const { data } = await (supabase as any)
+        .from('workout_plan_exercises')
+        .select('*, exercises(*)')
+        .eq('plan_day_id', activePlanDay.id)
+        .order('sort_order', { ascending: true });
+      return (data ?? []) as WorkoutPlanExercise[];
+    },
+    enabled: !!activePlanDay,
   });
 
   if (isLoading) {
@@ -608,7 +434,7 @@ export default function AppWorkouts() {
   }
 
   const handleSessionFinish = async (durationMinutes: number, exerciseLogs: ExerciseLog[]) => {
-    if (!todayPlanDay) return;
+    if (!activePlanDay) return;
     const mappedLogs = exerciseLogs.map((l) => ({
       exerciseId: l.exerciseId,
       sets: l.sets.map((s) => ({
@@ -616,81 +442,60 @@ export default function AppWorkouts() {
         weightKg: parseFloat(s.weightKg) || 0,
       })),
     }));
-    await logSession(todayPlanDay.id, durationMinutes, mappedLogs);
-    setActiveSession(false);
+    await logSession(activePlanDay.id, durationMinutes, mappedLogs);
+    setActivePlanDay(null);
   };
 
   return (
     <>
-    {activeSession && todayPlanDay && (
-      <WorkoutActiveSession
-        planDay={todayPlanDay}
-        exercises={todayExercises}
-        onClose={() => setActiveSession(false)}
-        onFinish={handleSessionFinish}
-      />
-    )}
-    <div className="min-h-screen pb-20 pt-6 px-4 space-y-4" dir="rtl">
-      {/* Page header */}
-      <div>
-        <h2 className="text-2xl font-bold text-foreground flex items-center gap-2">
-          <Dumbbell className="h-6 w-6 text-orange-500" />
-          אימונים
-        </h2>
-        <p className="text-sm text-muted-foreground mt-0.5">{plan.name}</p>
+      {activePlanDay && activeDayExercises && activeDayExercises.length > 0 && (
+        <WorkoutActiveSession
+          planDay={activePlanDay}
+          exercises={activeDayExercises}
+          onClose={() => setActivePlanDay(null)}
+          onFinish={handleSessionFinish}
+        />
+      )}
+
+      <div className="min-h-screen pb-20 pt-6 px-4 space-y-4" dir="rtl">
+        {/* Page header */}
+        <div>
+          <h2 className="text-2xl font-bold text-foreground flex items-center gap-2">
+            <Dumbbell className="h-6 w-6 text-orange-500" />
+            אימונים
+          </h2>
+          <p className="text-sm text-muted-foreground mt-0.5">{plan.name}</p>
+        </div>
+
+        {/* Tabs */}
+        <Tabs defaultValue="workouts" dir="rtl" className="w-full">
+          <TabsList className="w-full grid grid-cols-2">
+            <TabsTrigger value="workouts" className="text-sm">
+              <Dumbbell className="h-3.5 w-3.5 ml-1" />
+              אימונים
+            </TabsTrigger>
+            <TabsTrigger value="history" className="text-sm">
+              <History className="h-3.5 w-3.5 ml-1" />
+              היסטוריה
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="workouts">
+            {user && (
+              <WorkoutsTab
+                userId={user.id}
+                planDays={planDays}
+                sessions={sessions}
+                onStartSession={(day) => setActivePlanDay(day)}
+              />
+            )}
+          </TabsContent>
+
+          <TabsContent value="history">
+            <HistoryTab sessions={sessions} isLoading={isSessionsLoading} />
+          </TabsContent>
+        </Tabs>
       </div>
-
-      {/* Tabs */}
-      <Tabs defaultValue="today" dir="rtl" className="w-full">
-        <TabsList className="w-full grid grid-cols-3">
-          <TabsTrigger value="today" className="text-sm">
-            <Dumbbell className="h-3.5 w-3.5 ml-1" />
-            אימון היום
-          </TabsTrigger>
-          <TabsTrigger value="week" className="text-sm">
-            <CalendarDays className="h-3.5 w-3.5 ml-1" />
-            כל השבוע
-          </TabsTrigger>
-          <TabsTrigger value="history" className="text-sm">
-            <History className="h-3.5 w-3.5 ml-1" />
-            היסטוריה
-          </TabsTrigger>
-        </TabsList>
-
-        {/* Tab 1 — Today */}
-        <TabsContent value="today">
-          {planDays.length > 0 ? (
-            <TodayTab
-              planName={plan.name}
-              planDays={planDays}
-              todayDayId={todayPlanDay?.id ?? null}
-              logSession={logSession}
-              alreadyDoneToday={alreadyDoneToday}
-              onStartSession={() => setActiveSession(true)}
-            />
-          ) : (
-            <Card className="mt-4">
-              <CardContent className="pt-6 pb-6 text-center text-muted-foreground">
-                לא הוגדרו ימים בתוכנית האימון
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
-
-        {/* Tab 2 — Full week */}
-        <TabsContent value="week">
-          <WeekTab
-            planDays={planDays}
-            todayPlanDayId={todayPlanDay?.id ?? null}
-          />
-        </TabsContent>
-
-        {/* Tab 3 — History */}
-        <TabsContent value="history">
-          <HistoryTab sessions={sessions} isLoading={isSessionsLoading} />
-        </TabsContent>
-      </Tabs>
-    </div>
     </>
   );
 }
