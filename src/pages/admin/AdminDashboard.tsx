@@ -87,21 +87,6 @@ export default function AdminDashboard() {
         ))}
       </div>
 
-      {/* Meals today */}
-      <Card className="card-elevated">
-        <CardContent className="pt-6">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center">
-              <UtensilsCrossed className="h-7 w-7 text-primary" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">ארוחות שנרשמו היום</p>
-              <p className="text-3xl font-bold">{isLoading ? '-' : stats.mealsLoggedToday}</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Quick Actions */}
       <Card className="card-elevated">
         <CardContent className="pt-6">
