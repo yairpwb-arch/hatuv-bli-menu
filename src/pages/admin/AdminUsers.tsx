@@ -22,6 +22,7 @@ import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import { supabase } from '@/integrations/supabase/client';
+import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import {
   Plus, Edit, Loader2, RefreshCw, Trash2, ChevronDown, ChevronUp, Dumbbell,
@@ -126,8 +127,17 @@ interface AdminExerciseLog {
   exercises: { name: string } | null;
 }
 
+interface AdminWalkEntry {
+  id: string;
+  walk_number: 1 | 2;
+  week_start: number;
+  day_of_week: number | null;
+  is_active: boolean;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+const WEEKDAY_LABELS = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳'];
 const GENDER_LABELS: Record<string, string> = { male: 'זכר', female: 'נקבה', other: 'אחר' };
 
 function calcCurrentDay(startDate: string | null): string {
@@ -194,6 +204,9 @@ export default function AdminUsers() {
   // Survey tab
   const [checkins, setCheckins] = useState<CheckinRow[]>([]);
 
+  // Walking schedule tab
+  const [adminWalks, setAdminWalks] = useState<AdminWalkEntry[]>([]);
+
   // Workout history tab
   const [workoutSessions, setWorkoutSessions] = useState<AdminWorkoutSession[]>([]);
   const [sessionLogsMap, setSessionLogsMap] = useState<Record<string, AdminExerciseLog[]>>({});
@@ -259,6 +272,9 @@ export default function AdminUsers() {
     // Workout plan
     await loadWorkoutPlan(user.id);
 
+    // Walking schedule
+    await loadAdminWalks(user.id);
+
     // Checkins
     const { data: ci } = await (supabase as any)
       .from('weekly_checkin')
@@ -302,6 +318,7 @@ export default function AdminUsers() {
     setWorkoutSessions([]);
     setSessionLogsMap({});
     setExpandedSessionId(null);
+    setAdminWalks([]);
   };
 
   // ── Habits ──────────────────────────────────────────────────────────────────
@@ -342,6 +359,15 @@ export default function AdminUsers() {
   };
 
   // ── Workout Plan ─────────────────────────────────────────────────────────────
+
+  const loadAdminWalks = async (userId: string) => {
+    const { data } = await (supabase as any)
+      .from('user_walking_schedule')
+      .select('*')
+      .eq('user_id', userId)
+      .order('walk_number');
+    setAdminWalks((data || []) as AdminWalkEntry[]);
+  };
 
   const loadWorkoutPlan = async (userId: string) => {
     const { data: assignment } = await (supabase as any)
@@ -1176,6 +1202,88 @@ export default function AdminUsers() {
                   )}
                 </div>
               )}
+              {/* ── Walking Schedule ── */}
+              <div className="border-t border-border pt-4 mt-2">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm font-semibold flex items-center gap-2">
+                    <Footprints className="h-4 w-4 text-primary" />
+                    הליכות שבועיות
+                  </p>
+                  {!adminWalks.find(w => w.walk_number === 1) && (
+                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1"
+                      onClick={async () => {
+                        await (supabase as any).from('user_walking_schedule')
+                          .insert({ user_id: editingUser!.id, walk_number: 1, week_start: 1 });
+                        loadAdminWalks(editingUser!.id);
+                      }}>
+                      <Plus className="h-3 w-3" />הוסף הליכה
+                    </Button>
+                  )}
+                  {adminWalks.find(w => w.walk_number === 1) && !adminWalks.find(w => w.walk_number === 2) && (
+                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1"
+                      onClick={async () => {
+                        await (supabase as any).from('user_walking_schedule')
+                          .insert({ user_id: editingUser!.id, walk_number: 2, week_start: 4 });
+                        loadAdminWalks(editingUser!.id);
+                      }}>
+                      <Plus className="h-3 w-3" />הוסף הליכה שנייה
+                    </Button>
+                  )}
+                </div>
+                {adminWalks.length === 0 ? (
+                  <p className="text-xs text-muted-foreground text-center py-3">לא הוגדרו הליכות</p>
+                ) : (
+                  <div className="space-y-3">
+                    {adminWalks.map(walk => (
+                      <div key={walk.id} className="border border-border rounded-xl p-3 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-medium">
+                            הליכה {walk.walk_number === 1 ? 'ראשונה' : 'שנייה'}
+                            <span className="text-xs text-muted-foreground font-normal mr-2">
+                              {walk.day_of_week !== null ? `יום ${WEEKDAY_LABELS[walk.day_of_week]}` : 'יום לא נקבע'}
+                            </span>
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground">{walk.is_active ? 'פעיל' : 'מושבת'}</span>
+                            <Switch
+                              checked={walk.is_active}
+                              onCheckedChange={async (val) => {
+                                await (supabase as any).from('user_walking_schedule')
+                                  .update({ is_active: val }).eq('id', walk.id);
+                                loadAdminWalks(editingUser!.id);
+                              }}
+                            />
+                          </div>
+                        </div>
+                        {walk.is_active && (
+                          <div className="flex gap-1">
+                            {WEEKDAY_LABELS.map((label, wd) => (
+                              <button
+                                key={wd}
+                                onClick={async () => {
+                                  const newDay = walk.day_of_week === wd ? null : wd;
+                                  await (supabase as any).from('user_walking_schedule')
+                                    .update({ day_of_week: newDay }).eq('id', walk.id);
+                                  loadAdminWalks(editingUser!.id);
+                                }}
+                                className={cn(
+                                  'flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all',
+                                  walk.day_of_week === wd
+                                    ? 'bg-primary text-primary-foreground'
+                                    : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                                )}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               {/* ── Workout History ── */}
               <div className="border-t border-border pt-4 mt-2">
                 <p className="text-sm font-semibold mb-3 flex items-center gap-2">

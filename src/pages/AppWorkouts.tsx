@@ -1,14 +1,14 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Dumbbell, CheckCircle, Clock, History, Play, ChevronDown, ChevronUp, Pencil, X } from 'lucide-react';
+import { Dumbbell, CheckCircle, Clock, History, Play, ChevronDown, ChevronUp, Pencil, X, Footprints } from 'lucide-react';
 import type { WorkoutPlanDay, WorkoutPlanExercise } from '@/hooks/useWorkoutPlan';
 import { cn } from '@/lib/utils';
-import { format } from 'date-fns';
+import { format, differenceInDays } from 'date-fns';
 import { he } from 'date-fns/locale';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -297,6 +297,170 @@ function WorkoutDayCard({
 }
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Walking
+// ---------------------------------------------------------------------------
+interface WalkEntry {
+  id: string;
+  walk_number: 1 | 2;
+  week_start: number;
+  day_of_week: number | null;
+  is_active: boolean;
+}
+
+function WalkCard({ walk, onSaved }: { walk: WalkEntry; onSaved: () => void }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [pending, setPending] = useState<number | null>(walk.day_of_week ?? null);
+  const [isSaving, setIsSaving] = useState(false);
+  const todayWd = new Date().getDay();
+  const isToday = walk.day_of_week === todayWd;
+
+  const saveDay = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsSaving(true);
+    await (supabase as any).from('user_walking_schedule').update({ day_of_week: pending }).eq('id', walk.id);
+    setIsEditing(false);
+    setIsSaving(false);
+    onSaved();
+  };
+
+  return (
+    <Card className={cn('transition-all', isToday && 'border-2 border-orange-500')}>
+      <CardContent className="p-4 space-y-3">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className={cn('w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0',
+              isToday ? 'bg-orange-500 text-white' : 'bg-muted text-muted-foreground')}>
+              <Footprints className="h-4 w-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <h4 className="font-semibold text-foreground">
+                  הליכה {walk.walk_number === 1 ? 'ראשונה' : 'שנייה'}
+                </h4>
+                {isToday && <Badge className="bg-orange-500 text-white text-xs px-2 py-0">היום</Badge>}
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">20-30 דקות • קצב רגיל</p>
+              <p className="text-xs text-muted-foreground">
+                {walk.day_of_week !== null
+                  ? `מתוכנן ליום ${WEEKDAY_LABELS[walk.day_of_week]}`
+                  : 'טרם נקבע יום הליכה'}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Day scheduler */}
+        {!isEditing ? (
+          <div className="flex items-center justify-between">
+            <div className="flex gap-1 flex-1 ml-2">
+              {WEEKDAY_LABELS.map((label, wd) => (
+                <div key={wd} className={cn(
+                  'flex-1 py-1.5 rounded-lg text-xs font-semibold text-center',
+                  walk.day_of_week === wd ? 'bg-orange-500 text-white'
+                  : wd === todayWd ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 border border-orange-300 dark:border-orange-700'
+                  : 'bg-muted text-muted-foreground'
+                )}>{label}</div>
+              ))}
+            </div>
+            <button onClick={() => { setPending(walk.day_of_week ?? null); setIsEditing(true); }}
+              className="flex items-center gap-1 text-xs text-orange-500 font-medium px-2 py-1.5 rounded-lg hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors flex-shrink-0">
+              <Pencil className="h-3.5 w-3.5" />ערוך
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <div className="flex gap-1">
+              {WEEKDAY_LABELS.map((label, wd) => (
+                <button key={wd}
+                  onClick={() => setPending(pending === wd ? null : wd)}
+                  className={cn('flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all',
+                    pending === wd ? 'bg-orange-500 text-white shadow-sm'
+                    : wd === todayWd ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 border border-orange-300 dark:border-orange-700'
+                    : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                  )}>{label}</button>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" disabled={isSaving}
+                className="flex-1 h-8 bg-orange-500 hover:bg-orange-600 text-white text-xs rounded-lg"
+                onClick={saveDay}>שמור</Button>
+              <Button size="sm" variant="outline" className="h-8 px-3 text-xs rounded-lg"
+                onClick={() => setIsEditing(false)}><X className="h-3.5 w-3.5" /></Button>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function WalkingSection({ userId }: { userId: string }) {
+  const [walks, setWalks] = useState<WalkEntry[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const load = async () => {
+    // Get user start_date to know current week
+    const { data: profile } = await (supabase as any)
+      .from('profiles').select('start_date').eq('id', userId).maybeSingle();
+    const startDate = profile?.start_date;
+    let currentWeek = 1;
+    if (startDate) {
+      const days = differenceInDays(new Date(), new Date(startDate)) + 1;
+      currentWeek = Math.max(1, Math.ceil(days / 7));
+    }
+
+    const { data: existing } = await (supabase as any)
+      .from('user_walking_schedule')
+      .select('*')
+      .eq('user_id', userId)
+      .order('walk_number');
+    let list = (existing || []) as WalkEntry[];
+
+    // Auto-create walk 1 if not exists
+    if (!list.find(w => w.walk_number === 1)) {
+      const { data: w1 } = await (supabase as any)
+        .from('user_walking_schedule')
+        .insert({ user_id: userId, walk_number: 1, week_start: 1 })
+        .select().single();
+      if (w1) list = [...list, w1 as WalkEntry];
+    }
+
+    // Auto-create walk 2 if week >= 4 and walk 1 is still active
+    const walk1 = list.find(w => w.walk_number === 1);
+    if (!list.find(w => w.walk_number === 2) && currentWeek >= 4 && walk1?.is_active) {
+      const { data: w2 } = await (supabase as any)
+        .from('user_walking_schedule')
+        .insert({ user_id: userId, walk_number: 2, week_start: 4 })
+        .select().single();
+      if (w2) list = [...list, w2 as WalkEntry];
+    }
+
+    setWalks(list.filter(w => w.is_active).sort((a, b) => a.walk_number - b.walk_number));
+    setIsLoading(false);
+  };
+
+  useEffect(() => { load(); }, [userId]);
+
+  if (isLoading) return (
+    <div className="space-y-3 pt-4">
+      {[0,1].map(i => <Skeleton key={i} className="h-24 w-full rounded-2xl" />)}
+    </div>
+  );
+  if (walks.length === 0) return null;
+
+  return (
+    <div className="pt-4 space-y-3">
+      <div className="flex items-center gap-2 px-1">
+        <Footprints className="h-4 w-4 text-orange-500" />
+        <h3 className="text-sm font-semibold text-muted-foreground">הליכות שבועיות</h3>
+      </div>
+      {walks.map(w => <WalkCard key={w.id} walk={w} onSaved={load} />)}
+    </div>
+  );
+}
+
 // WorkoutsTab — lists all plan days
 // ---------------------------------------------------------------------------
 interface WorkoutsTabProps {
@@ -617,12 +781,15 @@ export default function AppWorkouts() {
 
         <TabsContent value="workouts">
           {user && (
-            <WorkoutsTab
-              userId={user.id}
-              planDays={planDays}
-              sessions={sessions}
-              onStartSession={handleStartSession}
-            />
+            <>
+              <WorkoutsTab
+                userId={user.id}
+                planDays={planDays}
+                sessions={sessions}
+                onStartSession={handleStartSession}
+              />
+              <WalkingSection userId={user.id} />
+            </>
           )}
         </TabsContent>
 
