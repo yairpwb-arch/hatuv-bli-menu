@@ -28,13 +28,16 @@ import AdminExercises from "./pages/admin/AdminExercises";
 import NotFound from "./pages/NotFound";
 import { BottomNav } from "./components/BottomNav";
 import { AppHeader } from "./components/AppHeader";
+import { ActiveWorkoutProvider, useActiveWorkout } from "@/contexts/ActiveWorkoutContext";
+import WorkoutActiveSession from "./components/WorkoutActiveSession";
+import { WorkoutMiniBar } from "./components/WorkoutMiniBar";
 
 const queryClient = new QueryClient();
 
-function ProtectedRoute() {
+function ProtectedRouteInner() {
   const { user, isLoading, isAdmin } = useAuth();
+  const { params, isVisible, minimize, end } = useActiveWorkout();
 
-  // Initialize push notifications once the user is known
   useEffect(() => {
     if (user?.id) {
       initNotifications(user.id);
@@ -53,7 +56,6 @@ function ProtectedRoute() {
     return <Navigate to="/auth" replace />;
   }
 
-  // Admin users get redirected to admin dashboard
   if (isAdmin) {
     return <Navigate to="/admin" replace />;
   }
@@ -63,7 +65,35 @@ function ProtectedRoute() {
       <AppHeader />
       <Outlet />
       <BottomNav />
+
+      {/* WorkoutMiniBar — shown when session is minimized */}
+      <WorkoutMiniBar />
+
+      {/* WorkoutActiveSession — mounted at root so it persists across navigation.
+          Wrapped in hidden div when minimized: React state is preserved but overlay is hidden. */}
+      {params && (
+        <div className={!isVisible ? 'hidden' : ''}>
+          <WorkoutActiveSession
+            key={params.planDay.id}
+            planDay={params.planDay}
+            exercises={params.exercises}
+            onMinimize={minimize}
+            onFinish={async (durationMinutes, logs) => {
+              await params.onFinish(durationMinutes, logs);
+              end();
+            }}
+          />
+        </div>
+      )}
     </div>
+  );
+}
+
+function ProtectedRoute() {
+  return (
+    <ActiveWorkoutProvider>
+      <ProtectedRouteInner />
+    </ActiveWorkoutProvider>
   );
 }
 

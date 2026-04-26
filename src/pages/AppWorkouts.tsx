@@ -14,7 +14,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useWorkoutPlan } from '@/hooks/useWorkoutPlan';
 import { useWorkoutSession } from '@/hooks/useWorkoutSession';
-import WorkoutActiveSession, { type ExerciseLog } from '@/components/WorkoutActiveSession';
+import { useActiveWorkout } from '@/contexts/ActiveWorkoutContext';
 
 // Hebrew weekday labels (JS getDay(): 0=Sun=א׳ … 6=Sat=ש׳)
 const WEEKDAY_LABELS = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳'];
@@ -72,7 +72,7 @@ interface WorkoutDayCardProps {
   isExpanded: boolean;
   onToggleExpand: () => void;
   onSaveSchedule: (weekday: number | null) => void;
-  onStartSession: () => void;
+  onStartSession: (exercises: WorkoutPlanExercise[]) => void;
 }
 
 function WorkoutDayCard({
@@ -284,7 +284,7 @@ function WorkoutDayCard({
 
             <Button
               className="w-full mt-1 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl h-11"
-              onClick={onStartSession}
+              onClick={() => onStartSession(exercises ?? [])}
             >
               <Play className="h-4 w-4 ml-2" />
               התחל אימון
@@ -303,7 +303,7 @@ interface WorkoutsTabProps {
   userId: string;
   planDays: WorkoutPlanDay[];
   sessions: { id: string; completed_at: string; plan_day_id: string }[];
-  onStartSession: (planDay: WorkoutPlanDay) => void;
+  onStartSession: (planDay: WorkoutPlanDay, exercises: WorkoutPlanExercise[]) => void;
 }
 
 function WorkoutsTab({ userId, planDays, sessions, onStartSession }: WorkoutsTabProps) {
@@ -372,7 +372,7 @@ function WorkoutsTab({ userId, planDays, sessions, onStartSession }: WorkoutsTab
             isExpanded={expandedDayId === day.id}
             onToggleExpand={() => setExpandedDayId(expandedDayId === day.id ? null : day.id)}
             onSaveSchedule={(wd) => handleSaveSchedule(day.id, wd)}
-            onStartSession={() => onStartSession(day)}
+            onStartSession={(exs) => onStartSession(day, exs)}
           />
         );
       })}
@@ -466,22 +466,7 @@ export default function AppWorkouts() {
   const { user } = useAuth();
   const { assignment, plan, planDays, isLoading } = useWorkoutPlan();
   const { sessions, logSession, isLoading: isSessionsLoading } = useWorkoutSession();
-  const [activePlanDay, setActivePlanDay] = useState<WorkoutPlanDay | null>(null);
-
-  // Exercises for the currently active session (fetched on demand)
-  const { data: activeDayExercises } = useQuery({
-    queryKey: ['plan-exercises', activePlanDay?.id],
-    queryFn: async () => {
-      if (!activePlanDay) return [];
-      const { data } = await (supabase as any)
-        .from('workout_plan_exercises')
-        .select('*, exercises(*)')
-        .eq('plan_day_id', activePlanDay.id)
-        .order('sort_order', { ascending: true });
-      return (data ?? []) as WorkoutPlanExercise[];
-    },
-    enabled: !!activePlanDay,
-  });
+  const { start } = useActiveWorkout();
 
   if (isLoading) {
     return (
@@ -495,69 +480,62 @@ export default function AppWorkouts() {
     return <NoActivePlan />;
   }
 
-  const handleSessionFinish = async (durationMinutes: number, exerciseLogs: ExerciseLog[]) => {
-    if (!activePlanDay) return;
-    const mappedLogs = exerciseLogs.map((l) => ({
-      exerciseId: l.exerciseId,
-      sets: l.sets.map((s) => ({
-        reps: parseInt(s.reps) || 0,
-        weightKg: parseFloat(s.weightKg) || 0,
-      })),
-    }));
-    await logSession(activePlanDay.id, durationMinutes, mappedLogs);
-    setActivePlanDay(null);
+  const handleStartSession = (planDay: WorkoutPlanDay, exercises: WorkoutPlanExercise[]) => {
+    start({
+      planDay,
+      exercises,
+      onFinish: async (durationMinutes, exerciseLogs) => {
+        const mappedLogs = exerciseLogs.map((l) => ({
+          exerciseId: l.exerciseId,
+          sets: l.sets.map((s) => ({
+            reps: parseInt(s.reps) || 0,
+            weightKg: parseFloat(s.weightKg) || 0,
+          })),
+        }));
+        await logSession(planDay.id, durationMinutes, mappedLogs);
+      },
+    });
   };
 
   return (
-    <>
-      {activePlanDay && activeDayExercises && activeDayExercises.length > 0 && (
-        <WorkoutActiveSession
-          planDay={activePlanDay}
-          exercises={activeDayExercises}
-          onClose={() => setActivePlanDay(null)}
-          onFinish={handleSessionFinish}
-        />
-      )}
-
-      <div className="min-h-screen pb-20 pt-6 px-4 space-y-4" dir="rtl">
-        {/* Page header */}
-        <div>
-          <h2 className="text-2xl font-bold text-foreground flex items-center gap-2">
-            <Dumbbell className="h-6 w-6 text-orange-500" />
-            אימונים
-          </h2>
-          <p className="text-sm text-muted-foreground mt-0.5">{plan.name}</p>
-        </div>
-
-        {/* Tabs */}
-        <Tabs defaultValue="workouts" dir="rtl" className="w-full">
-          <TabsList className="w-full grid grid-cols-2">
-            <TabsTrigger value="workouts" className="text-sm">
-              <Dumbbell className="h-3.5 w-3.5 ml-1" />
-              אימונים
-            </TabsTrigger>
-            <TabsTrigger value="history" className="text-sm">
-              <History className="h-3.5 w-3.5 ml-1" />
-              היסטוריה
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="workouts">
-            {user && (
-              <WorkoutsTab
-                userId={user.id}
-                planDays={planDays}
-                sessions={sessions}
-                onStartSession={(day) => setActivePlanDay(day)}
-              />
-            )}
-          </TabsContent>
-
-          <TabsContent value="history">
-            <HistoryTab sessions={sessions} isLoading={isSessionsLoading} />
-          </TabsContent>
-        </Tabs>
+    <div className="min-h-screen pb-20 pt-6 px-4 space-y-4" dir="rtl">
+      {/* Page header */}
+      <div>
+        <h2 className="text-2xl font-bold text-foreground flex items-center gap-2">
+          <Dumbbell className="h-6 w-6 text-orange-500" />
+          אימונים
+        </h2>
+        <p className="text-sm text-muted-foreground mt-0.5">{plan.name}</p>
       </div>
-    </>
+
+      {/* Tabs */}
+      <Tabs defaultValue="workouts" dir="rtl" className="w-full">
+        <TabsList className="w-full grid grid-cols-2">
+          <TabsTrigger value="workouts" className="text-sm">
+            <Dumbbell className="h-3.5 w-3.5 ml-1" />
+            אימונים
+          </TabsTrigger>
+          <TabsTrigger value="history" className="text-sm">
+            <History className="h-3.5 w-3.5 ml-1" />
+            היסטוריה
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="workouts">
+          {user && (
+            <WorkoutsTab
+              userId={user.id}
+              planDays={planDays}
+              sessions={sessions}
+              onStartSession={handleStartSession}
+            />
+          )}
+        </TabsContent>
+
+        <TabsContent value="history">
+          <HistoryTab sessions={sessions} isLoading={isSessionsLoading} />
+        </TabsContent>
+      </Tabs>
+    </div>
   );
 }
