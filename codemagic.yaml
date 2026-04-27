@@ -30,7 +30,6 @@ workflows:
             --type IOS_APP_STORE \
             --create
           keychain add-certificates
-          xcode-project use-profiles
 
       - name: Resolve SPM packages
         script: |
@@ -40,10 +39,16 @@ workflows:
 
       - name: Build IPA
         script: |
+          # Find the downloaded provisioning profile and extract its name
+          PROFILE=$(ls ~/Library/MobileDevice/Provisioning\ Profiles/*.mobileprovision | head -1)
+          security cms -D -i "$PROFILE" > /tmp/profile.plist
+          PROFILE_NAME=$(/usr/libexec/PlistBuddy -c 'Print :Name' /tmp/profile.plist)
+          echo "Using provisioning profile: $PROFILE_NAME"
+
           xcode-project build-ipa \
             --project ios/App/App.xcodeproj \
             --scheme App \
-            --archive-xcargs "DEVELOPMENT_TEAM=AG8NCXSNC8 CODE_SIGN_STYLE=Manual"
+            --archive-xcargs "DEVELOPMENT_TEAM=AG8NCXSNC8 CODE_SIGN_STYLE=Manual PROVISIONING_PROFILE_SPECIFIER=${PROFILE_NAME} CODE_SIGN_IDENTITY='iPhone Distribution'"
 
     artifacts:
       - build/ios/ipa/*.ipa
