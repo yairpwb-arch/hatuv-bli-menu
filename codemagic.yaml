@@ -8,8 +8,9 @@ workflows:
     environment:
       xcode: latest
       node: 22
-      vars:
-        BUNDLE_ID: com.hatovblitafrit.hatovblitafrit
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.hatovblitafrit.hatovblitafrit
 
     scripts:
       - name: Install dependencies
@@ -21,15 +22,14 @@ workflows:
       - name: Capacitor sync
         script: npx cap sync ios
 
-      - name: Set up keychain
-        script: keychain initialize
-
-      - name: Fetch or create signing files
+      - name: Set up code signing
         script: |
-          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+          keychain initialize
+          app-store-connect fetch-signing-files com.hatovblitafrit.hatovblitafrit \
             --type IOS_APP_STORE \
             --create
           keychain add-certificates
+          xcode-project use-profiles
 
       - name: Resolve SPM packages
         script: |
@@ -39,16 +39,10 @@ workflows:
 
       - name: Build IPA
         script: |
-          # Find the downloaded provisioning profile and extract its name
-          PROFILE=$(ls ~/Library/MobileDevice/Provisioning\ Profiles/*.mobileprovision | head -1)
-          security cms -D -i "$PROFILE" > /tmp/profile.plist
-          PROFILE_NAME=$(/usr/libexec/PlistBuddy -c 'Print :Name' /tmp/profile.plist)
-          echo "Using provisioning profile: $PROFILE_NAME"
-
           xcode-project build-ipa \
             --project ios/App/App.xcodeproj \
             --scheme App \
-            --archive-xcargs "DEVELOPMENT_TEAM=AG8NCXSNC8 CODE_SIGN_STYLE=Manual PROVISIONING_PROFILE_SPECIFIER=${PROFILE_NAME} CODE_SIGN_IDENTITY='iPhone Distribution'"
+            --archive-xcargs "DEVELOPMENT_TEAM=AG8NCXSNC8"
 
     artifacts:
       - build/ios/ipa/*.ipa
