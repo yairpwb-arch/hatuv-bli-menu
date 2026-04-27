@@ -8,6 +8,8 @@ workflows:
     environment:
       xcode: latest
       node: 22
+      integrations:
+        app_store_connect: Codemagic HatovBliTafrit
       ios_signing:
         distribution_type: app_store
         bundle_identifier: com.hatovblitafrit.hatovblitafrit
