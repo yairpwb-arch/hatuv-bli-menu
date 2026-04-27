@@ -8,9 +8,8 @@ workflows:
     environment:
       xcode: latest
       node: 20
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.hatovblitafrit.hatovblitafrit
+      vars:
+        BUNDLE_ID: com.hatovblitafrit.hatovblitafrit
 
     scripts:
       - name: Install dependencies
@@ -26,6 +25,17 @@ workflows:
         script: |
           cd ios/App
           pod install --repo-update
+
+      - name: Set up keychain
+        script: keychain initialize
+
+      - name: Fetch or create signing files
+        script: |
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create
+          keychain add-certificates
+          xcode-project use-profiles
 
       - name: Build IPA
         script: |
