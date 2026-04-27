@@ -1,58 +1,34 @@
 workflows:
 
-  # ────────────────────────────────────────────────────────────────
-  # iOS — builds a signed IPA ready for App Store / TestFlight
-  # ────────────────────────────────────────────────────────────────
   ios-release:
     name: iOS Release (IPA)
-    max_build_duration: 90  # minutes
+    max_build_duration: 90
     instance_type: mac_mini_m2
 
     environment:
-      # ── Xcode version ──
       xcode: latest
-
-      # ── Node ──
       node: 20
-
-      # ── iOS code-signing ──
-      # Add these in Codemagic → App settings → Code signing → iOS:
-      #   - Distribution certificate (.p12 + password)
-      #   - Provisioning profile (App Store)
-      # Then reference them here by the name you gave them in the UI.
       ios_signing:
         distribution_type: app_store
         bundle_identifier: com.hatuv.blimenu
 
-      # ── Environment variables (set in Codemagic UI) ──
-      # APP_STORE_CONNECT_ISSUER_ID     – from App Store Connect API key
-      # APP_STORE_CONNECT_KEY_IDENTIFIER
-      # APP_STORE_CONNECT_PRIVATE_KEY
-      # CERTIFICATE_PRIVATE_KEY         – private key matching your .p12
-
     scripts:
-      # 1. Install JS dependencies
       - name: Install dependencies
         script: npm ci
 
-      # 2. Build the Vite web bundle
       - name: Build web app
         script: npm run build
 
-      # 3. Sync web assets → iOS
       - name: Capacitor sync
         script: npx cap sync ios
 
-      # 4. Install CocoaPods dependencies
       - name: Install CocoaPods
         script: |
           cd ios/App
           pod install --repo-update
 
-      # 5. Build & archive the app
       - name: Build IPA
         script: |
-          xcode-project use-profiles
           xcode-project build-ipa \
             --workspace ios/App/App.xcworkspace \
             --scheme App
@@ -61,11 +37,7 @@ workflows:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
 
-    # ── Auto-publish to TestFlight ──
-    # Uncomment when App Store Connect API key is configured
     # publishing:
     #   app_store_connect:
     #     auth: integration
     #     submit_to_testflight: true
-    #     beta_groups:
-    #       - "Internal Testers"
