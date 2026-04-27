@@ -7,7 +7,7 @@ workflows:
 
     environment:
       xcode: latest
-      node: 20
+      node: 22
       vars:
         BUNDLE_ID: com.hatovblitafrit.hatovblitafrit
 
