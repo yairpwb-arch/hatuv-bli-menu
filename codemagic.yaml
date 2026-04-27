@@ -10,7 +10,7 @@ workflows:
       node: 20
       ios_signing:
         distribution_type: app_store
-        bundle_identifier: com.hatuv.blimenu
+        bundle_identifier: com.hatovblitafrit.hatovblitafrit
 
     scripts:
       - name: Install dependencies

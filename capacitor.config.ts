@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.hatuv.blimenu',
+  appId: 'com.hatovblitafrit.hatovblitafrit',
   appName: 'חטוב בלי תפריט',
   webDir: 'dist',
   server: {
