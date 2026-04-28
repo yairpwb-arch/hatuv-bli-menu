@@ -49,5 +49,9 @@
 	<true/>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSMotionUsageDescription</key>
+	<string>האפליקציה משתמשת בחיישן התנועה כדי לספור את הצעדים היומיים שלך</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>האפליקציה מבקשת גישה לנתוני בריאות כדי לספור את הצעדים היומיים שלך</string>
 </dict>
 </plist>
