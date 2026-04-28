@@ -13,30 +13,38 @@ function ScrollToTop() {
   return null;
 }
 import { initNotifications } from "@/lib/notifications";
-import Index from "./pages/Index";
-import Auth from "./pages/Auth";
-import AppHome from "./pages/AppHome";
-import AppContent from "./pages/AppContent";
-import AppNutrition from "./pages/AppNutrition";
-import AppProfile from "./pages/AppProfile";
-import AppTracker from "./pages/AppTracker";
-import AppProgress from "./pages/AppProgress";
-import AppWorkouts from "./pages/AppWorkouts";
-import AppSettings from "./pages/AppSettings";
-import AdminLayout from "./pages/admin/AdminLayout";
-import AdminDashboard from "./pages/admin/AdminDashboard";
-import AdminUsers from "./pages/admin/AdminUsers";
-import AdminContent from "./pages/admin/AdminContent";
-import AdminQuotes from "./pages/admin/AdminQuotes";
-import AdminHabits from "./pages/admin/AdminHabits";
-import AdminSurveys from "./pages/admin/AdminSurveys";
-import AdminExercises from "./pages/admin/AdminExercises";
-import NotFound from "./pages/NotFound";
+import { lazy, Suspense } from "react";
 import { BottomNav } from "./components/BottomNav";
 import { AppHeader } from "./components/AppHeader";
 import { ActiveWorkoutProvider, useActiveWorkout } from "@/contexts/ActiveWorkoutContext";
-import WorkoutActiveSession from "./components/WorkoutActiveSession";
 import { WorkoutMiniBar } from "./components/WorkoutMiniBar";
+
+const Index = lazy(() => import("./pages/Index"));
+const Auth = lazy(() => import("./pages/Auth"));
+const AppHome = lazy(() => import("./pages/AppHome"));
+const AppContent = lazy(() => import("./pages/AppContent"));
+const AppNutrition = lazy(() => import("./pages/AppNutrition"));
+const AppProfile = lazy(() => import("./pages/AppProfile"));
+const AppTracker = lazy(() => import("./pages/AppTracker"));
+const AppProgress = lazy(() => import("./pages/AppProgress"));
+const AppWorkouts = lazy(() => import("./pages/AppWorkouts"));
+const AppSettings = lazy(() => import("./pages/AppSettings"));
+const AdminLayout = lazy(() => import("./pages/admin/AdminLayout"));
+const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
+const AdminUsers = lazy(() => import("./pages/admin/AdminUsers"));
+const AdminContent = lazy(() => import("./pages/admin/AdminContent"));
+const AdminQuotes = lazy(() => import("./pages/admin/AdminQuotes"));
+const AdminHabits = lazy(() => import("./pages/admin/AdminHabits"));
+const AdminSurveys = lazy(() => import("./pages/admin/AdminSurveys"));
+const AdminExercises = lazy(() => import("./pages/admin/AdminExercises"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+const WorkoutActiveSession = lazy(() => import("./components/WorkoutActiveSession"));
+
+const PageLoader = () => (
+  <div className="min-h-screen flex items-center justify-center bg-background">
+    <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+  </div>
+);
 
 const queryClient = new QueryClient();
 
@@ -134,6 +142,7 @@ const App = () => (
       <BrowserRouter>
         <ScrollToTop />
         <AuthProvider>
+          <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<AuthRoute />} />
@@ -158,6 +167,7 @@ const App = () => (
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>
+          </Suspense>
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>

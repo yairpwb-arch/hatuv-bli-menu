@@ -95,13 +95,22 @@ export function useStepCounter(userId?: string): UseStepCounterReturn {
       const pedometer = await getPedometer();
       if (!pedometer || cancelled) return;
 
-      const availability = await pedometer.isAvailable();
-      if (!availability.stepCounting || cancelled) return;
-      setIsAvailable(true);
-
+      // On Android, check permission first — isAvailable() may return false
+      // without ACTIVITY_RECOGNITION permission granted
       const perm = await pedometer.checkPermissions();
       if (perm.activityRecognition === 'granted') {
         setHasPermission(true);
+      }
+
+      const availability = await pedometer.isAvailable();
+      if (cancelled) return;
+      // Mark as available if sensor exists OR if permission not yet granted
+      // (so the "allow access" button is shown)
+      if (availability.stepCounting || perm.activityRecognition !== 'granted') {
+        setIsAvailable(true);
+      }
+
+      if (perm.activityRecognition === 'granted' && availability.stepCounting) {
         await startTracking();
       }
     };

@@ -74,7 +74,13 @@ export async function initNotifications(userId: string): Promise<void> {
     let permResult = await PushNotifications.checkPermissions();
 
     if (permResult.receive === 'prompt') {
-      permResult = await PushNotifications.requestPermissions();
+      // Timeout prevents app from hanging if permission dialog causes activity recreation
+      permResult = await Promise.race([
+        PushNotifications.requestPermissions(),
+        new Promise<{ receive: 'denied' }>((resolve) =>
+          setTimeout(() => resolve({ receive: 'denied' }), 30000)
+        ),
+      ]) as typeof permResult;
     }
 
     if (permResult.receive !== 'granted') {
@@ -83,6 +89,7 @@ export async function initNotifications(userId: string): Promise<void> {
     }
 
     // 2. Register with APNs / FCM
+    // On Android without google-services.json, this fires registrationError which is handled below
     await PushNotifications.register();
 
     // 3. On successful registration, send token to OneSignal
