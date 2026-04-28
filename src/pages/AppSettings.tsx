@@ -193,23 +193,6 @@ export default function AppSettings() {
             }
           />
 
-          {/* Show reminder types only when enabled */}
-          {isNative && notifEnabled && permState === 'granted' && (
-            <div className="px-4 py-3 bg-muted/30">
-              <p className="text-xs font-medium text-muted-foreground mb-2">התראות פעילות:</p>
-              <div className="space-y-1 text-xs text-muted-foreground">
-                {[
-                  '💬 משפט יומי — כל יום בשעה 10:00',
-                  '🎉 מעבר שלב — כל שבת בשעה 19:00',
-                  '🔥 הרגלים חדשים — כל ראשון בשעה 9:00',
-                  '⚖️ שקילה + שאלון — כל חמישי בשעה 20:00',
-                  '📋 תזכורת שאלון — שישי 12:00 / שבת 16:00',
-                ].map((t) => (
-                  <p key={t}>{t}</p>
-                ))}
-              </div>
-            </div>
-          )}
         </Section>
 
         {/* About */}

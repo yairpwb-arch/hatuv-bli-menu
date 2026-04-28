@@ -26,7 +26,7 @@ let _initialized = false;
 
 // ── Register a device token with OneSignal and return the player ID ───────────
 
-async function registerWithOneSignal(deviceToken: string): Promise<string | null> {
+async function registerWithOneSignal(deviceToken: string, userId: string): Promise<string | null> {
   const platform = Capacitor.getPlatform(); // 'ios' | 'android' | 'web'
   const deviceType = ONESIGNAL_DEVICE_TYPES[platform] ?? 1;
 
@@ -38,6 +38,7 @@ async function registerWithOneSignal(deviceToken: string): Promise<string | null
         app_id: ONESIGNAL_APP_ID,
         device_type: deviceType,
         identifier: deviceToken,
+        external_user_id: userId,
       }),
     });
 
@@ -94,7 +95,7 @@ export async function initNotifications(userId: string): Promise<void> {
 
     // 3. On successful registration, send token to OneSignal
     PushNotifications.addListener('registration', async (token) => {
-      const playerId = await registerWithOneSignal(token.value);
+      const playerId = await registerWithOneSignal(token.value, userId);
       if (playerId) {
         await savePlayerIdToProfile(userId, playerId);
       }
