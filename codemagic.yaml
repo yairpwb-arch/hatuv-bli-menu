@@ -40,6 +40,11 @@ workflows:
             -project ios/App/App.xcodeproj \
             -scheme App
 
+      - name: Set build number
+        script: |
+          sed -i '' "s/CURRENT_PROJECT_VERSION = .*/CURRENT_PROJECT_VERSION = $BUILD_NUMBER;/g" \
+            ios/App/App.xcodeproj/project.pbxproj
+
       - name: Build IPA
         script: |
           xcode-project build-ipa \
@@ -55,3 +60,4 @@ workflows:
       app_store_connect:
         auth: integration
         submit_to_testflight: true
+        expire_build_submitted_for_review: false

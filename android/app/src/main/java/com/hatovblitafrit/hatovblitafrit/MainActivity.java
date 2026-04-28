@@ -1,4 +1,4 @@
-package com.hatuv.blimenu;
+package com.hatovblitafrit.hatovblitafrit;
 
 import com.getcapacitor.BridgeActivity;
 
