@@ -21,7 +21,7 @@ export function AppHeader() {
   };
 
   return (
-    <header className="sticky top-0 z-40 glass-surface border-b border-border/40">
+    <header className="sticky top-0 z-40 glass-surface border-b border-border/40 safe-top">
       <div className="flex items-center justify-between px-4 h-14">
         {/* Brand */}
         <div className="flex items-center gap-2.5">

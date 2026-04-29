@@ -54,6 +54,8 @@ export function BottomNav() {
           </NavLink>
         ))}
       </div>
+      {/* Spacer for iOS home indicator */}
+      <div className="safe-bottom-spacer" />
     </nav>
   );
 }

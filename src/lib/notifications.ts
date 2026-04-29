@@ -1,128 +1,66 @@
 /**
- * Push notifications via @capacitor/push-notifications + OneSignal REST API.
+ * Push notifications via onesignal-cordova-plugin (OneSignal SDK v5).
  *
  * HOW IT WORKS:
- *  1. Capacitor registers the device with APNs (iOS) or FCM (Android) → device token
- *  2. We send that raw token to OneSignal REST API to get a "player ID"
- *  3. We store the player ID in the user's profile row in Supabase
- *  4. The server-side Edge Function uses these player IDs to send notifications
+ *  1. OneSignal.initialize() registers the app with OneSignal on first launch
+ *  2. OneSignal.Notifications.requestPermission() shows the OS permission prompt
+ *  3. OneSignal.login(userId) links this device's subscription to the Supabase user
+ *  4. OneSignal handles all token management, delivery, and analytics internally
  */
 
 import { Capacitor } from '@capacitor/core';
-import { PushNotifications } from '@capacitor/push-notifications';
 import { supabase } from '@/integrations/supabase/client';
+import type { OneSignalPlugin } from 'onesignal-cordova-plugin';
 
-// ── Replace with your OneSignal App ID from onesignal.com ────────────────────
 export const ONESIGNAL_APP_ID = '80006c7a-5f60-4057-b42d-0f561a008014';
-
-// ── Device type constants for OneSignal REST API ─────────────────────────────
-const ONESIGNAL_DEVICE_TYPES: Record<string, number> = {
-  ios: 0,
-  android: 1,
-  web: 5,
-};
 
 let _initialized = false;
 
-// ── Register a device token with OneSignal and return the player ID ───────────
-
-async function registerWithOneSignal(deviceToken: string, userId: string): Promise<string | null> {
-  const platform = Capacitor.getPlatform(); // 'ios' | 'android' | 'web'
-  const deviceType = ONESIGNAL_DEVICE_TYPES[platform] ?? 1;
-
+// Lazy-load the SDK — only available on native platforms
+async function getOneSignal(): Promise<OneSignalPlugin | null> {
+  if (!Capacitor.isNativePlatform()) return null;
   try {
-    const res = await fetch('https://onesignal.com/api/v1/players', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        app_id: ONESIGNAL_APP_ID,
-        device_type: deviceType,
-        identifier: deviceToken,
-        external_user_id: userId,
-      }),
-    });
-
-    if (!res.ok) {
-      console.error('[notifications] OneSignal registration failed:', await res.text());
-      return null;
-    }
-
-    const data = await res.json();
-    return data.id as string | null; // OneSignal player ID
-  } catch (err) {
-    console.error('[notifications] OneSignal registration error:', err);
+    const mod = await import('onesignal-cordova-plugin');
+    return mod.default;
+  } catch {
     return null;
   }
 }
 
-// ── Save player ID to the user's profile ─────────────────────────────────────
-
-async function savePlayerIdToProfile(userId: string, playerId: string) {
-  await supabase
-    .from('profiles')
-    .update({ push_token: playerId })
-    .eq('id', userId);
-}
-
-// ── Main init function — call once when user is authenticated ─────────────────
+// ── Main init — call once after the user authenticates ────────────────────────
 
 export async function initNotifications(userId: string): Promise<void> {
   if (!Capacitor.isNativePlatform() || _initialized) return;
   _initialized = true;
 
   try {
-    // 1. Check / request permission
-    let permResult = await PushNotifications.checkPermissions();
+    const OneSignal = await getOneSignal();
+    if (!OneSignal) return;
 
-    if (permResult.receive === 'prompt') {
-      // Timeout prevents app from hanging if permission dialog causes activity recreation
-      permResult = await Promise.race([
-        PushNotifications.requestPermissions(),
-        new Promise<{ receive: 'denied' }>((resolve) =>
-          setTimeout(() => resolve({ receive: 'denied' }), 30000)
-        ),
-      ]) as typeof permResult;
-    }
+    // 1. Initialize the SDK with the OneSignal App ID
+    OneSignal.initialize(ONESIGNAL_APP_ID);
 
-    if (permResult.receive !== 'granted') {
-      console.log('[notifications] Permission not granted');
-      return;
-    }
+    // 2. Request permission to send push notifications
+    //    true = if previously denied, opens device Settings
+    await OneSignal.Notifications.requestPermission(true);
 
-    // 2. Register with APNs / FCM
-    // On Android without google-services.json, this fires registrationError which is handled below
-    await PushNotifications.register();
+    // 3. Identify the user — this is the key step that links the device to the
+    //    Supabase user so we can target them from the dashboard / Edge Functions
+    OneSignal.login(userId);
 
-    // 3. On successful registration, send token to OneSignal
-    PushNotifications.addListener('registration', async (token) => {
-      const playerId = await registerWithOneSignal(token.value, userId);
-      if (playerId) {
-        await savePlayerIdToProfile(userId, playerId);
-      }
+    // 4. Handle notification taps → navigate to the right screen
+    OneSignal.Notifications.addEventListener('click', (event) => {
+      const data = event.notification.additionalData as Record<string, string> | null;
+      const type = data?.type;
+      if (type) handleNotificationTap(type);
     });
 
-    PushNotifications.addListener('registrationError', (err) => {
-      console.error('[notifications] Registration error:', err);
-    });
-
-    // 4. Handle foreground notifications (show via toast or in-app UI)
-    PushNotifications.addListener('pushNotificationReceived', (notification) => {
-      console.log('[notifications] Received:', notification.title, notification.body);
-    });
-
-    // 5. Handle notification tap → navigate
-    PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
-      const type = action.notification.data?.type;
-      if (type) {
-        handleNotificationTap(type);
-      }
-    });
   } catch (err) {
     console.error('[notifications] Init error:', err);
   }
 }
 
-// ── Navigate to the right screen based on notification type ──────────────────
+// ── Navigate to the right screen based on notification type ───────────────────
 
 function handleNotificationTap(type: string) {
   const routes: Record<string, string> = {
@@ -136,22 +74,35 @@ function handleNotificationTap(type: string) {
   window.location.hash = '#' + route;
 }
 
-// ── Toggle opt-in / opt-out via Supabase profile flag ────────────────────────
+// ── Toggle opt-in / opt-out ────────────────────────────────────────────────────
 
 export async function setNotificationsEnabled(userId: string, enabled: boolean): Promise<void> {
+  const OneSignal = await getOneSignal();
+  if (OneSignal) {
+    try {
+      if (enabled) {
+        OneSignal.User.pushSubscription.optIn();
+      } else {
+        OneSignal.User.pushSubscription.optOut();
+      }
+    } catch { /* SDK not ready yet — profile flag is the source of truth */ }
+  }
+
   await supabase
     .from('profiles')
     .update({ notifications_enabled: enabled })
     .eq('id', userId);
 }
 
-// ── Check current permission state ───────────────────────────────────────────
+// ── Check current OS permission state ─────────────────────────────────────────
 
 export async function getPermissionState(): Promise<'granted' | 'denied' | 'prompt' | 'unavailable'> {
   if (!Capacitor.isNativePlatform()) return 'unavailable';
   try {
-    const { receive } = await PushNotifications.checkPermissions();
-    return receive as 'granted' | 'denied' | 'prompt';
+    const OneSignal = await getOneSignal();
+    if (!OneSignal) return 'unavailable';
+    const granted = await OneSignal.Notifications.getPermissionAsync();
+    return granted ? 'granted' : 'denied';
   } catch {
     return 'unavailable';
   }
