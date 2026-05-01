@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, Sun, Moon, Bell, BellOff, Info, LogOut, User, Loader2 } from 'lucide-react';
+import { ChevronLeft, Sun, Moon, Bell, BellOff, Info, LogOut, User, Loader2, BookOpen, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { useTheme } from '@/hooks/useTheme';
@@ -68,6 +68,7 @@ export default function AppSettings() {
   const [notifEnabled, setNotifEnabled] = useState<boolean>(true);
   const [permState, setPermState] = useState<'granted' | 'denied' | 'prompt' | 'unavailable'>('unavailable');
   const [isTogglingNotif, setIsTogglingNotif] = useState(false);
+  const [showSources, setShowSources] = useState(false);
 
   // Sync from profile
   useEffect(() => {
@@ -200,8 +201,57 @@ export default function AppSettings() {
           <Row
             icon={Info}
             label="חטוב בלי תפריט"
-            description="גרסה 1.0 — © 2025"
+            description="גרסה 1.1 — © 2025"
           />
+          <Row
+            icon={BookOpen}
+            label="מקורות ומחקרים"
+            description="המלצות הבריאות מבוססות על מחקר מדעי"
+            onClick={() => setShowSources((v) => !v)}
+            right={
+              <ChevronLeft
+                className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${showSources ? '-rotate-90' : ''}`}
+              />
+            }
+          />
+          {showSources && (
+            <div className="px-4 py-4 bg-muted/30 space-y-3">
+              <p className="text-xs font-semibold text-muted-foreground mb-3">
+                תוכן האפליקציה מבוסס על המקורות הבאים:
+              </p>
+              {[
+                {
+                  label: 'ארגון הבריאות העולמי — המלצות פעילות גופנית',
+                  url: 'https://www.who.int/publications/i/item/9789240015128',
+                },
+                {
+                  label: 'ארגון הבריאות העולמי — תזונה בריאה',
+                  url: 'https://www.who.int/news-room/fact-sheets/detail/healthy-diet',
+                },
+                {
+                  label: 'משרד הבריאות הישראלי — המלצות תזונה',
+                  url: 'https://www.health.gov.il/subjects/fitness/nutrition/Pages/nutrition_recommendations.aspx',
+                },
+                {
+                  label: 'National Institutes of Health — ניהול משקל בריא',
+                  url: 'https://www.nhlbi.nih.gov/health/educational/lose_wt/',
+                },
+                {
+                  label: 'James Clear, Atomic Habits (2018) — מחקר יצירת הרגלים',
+                  url: 'https://jamesclear.com/atomic-habits',
+                },
+              ].map(({ label, url }) => (
+                <button
+                  key={url}
+                  className="w-full text-right flex items-start gap-2.5"
+                  onClick={() => window.open(url, '_blank')}
+                >
+                  <ExternalLink className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
+                  <span className="text-xs text-primary leading-relaxed">{label}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </Section>
 
         {/* Logout */}
