@@ -85,7 +85,7 @@ export default function AppProgress() {
     const dateKey = format(d, 'yyyy-MM-dd');
     const label = format(d, 'd/M');
     const found = stepLogs.find((log) => log.date === dateKey);
-    return { date: label, steps: found?.step_count ?? 0 };
+    return { date: label, steps: found?.steps ?? 0 };
   });
 
   const stepProgress = Math.min((todaySteps / STEP_GOAL) * CIRCLE_CIRCUMFERENCE, CIRCLE_CIRCUMFERENCE);

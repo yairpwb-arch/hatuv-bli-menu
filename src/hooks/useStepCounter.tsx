@@ -60,29 +60,47 @@ export function useStepCounter(userId?: string): UseStepCounterReturn {
     const pedometer = await getPedometer();
     if (!pedometer) return;
 
-    // Get today's baseline first
+    // 1. Get today's cumulative step count from the health store (midnight → now)
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
+
+    let stepsAtTrackingStart = 0;
     try {
       const result = await pedometer.getMeasurement({
         start: todayStart.getTime(),
         end: Date.now(),
       });
-      const initialSteps = result.numberOfSteps ?? 0;
-      setSteps(initialSteps);
+      stepsAtTrackingStart = result.numberOfSteps ?? 0;
+      setSteps(stepsAtTrackingStart);
       if (result.distance != null) setDistance(result.distance);
-      saveSteps(initialSteps);
+      saveSteps(stepsAtTrackingStart);
     } catch {
       // Not fatal — live updates will still work
     }
 
-    // Start real-time updates
+    // 2. Start real-time updates.
+    //    startMeasurementUpdates() starts from "now", so event.numberOfSteps
+    //    is the cumulative count SINCE tracking started (not from midnight).
+    //    We record the first sensor value as a baseline and add the delta on top
+    //    of the daily total we already fetched above.
     await pedometer.startMeasurementUpdates();
+
+    let sensorBaseline: number | null = null;
+
     const handle = await pedometer.addListener('measurement', (event) => {
-      const count = event.numberOfSteps ?? 0;
-      setSteps(count);
+      const raw = event.numberOfSteps ?? 0;
+
+      if (sensorBaseline === null) {
+        // First event — record the sensor value at this moment as baseline
+        sensorBaseline = raw;
+      }
+
+      const delta = Math.max(0, raw - sensorBaseline);
+      const total = stepsAtTrackingStart + delta;
+
+      setSteps(total);
       if (event.distance != null) setDistance(event.distance);
-      saveSteps(count);
+      saveSteps(total);
     });
     listenerRef.current = handle;
   }, [saveSteps]);

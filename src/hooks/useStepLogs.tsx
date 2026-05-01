@@ -2,13 +2,12 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { format, subDays } from 'date-fns';
-import { toast } from 'sonner';
 
 export interface StepLog {
   id: string;
   user_id: string;
   date: string;
-  step_count: number;
+  steps: number;
 }
 
 interface UseStepLogsResult {
@@ -24,7 +23,6 @@ export function useStepLogs(): UseStepLogsResult {
   const [isLoading, setIsLoading] = useState(true);
 
   const today = format(new Date(), 'yyyy-MM-dd');
-
   const sevenDaysAgo = format(subDays(new Date(), 6), 'yyyy-MM-dd');
 
   const fetchLogs = useCallback(async () => {
@@ -36,7 +34,7 @@ export function useStepLogs(): UseStepLogsResult {
     setIsLoading(true);
 
     const { data, error } = await supabase
-      .from('step_logs')
+      .from('steps_log')
       .select('*')
       .eq('user_id', user.id)
       .gte('date', sevenDaysAgo)
@@ -61,24 +59,22 @@ export function useStepLogs(): UseStepLogsResult {
     if (!user) return;
 
     const { error } = await supabase
-      .from('step_logs')
+      .from('steps_log')
       .upsert(
-        { user_id: user.id, date, step_count: stepCount },
+        { user_id: user.id, date, steps: stepCount },
         { onConflict: 'user_id,date' }
       );
 
     if (error) {
       console.error('Error updating step logs:', error);
-      toast.error('שגיאה בעדכון הצעדים');
       return;
     }
 
-    toast.success('הצעדים עודכנו בהצלחה');
     await fetchLogs();
   };
 
   const todayLog = logs.find((log) => log.date === today);
-  const todaySteps = todayLog?.step_count ?? 0;
+  const todaySteps = todayLog?.steps ?? 0;
 
   return { logs, todaySteps, updateSteps, isLoading };
 }
