@@ -17,28 +17,53 @@ const corsHeaders = {
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
 // ── OneSignal helper ──────────────────────────────────────────────────────────
+// Routes each token to the correct OneSignal field based on device platform:
+//   iOS     → include_ios_tokens       (raw APNs device token)
+//   Android → include_android_reg_ids  (raw FCM registration ID)
+//   unknown → include_player_ids       (OneSignal Player ID fallback)
 
-async function sendPush(playerIds: string[], title: string, body: string, data?: Record<string, string>) {
-  if (playerIds.length === 0) return;
+interface TokenRecord {
+  token: string;
+  platform: string | null;
+}
 
-  const res = await fetch('https://onesignal.com/api/v1/notifications', {
-    method: 'POST',
-    headers: {
-      Authorization: `Basic ${ONESIGNAL_REST_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      app_id: ONESIGNAL_APP_ID,
-      include_player_ids: playerIds,
-      headings: { he: title, en: title },
-      contents: { he: body, en: body },
-      data: data ?? {},
-      android_channel_id: 'general',
-    }),
-  });
+async function sendPush(
+  tokens: TokenRecord[],
+  title: string,
+  body: string,
+  data?: Record<string, string>,
+) {
+  if (tokens.length === 0) return;
 
-  const json = await res.json();
-  console.log(`[push] type=${data?.type ?? '?'} sent=${json.recipients ?? 0} errors=${json.errors ?? 0}`);
+  const ios     = tokens.filter((t) => t.platform === 'ios').map((t) => t.token);
+  const android = tokens.filter((t) => t.platform === 'android').map((t) => t.token);
+  const unknown = tokens.filter((t) => t.platform !== 'ios' && t.platform !== 'android').map((t) => t.token);
+
+  const sendBatch = async (extra: Record<string, unknown>) => {
+    const res = await fetch('https://onesignal.com/api/v1/notifications', {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${ONESIGNAL_REST_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        app_id: ONESIGNAL_APP_ID,
+        headings: { he: title, en: title },
+        contents: { he: body, en: body },
+        data: data ?? {},
+        android_channel_id: 'general',
+        ...extra,
+      }),
+    });
+    const json = await res.json();
+    console.log(`[push] type=${data?.type ?? '?'} sent=${json.recipients ?? 0} errors=${JSON.stringify(json.errors ?? [])}`);
+  };
+
+  const promises: Promise<void>[] = [];
+  if (ios.length > 0)     promises.push(sendBatch({ include_ios_tokens: ios }));
+  if (android.length > 0) promises.push(sendBatch({ include_android_reg_ids: android }));
+  if (unknown.length > 0) promises.push(sendBatch({ include_player_ids: unknown }));
+  await Promise.all(promises);
 }
 
 // ── User week helpers ─────────────────────────────────────────────────────────
@@ -60,12 +85,15 @@ function getDayInProgram(startDate: string): number {
 async function handleDailyQuote() {
   const { data: users } = await supabase
     .from('profiles')
-    .select('push_token')
+    .select('push_token, device_platform')
     .eq('is_active', true)
     .eq('notifications_enabled', true)
     .not('push_token', 'is', null);
 
-  const tokens = (users ?? []).map((u) => u.push_token as string);
+  const tokens: TokenRecord[] = (users ?? []).map((u) => ({
+    token: u.push_token as string,
+    platform: u.device_platform as string | null,
+  }));
   await sendPush(tokens, '💬 משפט יומי', 'יש לך משפט יומי מחכה לך באפליקציה', { type: 'daily_quote' });
 }
 
@@ -73,13 +101,13 @@ async function handleDailyQuote() {
 async function handlePhaseCheck() {
   const { data: users } = await supabase
     .from('profiles')
-    .select('push_token, start_date')
+    .select('push_token, device_platform, start_date')
     .eq('is_active', true)
     .eq('notifications_enabled', true)
     .not('push_token', 'is', null)
     .not('start_date', 'is', null);
 
-  const eligible: string[] = [];
+  const eligible: TokenRecord[] = [];
 
   for (const user of users ?? []) {
     const nextWeek = getWeekNumber(user.start_date) + 1;
@@ -91,7 +119,7 @@ async function handlePhaseCheck() {
       .limit(1);
 
     if (newHabits && newHabits.length > 0) {
-      eligible.push(user.push_token);
+      eligible.push({ token: user.push_token, platform: user.device_platform });
     }
   }
 
@@ -99,26 +127,25 @@ async function handlePhaseCheck() {
     eligible,
     '🎉 שלב חדש מחכה לך!',
     'השלמת את השלב הנוכחי! מחר מתחילים הרגלים חדשים — תמשיך כך!',
-    { type: 'phase_check' }
+    { type: 'phase_check' },
   );
 }
 
-/** 3. הרגלים חדשים — כל ראשון ב-09:00 (ראשון = יום ראשון של שבוע חדש) */
+/** 3. הרגלים חדשים — כל ראשון ב-09:00 */
 async function handleNewHabits() {
   const { data: users } = await supabase
     .from('profiles')
-    .select('push_token, start_date')
+    .select('push_token, device_platform, start_date')
     .eq('is_active', true)
     .eq('notifications_enabled', true)
     .not('push_token', 'is', null)
     .not('start_date', 'is', null);
 
-  const eligible: string[] = [];
+  const eligible: TokenRecord[] = [];
 
   for (const user of users ?? []) {
     const dayInProgram = getDayInProgram(user.start_date);
     const isFirstDayOfNewWeek = dayInProgram > 1 && (dayInProgram - 1) % 7 === 0;
-
     if (!isFirstDayOfNewWeek) continue;
 
     const currentWeek = getWeekNumber(user.start_date);
@@ -130,7 +157,7 @@ async function handleNewHabits() {
       .limit(1);
 
     if (newHabits && newHabits.length > 0) {
-      eligible.push(user.push_token);
+      eligible.push({ token: user.push_token, platform: user.device_platform });
     }
   }
 
@@ -138,7 +165,7 @@ async function handleNewHabits() {
     eligible,
     '🔥 שבוע חדש — הרגלים חדשים!',
     'היום מתחיל שבוע חדש עם הרגלים חדשים — פתח את האפליקציה לראות מה מחכה לך!',
-    { type: 'new_habits' }
+    { type: 'new_habits' },
   );
 }
 
@@ -146,17 +173,20 @@ async function handleNewHabits() {
 async function handleWeighReminder() {
   const { data: users } = await supabase
     .from('profiles')
-    .select('push_token')
+    .select('push_token, device_platform')
     .eq('is_active', true)
     .eq('notifications_enabled', true)
     .not('push_token', 'is', null);
 
-  const tokens = (users ?? []).map((u) => u.push_token as string);
+  const tokens: TokenRecord[] = (users ?? []).map((u) => ({
+    token: u.push_token as string,
+    platform: u.device_platform as string | null,
+  }));
   await sendPush(
     tokens,
     '⚖️ תזכורת שקילה',
     'מחר בבוקר שקילה! זכור לשקול ולמלא את השאלון השבועי 📋',
-    { type: 'weigh_reminder' }
+    { type: 'weigh_reminder' },
   );
 }
 
@@ -164,13 +194,13 @@ async function handleWeighReminder() {
 async function handleSurveyFollowup() {
   const { data: users } = await supabase
     .from('profiles')
-    .select('id, push_token, start_date')
+    .select('id, push_token, device_platform, start_date')
     .eq('is_active', true)
     .eq('notifications_enabled', true)
     .not('push_token', 'is', null)
     .not('start_date', 'is', null);
 
-  const eligible: string[] = [];
+  const eligible: TokenRecord[] = [];
 
   for (const user of users ?? []) {
     const week = getWeekNumber(user.start_date);
@@ -182,7 +212,7 @@ async function handleSurveyFollowup() {
       .maybeSingle();
 
     if (!checkin) {
-      eligible.push(user.push_token);
+      eligible.push({ token: user.push_token, platform: user.device_platform });
     }
   }
 
@@ -190,7 +220,7 @@ async function handleSurveyFollowup() {
     eligible,
     '📋 שאלון שבועי ממתין',
     'עוד לא מילאת את השאלון השבועי שלך — לוקח רק 2 דקות! פתח את האפליקציה ✅',
-    { type: 'survey_followup' }
+    { type: 'survey_followup' },
   );
 }
 
@@ -219,11 +249,11 @@ serve(async (req) => {
     const { type } = body;
 
     switch (type) {
-      case 'daily_quote':    await handleDailyQuote(); break;
-      case 'phase_check':    await handlePhaseCheck(); break;
-      case 'new_habits':     await handleNewHabits(); break;
-      case 'weigh_reminder': await handleWeighReminder(); break;
-      case 'survey_followup':await handleSurveyFollowup(); break;
+      case 'daily_quote':     await handleDailyQuote();     break;
+      case 'phase_check':     await handlePhaseCheck();     break;
+      case 'new_habits':      await handleNewHabits();      break;
+      case 'weigh_reminder':  await handleWeighReminder();  break;
+      case 'survey_followup': await handleSurveyFollowup(); break;
       default:
         return new Response(JSON.stringify({ error: `Unknown type: ${type}` }), {
           status: 400,

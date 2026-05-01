@@ -12,6 +12,9 @@ const config: CapacitorConfig = {
     // after running: npx cap add ios
     // Key: NSMotionUsageDescription
     // Value: "האפליקציה משתמשת בחיישן התנועה כדי לספור את הצעדים היומיים שלך"
+    PushNotifications: {
+      presentationOptions: ['badge', 'sound', 'alert'],
+    },
   },
 };
 
