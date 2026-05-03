@@ -113,23 +113,40 @@ export function useStepCounter(userId?: string): UseStepCounterReturn {
       const pedometer = await getPedometer();
       if (!pedometer || cancelled) return;
 
-      // On Android, check permission first — isAvailable() may return false
-      // without ACTIVITY_RECOGNITION permission granted
+      const isIOS = Capacitor.getPlatform() === 'ios';
+
+      // Check current permission state
       const perm = await pedometer.checkPermissions();
       if (perm.activityRecognition === 'granted') {
         setHasPermission(true);
       }
 
+      // On iOS, auto-request permission on first launch (system dialog)
+      // instead of waiting for the user to tap "אפשר גישה"
+      if (isIOS && perm.activityRecognition !== 'granted' && !cancelled) {
+        try {
+          const result = await pedometer.requestPermissions();
+          if (!cancelled && result.activityRecognition === 'granted') {
+            setHasPermission(true);
+          }
+        } catch {
+          // Permission denied or not available
+        }
+      }
+
       const availability = await pedometer.isAvailable();
       if (cancelled) return;
       // Mark as available if sensor exists OR if permission not yet granted
-      // (so the "allow access" button is shown)
+      // (so the "allow access" button is shown on Android)
       if (availability.stepCounting || perm.activityRecognition !== 'granted') {
         setIsAvailable(true);
       }
 
-      if (perm.activityRecognition === 'granted' && availability.stepCounting) {
-        await startTracking();
+      if (availability.stepCounting) {
+        const finalPerm = await pedometer.checkPermissions();
+        if (finalPerm.activityRecognition === 'granted') {
+          await startTracking();
+        }
       }
     };
 
