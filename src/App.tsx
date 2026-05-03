@@ -3,14 +3,55 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { ThemeProvider } from "@/hooks/useTheme";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+import { Capacitor } from "@capacitor/core";
+import { supabase } from "@/integrations/supabase/client";
+import { useNotificationSetup } from "@/hooks/useNotificationSetup";
 
 function ScrollToTop() {
   const { pathname } = useLocation();
   useEffect(() => { window.scrollTo(0, 0); }, [pathname]);
   return null;
 }
-import { initNotifications } from "@/lib/notifications";
+
+/**
+ * Re-registers for push token on app startup if notifications were previously enabled.
+ * Never auto-requests permission — only re-registers if OS permission is already granted.
+ * New users: if notifications_enabled defaults to true in DB, will trigger permission dialog.
+ */
+function NotificationPermissionTrigger() {
+  const { user } = useAuth();
+  const { enableNotifications } = useNotificationSetup();
+  const triggered = useRef(false);
+
+  useEffect(() => {
+    if (!user || triggered.current) return;
+    if (!Capacitor.isNativePlatform()) return;
+
+    const check = async () => {
+      try {
+        const { data } = await supabase
+          .from('profiles')
+          .select('notifications_enabled')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if ((data as any)?.notifications_enabled === true) {
+          console.log('[NotificationTrigger] Running push setup for user', user.id);
+          triggered.current = true;
+          await enableNotifications(user.id);
+        }
+      } catch (e) {
+        console.error('[NotificationTrigger] Error:', e);
+      }
+    };
+
+    check();
+  }, [user?.id, enableNotifications]);
+
+  return null;
+}
+
 import { lazy, Suspense } from "react";
 import { BottomNav } from "./components/BottomNav";
 import { AppHeader } from "./components/AppHeader";
@@ -50,12 +91,6 @@ function ProtectedRouteInner() {
   const { user, isLoading, isAdmin } = useAuth();
   const { params, isVisible, minimize, end } = useActiveWorkout();
 
-  useEffect(() => {
-    if (user?.id) {
-      initNotifications(user.id);
-    }
-  }, [user?.id]);
-
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -74,6 +109,7 @@ function ProtectedRouteInner() {
 
   return (
     <div className="min-h-screen bg-background">
+      <NotificationPermissionTrigger />
       <AppHeader />
       <Outlet />
       <BottomNav />

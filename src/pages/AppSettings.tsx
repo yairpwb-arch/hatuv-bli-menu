@@ -6,7 +6,7 @@ import { Switch } from '@/components/ui/switch';
 import { useTheme } from '@/hooks/useTheme';
 import { useAuth } from '@/hooks/useAuth';
 import { Capacitor } from '@capacitor/core';
-import { setNotificationsEnabled, getPermissionState } from '@/lib/notifications';
+import { useNotificationSetup } from '@/hooks/useNotificationSetup';
 import { toast } from '@/hooks/use-toast';
 
 // ── Section wrapper ───────────────────────────────────────────────────────────
@@ -64,10 +64,17 @@ export default function AppSettings() {
 
   const isNative = Capacitor.isNativePlatform();
 
+  // Notification hook (MASSAI pattern — no auto permission request)
+  const {
+    enableNotifications,
+    disableNotifications,
+    getPermissionStatus,
+    permissionStatus,
+    isLoading: notifLoading,
+  } = useNotificationSetup();
+
   // Notifications state — driven by profile.notifications_enabled
   const [notifEnabled, setNotifEnabled] = useState<boolean>(true);
-  const [permState, setPermState] = useState<'granted' | 'denied' | 'prompt' | 'unavailable'>('unavailable');
-  const [isTogglingNotif, setIsTogglingNotif] = useState(false);
   const [showSources, setShowSources] = useState(false);
 
   // Sync from profile
@@ -77,46 +84,50 @@ export default function AppSettings() {
     }
   }, [profile?.id]);
 
-  // Check OS permission state
+  // Check OS permission state on mount; re-check when app comes back to foreground
   useEffect(() => {
-    getPermissionState().then(setPermState);
-  }, []);
+    getPermissionStatus();
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') getPermissionStatus();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [getPermissionStatus]);
 
   const handleNotifToggle = async (enabled: boolean) => {
     if (!user) return;
 
-    // If trying to enable but OS permission is denied, redirect to device settings
-    if (enabled && isNative && permState === 'denied') {
-      toast({
-        title: 'הרשאות חסומות',
-        description: 'יש לאפשר התראות בהגדרות המכשיר ידנית',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setIsTogglingNotif(true);
-    try {
-      await setNotificationsEnabled(user.id, enabled);
-      setNotifEnabled(enabled);
-      await refreshProfile();
-      toast({
-        title: enabled ? 'התראות הופעלו ✓' : 'התראות כובו',
-        description: enabled
-          ? 'תקבל תזכורות יומיות ושבועיות מהאפליקציה'
-          : 'לא תקבל יותר התראות מהאפליקציה',
-      });
-    } catch (err) {
-      toast({ title: 'שגיאה', description: 'לא ניתן לשנות הגדרת התראות', variant: 'destructive' });
-    } finally {
-      setIsTogglingNotif(false);
+    if (enabled) {
+      if (isNative && permissionStatus === 'denied') {
+        toast({
+          title: 'הרשאות חסומות',
+          description: 'יש לאפשר התראות בהגדרות המכשיר ידנית',
+          variant: 'destructive',
+        });
+        return;
+      }
+      const success = await enableNotifications(user.id);
+      if (success) {
+        setNotifEnabled(true);
+        await refreshProfile();
+        toast({ title: 'התראות הופעלו ✓', description: 'תקבל תזכורות יומיות ושבועיות מהאפליקציה' });
+      } else if (permissionStatus === 'denied') {
+        toast({ title: 'הרשאות חסומות', description: 'יש לאפשר התראות בהגדרות המכשיר ידנית', variant: 'destructive' });
+      }
+    } else {
+      const success = await disableNotifications(user.id);
+      if (success) {
+        setNotifEnabled(false);
+        await refreshProfile();
+        toast({ title: 'התראות כובו', description: 'לא תקבל יותר התראות מהאפליקציה' });
+      }
     }
   };
 
   // Description based on permission state and platform
   const notifDescription = () => {
     if (!isNative) return 'זמין רק באפליקציה הנייד (iOS / Android)';
-    if (permState === 'denied') return 'הרשאה נדחתה — אפשר ידנית בהגדרות המכשיר';
+    if (permissionStatus === 'denied') return 'הרשאה נדחתה — אפשר ידנית בהגדרות המכשיר';
     if (!notifEnabled) return 'לחץ להפעלת התראות';
     return 'תקבל תזכורות: משפט יומי, שקילה, שאלון ועוד';
   };
@@ -184,11 +195,11 @@ export default function AppSettings() {
             description={notifDescription()}
             right={
               <div dir="ltr" className="flex items-center gap-2">
-                {isTogglingNotif && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+                {notifLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
                 <Switch
                   checked={notifEnabled && isNative}
                   onCheckedChange={handleNotifToggle}
-                  disabled={!isNative || isTogglingNotif}
+                  disabled={!isNative || notifLoading}
                 />
               </div>
             }
