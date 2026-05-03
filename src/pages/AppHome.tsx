@@ -12,7 +12,6 @@ import { toast } from '@/hooks/use-toast';
 import { Dumbbell, Footprints, Quote, Scale, Sparkles, Star, Target } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
-import { ActivityScheduler } from '@/components/ActivityScheduler';
 import { TodayActivityTask } from '@/components/TodayActivityTask';
 import { StreakCard } from '@/components/StreakCard';
 import { MorningStreakPopup } from '@/components/MorningStreakPopup';
@@ -228,15 +227,6 @@ export default function AppHome() {
       {/* Today's Activity Task (if scheduled for today) */}
       {user && (
         <TodayActivityTask userId={user.id} currentWeek={currentWeek} />
-      )}
-
-      {/* Activity Scheduler */}
-      {user && (
-        <ActivityScheduler 
-          userId={user.id} 
-          currentWeek={currentWeek} 
-          completedContentIds={new Set()} 
-        />
       )}
 
       {/* Today's Workout Reminder */}

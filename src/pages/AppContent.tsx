@@ -507,7 +507,7 @@ export default function AppContent() {
       )}
 
       {/* Sticky Weekly Survey Button */}
-      <div className="fixed bottom-20 left-4 right-4 z-40">
+      <div className="fixed left-4 right-4 z-40" style={{ bottom: 'calc(4.5rem + env(safe-area-inset-bottom, 0px))' }}>
         <Button
           className="w-full gradient-primary shadow-glow text-primary-foreground font-medium"
           size="lg"

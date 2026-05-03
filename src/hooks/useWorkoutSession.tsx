@@ -135,9 +135,18 @@ export function useWorkoutSession() {
     }
   };
 
+  const deleteSession = async (sessionId: string) => {
+    if (!user) return;
+    await supabase.from('workout_exercise_logs').delete().eq('session_id', sessionId);
+    await supabase.from('workout_session_logs').delete().eq('id', sessionId);
+    await queryClient.invalidateQueries({ queryKey: ['workout-sessions', user.id] });
+    toast({ title: 'האימון נמחק בהצלחה' });
+  };
+
   return {
     sessions: sessionsQuery.data ?? [],
     logSession,
+    deleteSession,
     isLoading: sessionsQuery.isLoading,
   };
 }

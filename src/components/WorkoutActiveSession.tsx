@@ -307,7 +307,7 @@ export default function WorkoutActiveSession({
       <div className="fixed inset-0 z-50 bg-background flex flex-col overflow-hidden" dir="rtl">
 
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card shrink-0">
+        <div className="flex items-center justify-between px-4 pb-3 border-b border-border bg-card shrink-0 safe-top">
           {/* Minimize button */}
           <button
             onClick={onMinimize}

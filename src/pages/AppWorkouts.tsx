@@ -5,7 +5,9 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Dumbbell, CheckCircle, Clock, History, Play, ChevronDown, ChevronUp, Pencil, X, Footprints } from 'lucide-react';
+import { Dumbbell, CheckCircle, Clock, History, Play, ChevronDown, ChevronUp, Pencil, X, Footprints, Trash2, ChevronRight } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { toast } from '@/hooks/use-toast';
 import type { WorkoutPlanDay, WorkoutPlanExercise } from '@/hooks/useWorkoutPlan';
 import { cn } from '@/lib/utils';
 import { format, differenceInDays } from 'date-fns';
@@ -86,24 +88,18 @@ function WorkoutDayCard({
   onStartSession,
 }: WorkoutDayCardProps) {
   const isScheduledToday = scheduledWeekday === todayWeekday;
-  const [isEditingDay, setIsEditingDay] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [pendingWeekday, setPendingWeekday] = useState<number | null>(null);
 
   const startEditing = (e: React.MouseEvent) => {
     e.stopPropagation();
     setPendingWeekday(scheduledWeekday ?? null);
-    setIsEditingDay(true);
+    setEditOpen(true);
   };
 
-  const cancelEditing = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setIsEditingDay(false);
-  };
-
-  const saveEditing = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const saveEditing = () => {
     onSaveSchedule(pendingWeekday);
-    setIsEditingDay(false);
+    setEditOpen(false);
   };
 
   // Fetch exercises only when card is expanded
@@ -167,73 +163,59 @@ function WorkoutDayCard({
           />
         </div>
 
-        {/* ── Day scheduler: view / edit ── */}
-        {!isEditingDay ? (
-          <div className="flex items-center justify-between">
-            <div className="flex gap-1 flex-1 ml-2">
-              {WEEKDAY_LABELS.map((label, wd) => (
-                <div
-                  key={wd}
-                  className={cn(
-                    'flex-1 py-1.5 rounded-lg text-xs font-semibold text-center',
-                    scheduledWeekday === wd
-                      ? 'bg-orange-500 text-white'
-                      : wd === todayWeekday
-                      ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 border border-orange-300 dark:border-orange-700'
-                      : 'bg-muted text-muted-foreground'
-                  )}
-                >
-                  {label}
-                </div>
-              ))}
-            </div>
-            <button
-              onClick={startEditing}
-              className="flex items-center gap-1 text-xs text-orange-500 font-medium px-2 py-1.5 rounded-lg hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors flex-shrink-0"
-            >
-              <Pencil className="h-3.5 w-3.5" />
-              ערוך
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            <div className="flex gap-1">
+        {/* ── Day info + edit button ── */}
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-muted-foreground">
+            {scheduledWeekday !== undefined
+              ? <span className="font-medium text-foreground">יום {WEEKDAY_LABELS[scheduledWeekday]}</span>
+              : 'לא נקבע יום'}
+          </span>
+          <button
+            onClick={startEditing}
+            className="flex items-center gap-1 text-xs text-orange-500 font-medium px-2 py-1.5 rounded-lg hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            ערוך
+          </button>
+        </div>
+
+        {/* ── Edit Day Dialog ── */}
+        <Dialog open={editOpen} onOpenChange={setEditOpen}>
+          <DialogContent dir="rtl" className="max-w-xs">
+            <DialogHeader>
+              <DialogTitle>בחר יום לאימון</DialogTitle>
+            </DialogHeader>
+            <div className="flex gap-1 pt-2">
               {WEEKDAY_LABELS.map((label, wd) => (
                 <button
                   key={wd}
-                  onClick={(e) => { e.stopPropagation(); setPendingWeekday(pendingWeekday === wd ? null : wd); }}
+                  onClick={() => setPendingWeekday(pendingWeekday === wd ? null : wd)}
                   className={cn(
-                    'flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all',
+                    'flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all',
                     pendingWeekday === wd
-                      ? 'bg-orange-500 text-white shadow-sm'
+                      ? 'bg-orange-500 text-white shadow-md'
                       : wd === todayWeekday
-                      ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 border border-orange-300 dark:border-orange-700'
-                      : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                      ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 border border-orange-300'
+                      : 'bg-muted text-muted-foreground hover:bg-muted/70'
                   )}
                 >
                   {label}
                 </button>
               ))}
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 pt-1">
               <Button
-                size="sm"
-                className="flex-1 h-8 bg-orange-500 hover:bg-orange-600 text-white text-xs rounded-lg"
+                className="flex-1 bg-orange-500 hover:bg-orange-600 text-white"
                 onClick={saveEditing}
               >
                 שמור
               </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-8 px-3 text-xs rounded-lg"
-                onClick={cancelEditing}
-              >
-                <X className="h-3.5 w-3.5" />
+              <Button variant="outline" size="icon" onClick={() => setEditOpen(false)}>
+                <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
-          </div>
-        )}
+          </DialogContent>
+        </Dialog>
 
         {/* ── Expanded: exercise list + start button ── */}
         {isExpanded && (
@@ -308,9 +290,16 @@ interface WalkEntry {
   is_active: boolean;
 }
 
-function WalkCard({ walk }: { walk: WalkEntry }) {
+function WalkCard({ walk, onDayChange }: { walk: WalkEntry; onDayChange: (walkId: string, day: number | null) => void }) {
   const todayWd = new Date().getDay();
   const isToday = walk.day_of_week === todayWd;
+  const [editOpen, setEditOpen] = useState(false);
+  const [pendingDay, setPendingDay] = useState<number | null>(null);
+
+  const saveDay = () => {
+    onDayChange(walk.id, pendingDay);
+    setEditOpen(false);
+  };
 
   return (
     <Card className={cn('transition-all', isToday && 'border-2 border-orange-500')}>
@@ -337,17 +326,54 @@ function WalkCard({ walk }: { walk: WalkEntry }) {
           </div>
         </div>
 
-        {/* Day display (read-only) */}
-        <div className="flex gap-1">
-          {WEEKDAY_LABELS.map((label, wd) => (
-            <div key={wd} className={cn(
-              'flex-1 py-1.5 rounded-lg text-xs font-semibold text-center',
-              walk.day_of_week === wd ? 'bg-orange-500 text-white'
-              : wd === todayWd ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 border border-orange-300 dark:border-orange-700'
-              : 'bg-muted text-muted-foreground'
-            )}>{label}</div>
-          ))}
+        {/* Day info + edit button */}
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-muted-foreground">
+            {walk.day_of_week !== null
+              ? <span className="font-medium text-foreground">יום {WEEKDAY_LABELS[walk.day_of_week]}</span>
+              : 'לא נקבע יום'}
+          </span>
+          <button
+            onClick={() => { setPendingDay(walk.day_of_week); setEditOpen(true); }}
+            className="flex items-center gap-1 text-xs text-orange-500 font-medium px-2 py-1.5 rounded-lg hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            ערוך
+          </button>
         </div>
+
+        {/* Edit Dialog */}
+        <Dialog open={editOpen} onOpenChange={setEditOpen}>
+          <DialogContent dir="rtl" className="max-w-xs">
+            <DialogHeader>
+              <DialogTitle>בחר יום להליכה</DialogTitle>
+            </DialogHeader>
+            <div className="flex gap-1 pt-2">
+              {WEEKDAY_LABELS.map((label, wd) => (
+                <button
+                  key={wd}
+                  onClick={() => setPendingDay(pendingDay === wd ? null : wd)}
+                  className={cn(
+                    'flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all',
+                    pendingDay === wd ? 'bg-orange-500 text-white shadow-md'
+                    : wd === todayWd ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 border border-orange-300'
+                    : 'bg-muted text-muted-foreground hover:bg-muted/70'
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2 pt-1">
+              <Button className="flex-1 bg-orange-500 hover:bg-orange-600 text-white" onClick={saveDay}>
+                שמור
+              </Button>
+              <Button variant="outline" size="icon" onClick={() => setEditOpen(false)}>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   );
@@ -405,7 +431,19 @@ function WalkingSection({ userId }: { userId: string }) {
       {[0,1].map(i => <Skeleton key={i} className="h-24 w-full rounded-2xl" />)}
     </div>
   );
+  const handleDayChange = async (walkId: string, day: number | null) => {
+    await (supabase as any)
+      .from('user_walking_schedule')
+      .update({ day_of_week: day })
+      .eq('id', walkId);
+    setWalks(prev => prev.map(w => w.id === walkId ? { ...w, day_of_week: day } : w));
+    toast({ title: 'הליכה עודכנה' });
+  };
+
   if (walks.length === 0) return null;
+
+  const todayWd = new Date().getDay();
+  const activeDays = walks.map(w => w.day_of_week).filter(d => d !== null) as number[];
 
   return (
     <div className="pt-4 space-y-3">
@@ -413,7 +451,18 @@ function WalkingSection({ userId }: { userId: string }) {
         <Footprints className="h-4 w-4 text-orange-500" />
         <h3 className="text-sm font-semibold text-muted-foreground">הליכות שבועיות</h3>
       </div>
-      {walks.map(w => <WalkCard key={w.id} walk={w} />)}
+      {/* Weekday bar */}
+      <div className="flex gap-1">
+        {WEEKDAY_LABELS.map((label, wd) => (
+          <div key={wd} className={cn(
+            'flex-1 py-1.5 rounded-lg text-xs font-semibold text-center',
+            activeDays.includes(wd) ? 'bg-orange-500 text-white'
+            : wd === todayWd ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 border border-orange-300'
+            : 'bg-muted text-muted-foreground'
+          )}>{label}</div>
+        ))}
+      </div>
+      {walks.map(w => <WalkCard key={w.id} walk={w} onDayChange={handleDayChange} />)}
     </div>
   );
 }
@@ -477,8 +526,25 @@ function WorkoutsTab({ userId, planDays, sessions, onStartSession }: WorkoutsTab
     );
   }
 
+  // Build weekday bar: show all days, mark those with a scheduled workout
+  const scheduledDays = Array.from(scheduleMap.values());
+
   return (
     <div className="space-y-3 pt-2">
+      {/* Weekday bar */}
+      {scheduledDays.length > 0 && (
+        <div className="flex gap-1">
+          {WEEKDAY_LABELS.map((label, wd) => (
+            <div key={wd} className={cn(
+              'flex-1 py-1.5 rounded-lg text-xs font-semibold text-center',
+              scheduledDays.includes(wd) ? 'bg-orange-500 text-white'
+              : wd === todayWeekday ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 border border-orange-300'
+              : 'bg-muted text-muted-foreground'
+            )}>{label}</div>
+          ))}
+        </div>
+      )}
+
       {planDays.map((day) => {
         const alreadyDoneToday = sessions.some(
           (s) => s.completed_at.split('T')[0] === today && s.plan_day_id === day.id
@@ -512,6 +578,7 @@ interface HistoryTabProps {
     workout_plan_days?: { id: string; name: string; day_number: number } | null;
   }[];
   isLoading: boolean;
+  onDeleteSession: (id: string) => void;
 }
 
 interface ExerciseLogEntry {
@@ -522,7 +589,7 @@ interface ExerciseLogEntry {
   exercises: { name: string } | null;
 }
 
-function HistoryTab({ sessions, isLoading }: HistoryTabProps) {
+function HistoryTab({ sessions, isLoading, onDeleteSession }: HistoryTabProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [logsMap, setLogsMap] = useState<Record<string, ExerciseLogEntry[]>>({});
   const [loadingId, setLoadingId] = useState<string | null>(null);
@@ -605,7 +672,7 @@ function HistoryTab({ sessions, isLoading }: HistoryTabProps) {
                     </p>
                   </div>
                 </div>
-                <div className="flex flex-col items-end gap-1">
+                <div className="flex flex-col items-end gap-1.5">
                   {session.duration_minutes && session.duration_minutes > 0 && (
                     <Badge variant="outline" className="gap-1 text-xs border-orange-500/30 text-orange-400">
                       <Clock className="h-3 w-3" />
@@ -616,6 +683,14 @@ function HistoryTab({ sessions, isLoading }: HistoryTabProps) {
                     <CheckCircle className="h-3 w-3 ml-1" />
                     הושלם
                   </Badge>
+                  <button
+                    onClick={() => onDeleteSession(session.id)}
+                    className="flex items-center gap-1 text-xs text-red-400 hover:text-red-600 transition-colors mt-0.5"
+                    aria-label="מחק אימון"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    מחק
+                  </button>
                 </div>
               </div>
 
@@ -680,7 +755,7 @@ function HistoryTab({ sessions, isLoading }: HistoryTabProps) {
 export default function AppWorkouts() {
   const { user } = useAuth();
   const { assignment, plan, planDays, isLoading } = useWorkoutPlan();
-  const { sessions, logSession, isLoading: isSessionsLoading } = useWorkoutSession();
+  const { sessions, logSession, deleteSession, isLoading: isSessionsLoading } = useWorkoutSession();
   const { start } = useActiveWorkout();
 
   if (isLoading) {
@@ -751,7 +826,7 @@ export default function AppWorkouts() {
         </TabsContent>
 
         <TabsContent value="history">
-          <HistoryTab sessions={sessions} isLoading={isSessionsLoading} />
+          <HistoryTab sessions={sessions} isLoading={isSessionsLoading} onDeleteSession={deleteSession} />
         </TabsContent>
       </Tabs>
     </div>
