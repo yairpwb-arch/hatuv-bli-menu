@@ -202,8 +202,8 @@ export function useStepCounter(userId?: string): UseStepCounterReturn {
       const perm = await pedometer.checkPermissions();
       if (perm.activityRecognition === 'granted') {
         setHasPermission(true);
-      } else if (isIOS) {
-        // iOS: auto-request so the OS dialog appears on first launch
+      } else if (perm.activityRecognition === 'prompt' || perm.activityRecognition === 'prompt-with-rationale' || isIOS) {
+        // iOS + Android: auto-request so the OS dialog appears on first launch
         try {
           const result = await pedometer.requestPermissions();
           if (!cancelled && result.activityRecognition === 'granted') {
