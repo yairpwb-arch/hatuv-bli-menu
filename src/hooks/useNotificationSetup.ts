@@ -24,6 +24,26 @@ async function saveTokenToProfile(token: string, userId: string): Promise<boolea
       return false;
     }
     console.log('[NotificationSetup] Token saved to DB');
+
+    // Register device in OneSignal immediately so it appears as subscribed in the dashboard
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+        await fetch(`${supabaseUrl}/functions/v1/push-notification`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ type: 'register_device' }),
+        });
+        console.log('[NotificationSetup] Registered with OneSignal');
+      }
+    } catch (e) {
+      console.warn('[NotificationSetup] OneSignal registration failed (non-fatal):', e);
+    }
+
     return true;
   } catch (e) {
     console.error('[NotificationSetup] Exception saving token:', e);

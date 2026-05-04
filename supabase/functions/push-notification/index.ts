@@ -235,21 +235,22 @@ serve(async (req) => {
   }
 
   try {
-    // Auth: accept service role JWT or cron secret
     const auth = req.headers.get('authorization') ?? '';
     const cronHeader = req.headers.get('x-cron-secret') ?? '';
     const isServiceRole = auth.includes(SERVICE_ROLE_KEY);
     const isCron = CRON_SECRET && cronHeader === CRON_SECRET;
 
-    if (!isServiceRole && !isCron) {
+    // Parse body first so we can check type for register_device auth bypass
+    const body = await req.json().catch(() => ({}));
+    const { type } = body;
+
+    // register_device accepts any valid Supabase user JWT — check auth per-case
+    if (!isServiceRole && !isCron && type !== 'register_device') {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-
-    const body = await req.json().catch(() => ({}));
-    const { type } = body;
 
     let onesignalResult: unknown;
     switch (type) {
@@ -276,6 +277,54 @@ serve(async (req) => {
           'אם קיבלת הודעה זו — ההתראות עובדות!',
           { type: 'test' },
         );
+        break;
+      }
+      case 'register_device': {
+        // Verify caller is an authenticated user (not just service role)
+        let userId: string | null = null;
+        if (isServiceRole) {
+          // Admin call: accept user_id from body
+          const { user_id } = body as { user_id?: string };
+          userId = user_id ?? null;
+        } else {
+          const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+          const { data: { user } } = await supabase.auth.getUser(token);
+          userId = user?.id ?? null;
+        }
+        if (!userId) {
+          return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+            status: 401,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('push_token, device_platform')
+          .eq('id', userId)
+          .maybeSingle();
+        if (!profile?.push_token) {
+          return new Response(JSON.stringify({ error: 'No push token' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        const deviceType = profile.device_platform === 'ios' ? 0 : 1;
+        const res = await fetch('https://onesignal.com/api/v1/players', {
+          method: 'POST',
+          headers: {
+            Authorization: `Basic ${ONESIGNAL_REST_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            app_id: ONESIGNAL_APP_ID,
+            device_type: deviceType,
+            identifier: profile.push_token,
+            notification_types: 1,
+            language: 'he',
+          }),
+        });
+        onesignalResult = await res.json();
+        console.log('[push] register_device', JSON.stringify(onesignalResult));
         break;
       }
       default:
