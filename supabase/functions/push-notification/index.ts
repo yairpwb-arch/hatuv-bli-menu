@@ -51,6 +51,8 @@ async function sendPush(
         headings: { he: title, en: title },
         contents: { he: body, en: body },
         data: data ?? {},
+        priority: 10,           // HIGH priority — bypasses Android Doze / battery optimization
+        android_visibility: 1,  // lock screen visibility: public
         ...extra,
       }),
     });
