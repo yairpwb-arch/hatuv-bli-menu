@@ -51,19 +51,22 @@ async function sendPush(
         headings: { he: title, en: title },
         contents: { he: body, en: body },
         data: data ?? {},
-        android_channel_id: 'general',
         ...extra,
       }),
     });
     const json = await res.json();
-    console.log(`[push] type=${data?.type ?? '?'} sent=${json.recipients ?? 0} errors=${JSON.stringify(json.errors ?? [])}`);
+    console.log(`[push] type=${data?.type ?? '?'} sent=${json.recipients ?? 0} errors=${JSON.stringify(json.errors ?? [])} full=${JSON.stringify(json)}`);
+    return json;
   };
 
+  const results: unknown[] = [];
   const promises: Promise<void>[] = [];
-  if (ios.length > 0)     promises.push(sendBatch({ include_ios_tokens: ios }));
-  if (android.length > 0) promises.push(sendBatch({ include_android_reg_ids: android }));
-  if (unknown.length > 0) promises.push(sendBatch({ include_player_ids: unknown }));
+  if (ios.length > 0)     promises.push(sendBatch({ include_ios_tokens: ios }).then(r => { results.push({ios: r}); }));
+  if (android.length > 0) promises.push(sendBatch({ include_android_reg_ids: android }).then(r => { results.push({android: r}); }));
+  if (unknown.length > 0) promises.push(sendBatch({ include_player_ids: unknown }).then(r => { results.push({unknown: r}); }));
   await Promise.all(promises);
+  console.log('[push] OneSignal results:', JSON.stringify(results));
+  return results;
 }
 
 // ── User week helpers ─────────────────────────────────────────────────────────
@@ -94,7 +97,7 @@ async function handleDailyQuote() {
     token: u.push_token as string,
     platform: u.device_platform as string | null,
   }));
-  await sendPush(tokens, '💬 משפט יומי', 'יש לך משפט יומי מחכה לך באפליקציה', { type: 'daily_quote' });
+  return await sendPush(tokens, '💬 משפט יומי', 'יש לך משפט יומי מחכה לך באפליקציה', { type: 'daily_quote' });
 }
 
 /** 2. בדיקת מעבר שלב — כל שבת ב-19:00 */
@@ -248,12 +251,33 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const { type } = body;
 
+    let onesignalResult: unknown;
     switch (type) {
-      case 'daily_quote':     await handleDailyQuote();     break;
-      case 'phase_check':     await handlePhaseCheck();     break;
-      case 'new_habits':      await handleNewHabits();      break;
-      case 'weigh_reminder':  await handleWeighReminder();  break;
-      case 'survey_followup': await handleSurveyFollowup(); break;
+      case 'daily_quote':     onesignalResult = await handleDailyQuote();     break;
+      case 'phase_check':     onesignalResult = await handlePhaseCheck();     break;
+      case 'new_habits':      onesignalResult = await handleNewHabits();      break;
+      case 'weigh_reminder':  onesignalResult = await handleWeighReminder();  break;
+      case 'survey_followup': onesignalResult = await handleSurveyFollowup(); break;
+      case 'check_delivery': {
+        const { id } = body as { id?: string };
+        if (!id) return new Response(JSON.stringify({ error: 'missing id' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        const r = await fetch(`https://onesignal.com/api/v1/notifications/${id}?app_id=${ONESIGNAL_APP_ID}`, {
+          headers: { Authorization: `Basic ${ONESIGNAL_REST_API_KEY}` },
+        });
+        onesignalResult = await r.json();
+        break;
+      }
+      case 'send_test': {
+        const { token, platform } = body as { token?: string; platform?: string };
+        if (!token) return new Response(JSON.stringify({ error: 'missing token' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        onesignalResult = await sendPush(
+          [{ token, platform: platform ?? 'android' }],
+          '🧪 בדיקה',
+          'אם קיבלת הודעה זו — ההתראות עובדות!',
+          { type: 'test' },
+        );
+        break;
+      }
       default:
         return new Response(JSON.stringify({ error: `Unknown type: ${type}` }), {
           status: 400,
@@ -261,7 +285,7 @@ serve(async (req) => {
         });
     }
 
-    return new Response(JSON.stringify({ ok: true, type }), {
+    return new Response(JSON.stringify({ ok: true, type, onesignal: onesignalResult }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (err) {

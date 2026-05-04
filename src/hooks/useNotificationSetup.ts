@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 function getPlatform(): 'ios' | 'android' {
   return Capacitor.getPlatform() === 'ios' ? 'ios' : 'android';
@@ -55,6 +56,7 @@ export function useNotificationSetup() {
     let registrationHandle: any;
     let errorHandle: any;
     let actionHandle: any;
+    let foregroundHandle: any;
 
     const setup = async () => {
       // Android: create notification channel before registering
@@ -101,6 +103,22 @@ export function useNotificationSetup() {
         console.error('[NotificationSetup] Registration error:', err);
       });
 
+      // Foreground: show a toast banner (Android doesn't auto-display when app is open)
+      foregroundHandle = await PushNotifications.addListener('pushNotificationReceived', (notification) => {
+        const title = notification.title ?? '';
+        const body = notification.body ?? '';
+        const data = notification.data as Record<string, string> | null;
+        const type = data?.type;
+        toast(title, {
+          description: body,
+          duration: 5000,
+          action: type ? {
+            label: 'פתח',
+            onClick: () => handleNotificationTap(type),
+          } : undefined,
+        });
+      });
+
       actionHandle = await PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
         const data = action.notification.data as Record<string, string> | null;
         const type = data?.type;
@@ -119,6 +137,7 @@ export function useNotificationSetup() {
     return () => {
       registrationHandle?.remove();
       errorHandle?.remove();
+      foregroundHandle?.remove();
       actionHandle?.remove();
     };
   }, []);
