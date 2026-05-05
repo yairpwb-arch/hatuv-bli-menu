@@ -46,7 +46,6 @@ export default function AppContent() {
   const [selectedContent, setSelectedContent] = useState<ContentItem | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('all');
   const [expandedParts, setExpandedParts] = useState<Set<number>>(new Set([1]));
-  const [weeklySurveyLink, setWeeklySurveyLink] = useState('');
   const [snacksBookLink, setSnacksBookLink] = useState('');
   const [surveyOpen, setSurveyOpen] = useState(false);
 
@@ -89,7 +88,6 @@ export default function AppContent() {
       // Parse settings
       if (settingsResult.data) {
         settingsResult.data.forEach((s: { key: string; value: string | null }) => {
-          if (s.key === 'weekly_survey_link') setWeeklySurveyLink(s.value || '');
           if (s.key === 'snacks_book_link') setSnacksBookLink(s.value || '');
         });
       }
