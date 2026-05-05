@@ -5,8 +5,27 @@ import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { ThemeProvider } from "@/hooks/useTheme";
 import { useEffect, useRef } from "react";
 import { Capacitor } from "@capacitor/core";
+import { PushNotifications } from "@capacitor/push-notifications";
 import { supabase } from "@/integrations/supabase/client";
 import { useNotificationSetup } from "@/hooks/useNotificationSetup";
+
+// Create the Android notification channel at app startup — always, regardless of route.
+// Without this, FCM silently drops notifications on Android 8+ when the channel doesn't exist.
+function AndroidChannelInit() {
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== 'android') return;
+    PushNotifications.createChannel({
+      id: 'general',
+      name: 'כללי',
+      description: 'התראות כלליות מהאפליקציה',
+      importance: 4,
+      visibility: 1,
+      vibration: true,
+      lights: true,
+    }).catch(() => {});
+  }, []);
+  return null;
+}
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -172,6 +191,7 @@ const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <BrowserRouter>
+        <AndroidChannelInit />
         <ScrollToTop />
         <AuthProvider>
           <Suspense fallback={<PageLoader />}>
