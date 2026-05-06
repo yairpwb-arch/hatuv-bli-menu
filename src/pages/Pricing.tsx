@@ -348,7 +348,7 @@ function StepProcessing() {
 
 export default function Pricing() {
   const navigate = useNavigate();
-  const { signUp } = useAuth();
+  const { signUp, signIn } = useAuth();
   const { isNative, products, purchasePlan, initialize } = useRevenueCat();
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -368,11 +368,18 @@ export default function Pricing() {
       console.log('[Pricing] signUp result:', signUpError);
 
       if (signUpError) {
-        const msg = signUpError.message === 'User already registered'
-          ? 'כתובת האימייל כבר רשומה במערכת'
-          : signUpError.message;
-        setServerError(msg);
-        return;
+        // If email already exists, try signing in with the same credentials
+        if (signUpError.message === 'User already registered') {
+          const { error: signInError } = await signIn(form.email, form.password);
+          if (signInError) {
+            setServerError('האימייל כבר רשום — בדוק שהסיסמה נכונה או התחבר דרך מסך ההתחברות');
+            return;
+          }
+          // Sign-in succeeded — fall through to getSession below
+        } else {
+          setServerError(signUpError.message);
+          return;
+        }
       }
 
       // Get new user's ID and link to RevenueCat
