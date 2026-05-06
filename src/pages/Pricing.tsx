@@ -61,9 +61,11 @@ interface RegistrationForm {
 
 function StepRegistrationForm({
   isRegistering,
+  serverError,
   onSubmit,
 }: {
   isRegistering: boolean;
+  serverError: string | null;
   onSubmit: (form: RegistrationForm) => void;
 }) {
   const [form, setForm] = useState<RegistrationForm>({
@@ -75,6 +77,7 @@ function StepRegistrationForm({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('[Pricing] form submitted', { email: form.email, passwordLen: form.password.length });
     const result = registrationSchema.safeParse(form);
     if (!result.success) {
       const fieldErrors: Partial<RegistrationForm> = {};
@@ -82,6 +85,7 @@ function StepRegistrationForm({
         const field = issue.path[0] as keyof RegistrationForm;
         if (!fieldErrors[field]) fieldErrors[field] = issue.message;
       }
+      console.log('[Pricing] validation failed', fieldErrors);
       setErrors(fieldErrors);
       return;
     }
@@ -108,6 +112,11 @@ function StepRegistrationForm({
 
       <Card className="glass-card">
         <CardContent className="pt-6">
+          {serverError && (
+            <div className="mb-4 rounded-md bg-destructive/15 border border-destructive/40 px-4 py-3 text-sm text-destructive font-medium text-right">
+              {serverError}
+            </div>
+          )}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
               <Label htmlFor="reg-fullName">שם מלא</Label>
@@ -346,29 +355,30 @@ export default function Pricing() {
   const [userId, setUserId] = useState<string | null>(null);
   const [isRegistering, setIsRegistering] = useState(false);
   const [isPurchasing, setIsPurchasing] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
 
   // Step 1: create Supabase account → move to plan selection
   const handleRegistrationSubmit = async (form: RegistrationForm) => {
     setIsRegistering(true);
+    setServerError(null);
 
     try {
+      console.log('[Pricing] calling signUp...');
       const { error: signUpError } = await signUp(form.email, form.password, form.fullName);
+      console.log('[Pricing] signUp result:', signUpError);
 
       if (signUpError) {
-        toast({
-          title: 'שגיאה ברישום',
-          description:
-            signUpError.message === 'User already registered'
-              ? 'כתובת האימייל כבר רשומה במערכת'
-              : signUpError.message,
-          variant: 'destructive',
-        });
+        const msg = signUpError.message === 'User already registered'
+          ? 'כתובת האימייל כבר רשומה במערכת'
+          : signUpError.message;
+        setServerError(msg);
         return;
       }
 
       // Get new user's ID and link to RevenueCat
       const { data: { session } } = await supabase.auth.getSession();
       const newUserId = session?.user?.id ?? null;
+      console.log('[Pricing] session userId:', newUserId);
       setUserId(newUserId);
 
       if (isNative && newUserId) {
@@ -378,11 +388,7 @@ export default function Pricing() {
       setStep(2);
     } catch (err) {
       console.error('[Pricing] registration error:', err);
-      toast({
-        title: 'שגיאה',
-        description: 'אירעה שגיאה בלתי צפויה. נסה שוב.',
-        variant: 'destructive',
-      });
+      setServerError('אירעה שגיאה בלתי צפויה. נסה שוב.');
     } finally {
       setIsRegistering(false);
     }
@@ -434,6 +440,7 @@ export default function Pricing() {
       {step === 1 && (
         <StepRegistrationForm
           isRegistering={isRegistering}
+          serverError={serverError}
           onSubmit={handleRegistrationSubmit}
         />
       )}
