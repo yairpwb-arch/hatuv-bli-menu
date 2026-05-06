@@ -311,8 +311,8 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const { type } = body;
 
-    // register_device accepts any valid Supabase user JWT — check auth per-case
-    if (!isServiceRole && !isCron && type !== 'register_device') {
+    // register_device and send_test accept any valid Supabase user JWT — check auth per-case
+    if (!isServiceRole && !isCron && type !== 'register_device' && type !== 'send_test') {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -336,10 +336,34 @@ serve(async (req) => {
         break;
       }
       case 'send_test': {
-        const { token, platform } = body as { token?: string; platform?: string };
-        if (!token) return new Response(JSON.stringify({ error: 'missing token' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        let pushToken: string;
+        let pushPlatform: string;
+
+        if (isServiceRole) {
+          // Admin call: token + platform supplied directly in body
+          const { token, platform } = body as { token?: string; platform?: string };
+          if (!token) return new Response(JSON.stringify({ error: 'missing token' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+          pushToken = token;
+          pushPlatform = platform ?? 'ios';
+        } else {
+          // User call: look up their stored push_token via JWT
+          const jwt = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+          const { data: { user: caller } } = await supabase.auth.getUser(jwt);
+          if (!caller) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+          const { data: prof } = await supabase
+            .from('profiles')
+            .select('push_token, device_platform')
+            .eq('id', caller.id)
+            .maybeSingle();
+          if (!prof?.push_token) {
+            return new Response(JSON.stringify({ error: 'no_push_token', detail: 'Push token not found — make sure notifications are enabled on this device' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+          }
+          pushToken = prof.push_token as string;
+          pushPlatform = (prof.device_platform as string) ?? 'ios';
+        }
+
         onesignalResult = await sendPush(
-          [{ token, platform: platform ?? 'android' }],
+          [{ token: pushToken, platform: pushPlatform }],
           '🧪 בדיקה',
           'אם קיבלת הודעה זו — ההתראות עובדות!',
           { type: 'test' },

@@ -32,6 +32,12 @@
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="general" />
+
+        <!-- Step Counter Foreground Service -->
+        <service
+            android:name=".StepCounterService"
+            android:foregroundServiceType="health"
+            android:exported="false" />
     </application>
 
     <!-- Permissions -->
@@ -39,6 +45,10 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Step counter / pedometer (Android 10+) -->
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+    <!-- Foreground service for continuous step counting -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- Health foreground service type (Android 14+) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
     <!-- Push notifications (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Camera / photo picker -->

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, Sun, Moon, Bell, BellOff, Info, LogOut, User, Loader2, BookOpen, ExternalLink } from 'lucide-react';
+import { ChevronLeft, Sun, Moon, Bell, BellOff, Info, LogOut, User, Loader2, BookOpen, ExternalLink, CheckCircle2, XCircle, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { useTheme } from '@/hooks/useTheme';
@@ -8,6 +8,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { Capacitor } from '@capacitor/core';
 import { useNotificationSetup } from '@/hooks/useNotificationSetup';
 import { toast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 // ── Section wrapper ───────────────────────────────────────────────────────────
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -77,6 +78,10 @@ export default function AppSettings() {
   const [notifEnabled, setNotifEnabled] = useState<boolean>(true);
   const [showSources, setShowSources] = useState(false);
 
+  // Test notification state
+  const [testStatus, setTestStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [testLog, setTestLog] = useState<string | null>(null);
+
   // Sync from profile
   useEffect(() => {
     if (profile) {
@@ -121,6 +126,32 @@ export default function AppSettings() {
         await refreshProfile();
         toast({ title: 'התראות כובו', description: 'לא תקבל יותר התראות מהאפליקציה' });
       }
+    }
+  };
+
+  const handleTestNotification = async () => {
+    if (!user) return;
+    setTestStatus('loading');
+    setTestLog(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('push-notification', {
+        body: { type: 'send_test' },
+      });
+      if (error) {
+        setTestStatus('error');
+        setTestLog(error.message ?? JSON.stringify(error));
+        return;
+      }
+      if (data?.ok) {
+        setTestStatus('success');
+      } else {
+        setTestStatus('error');
+        const detail = data?.detail ?? data?.error ?? JSON.stringify(data);
+        setTestLog(detail);
+      }
+    } catch (err) {
+      setTestStatus('error');
+      setTestLog(String(err));
     }
   };
 
@@ -205,6 +236,35 @@ export default function AppSettings() {
             }
           />
 
+          {/* Test notification button — only when notifications are active on native */}
+          {notifEnabled && isNative && (
+            <div className="px-4 py-3 space-y-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full h-9 text-sm gap-2"
+                onClick={handleTestNotification}
+                disabled={testStatus === 'loading'}
+              >
+                {testStatus === 'loading' ? (
+                  <><Loader2 className="h-3.5 w-3.5 animate-spin" />שולח...</>
+                ) : testStatus === 'success' ? (
+                  <><CheckCircle2 className="h-3.5 w-3.5 text-green-500" />נשלחה! בדוק את המכשיר</>
+                ) : (
+                  <><Send className="h-3.5 w-3.5" />שלח התראת בדיקה</>
+                )}
+              </Button>
+              {testStatus === 'error' && (
+                <div className="flex items-start gap-2 rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2 text-xs text-destructive" dir="rtl">
+                  <XCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold mb-0.5">שגיאה בשליחה:</p>
+                    <p className="break-all opacity-80">{testLog}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </Section>
 
         {/* About */}
@@ -212,7 +272,7 @@ export default function AppSettings() {
           <Row
             icon={Info}
             label="חטוב בלי תפריט"
-            description="גרסה 1.9 — © 2025"
+            description="גרסה 2.0 — © 2026"
           />
           <Row
             icon={BookOpen}
