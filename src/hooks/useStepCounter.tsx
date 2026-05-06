@@ -1,30 +1,37 @@
 /**
- * useStepCounter — Daily step counter using @capgo/capacitor-pedometer
+ * useStepCounter — Daily step counter
  *
  * Platform behavior:
- *  • iOS:    CMPedometer (Core Motion). getMeasurement() supports time ranges,
- *            so we get the accurate midnight→now cumulative total.
- *  • Android: Step-counter hardware sensor. getMeasurement() does NOT support
- *            time ranges — it counts steps since device boot.
- *            Fix: if getMeasurement returns 0 or fails, load today's count from
- *            the DB as a starting baseline, then add live deltas on top.
+ *  • iOS:     CMPedometer (Core Motion) via @capgo/capacitor-pedometer.
+ *             getMeasurement(midnight → now) gives the accurate daily total even
+ *             if the app was closed all day — the coprocessor counts 24/7.
+ *             startMeasurementUpdates() adds live UI updates while app is open.
  *
- * Offline support: today's count is cached in localStorage so it survives
- * network outages. Supabase receives a debounced upsert only when the count
- * actually changes.
+ *  • Android: Native StepCounterService (Foreground Service) with TYPE_STEP_COUNTER.
+ *             The service runs 24/7 with a visible notification and saves the daily
+ *             count to SharedPreferences.  Steps are NOT lost when the app is killed.
+ *             The JS layer reads from SharedPreferences via StepCounterPlugin and
+ *             receives live broadcasts via the 'stepUpdate' event.
+ *
+ * Offline support:  today's count is cached in localStorage so the UI is instant
+ *                   even before the native layer responds.
+ * Supabase sync:    debounced upsert (3 s) triggered only when the count changes.
  *
  * Permissions:
- *  • iOS: NSMotionUsageDescription in Info.plist, auto-requested on first launch.
- *  • Android: android.permission.ACTIVITY_RECOGNITION in AndroidManifest.xml,
- *             requested when the user taps "allow".
+ *  • iOS:     NSMotionUsageDescription in Info.plist, auto-requested on first launch.
+ *  • Android: android.permission.ACTIVITY_RECOGNITION, requested via UI button.
+ *             Foreground-service permissions are declared in AndroidManifest.xml and
+ *             require no runtime grant from the user.
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
+import { StepCounter } from '@/plugins/StepCounterPlugin';
 
-// Lazy-load plugin only on native platforms
+// ─── Lazy-load @capgo/capacitor-pedometer (iOS permissions + step updates) ───
+
 async function getPedometer() {
   if (!Capacitor.isNativePlatform()) return null;
   try {
@@ -34,6 +41,8 @@ async function getPedometer() {
     return null;
   }
 }
+
+// ─── Constants & types ────────────────────────────────────────────────────────
 
 export const STEP_GOAL = 10_000;
 
@@ -52,7 +61,7 @@ interface UseStepCounterReturn {
   requestPermission: () => Promise<void>;
 }
 
-// ─── Local cache helpers (offline support) ────────────────────────────────────
+// ─── Local cache helpers (offline / instant UI) ───────────────────────────────
 
 function localCacheKey(date: string) {
   return `steps_cache_${date}`;
@@ -73,21 +82,21 @@ function writeLocalCache(date: string, count: number) {
   } catch {}
 }
 
-// ─── Determine initial step count ─────────────────────────────────────────────
+// ─── Resolve initial step count for iOS ──────────────────────────────────────
 // Priority:
-//  1. getMeasurement() — works on iOS (time-scoped), may return 0 on Android
-//  2. localStorage cache — survives app restarts / network issues
+//  1. getMeasurement(midnight → now) — accurate even after app was closed (iOS only)
+//  2. localStorage cache — fast, works offline
 //  3. Supabase DB — persisted from previous sessions
 
-async function resolveInitialSteps(
+async function resolveInitialStepsIOS(
   pedometer: NonNullable<Awaited<ReturnType<typeof getPedometer>>>,
   userId: string | undefined,
   today: string,
 ): Promise<{ steps: number; distance: number | null }> {
-  // 1. Try health store (correct on iOS, may return 0 on Android)
+  // 1. CMPedometer historical query (iOS)
   try {
     const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0); // local timezone midnight
+    todayStart.setHours(0, 0, 0, 0);
     const result = await pedometer.getMeasurement({
       start: todayStart.getTime(),
       end: Date.now(),
@@ -97,14 +106,14 @@ async function resolveInitialSteps(
       return { steps: fromSensor, distance: result.distance ?? null };
     }
   } catch {
-    // getMeasurement not supported on this platform/version — fall through
+    // getMeasurement not supported — fall through
   }
 
-  // 2. localStorage cache (fast, works offline)
+  // 2. localStorage cache
   const cached = readLocalCache(today);
   if (cached > 0) return { steps: cached, distance: null };
 
-  // 3. Supabase (previous session data)
+  // 3. Supabase DB
   if (userId) {
     try {
       const { data } = await (supabase as any)
@@ -120,27 +129,65 @@ async function resolveInitialSteps(
   return { steps: 0, distance: null };
 }
 
+// ─── Resolve initial step count for Android ───────────────────────────────────
+// Priority:
+//  1. SharedPreferences via StepCounterPlugin.getDailySteps() — most accurate
+//  2. localStorage cache
+//  3. Supabase DB
+
+async function resolveInitialStepsAndroid(
+  userId: string | undefined,
+  today: string,
+): Promise<number> {
+  // 1. Native SharedPreferences (written by StepCounterService)
+  try {
+    const { steps } = await StepCounter.getDailySteps();
+    if (steps > 0) return steps;
+  } catch {}
+
+  // 2. localStorage cache
+  const cached = readLocalCache(today);
+  if (cached > 0) return cached;
+
+  // 3. Supabase DB
+  if (userId) {
+    try {
+      const { data } = await (supabase as any)
+        .from('steps_log')
+        .select('steps')
+        .eq('user_id', userId)
+        .eq('date', today)
+        .maybeSingle();
+      if (data?.steps > 0) return data.steps;
+    } catch {}
+  }
+
+  return 0;
+}
+
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useStepCounter(userId?: string): UseStepCounterReturn {
-  const [steps, setSteps] = useState(0);
-  const [distance, setDistance] = useState<number | null>(null);
-  const [isAvailable, setIsAvailable] = useState(false);
+  const [steps, setSteps]               = useState(0);
+  const [distance, setDistance]         = useState<number | null>(null);
+  const [isAvailable, setIsAvailable]   = useState(false);
   const [hasPermission, setHasPermission] = useState(false);
-  const listenerRef = useRef<{ remove: () => Promise<void> } | null>(null);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastSavedRef = useRef<number>(-1); // deduplication: skip save if unchanged
-  const isNative = Capacitor.isNativePlatform();
 
-  // Debounced save — only fires if count changed; writes local cache first
+  const listenerRef    = useRef<{ remove: () => Promise<void> } | null>(null);
+  const saveTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSavedRef   = useRef<number>(-1);
+
+  const isNative   = Capacitor.isNativePlatform();
+  const isAndroid  = Capacitor.getPlatform() === 'android';
+  const isIOS      = Capacitor.getPlatform() === 'ios';
+
+  // ── Debounced save: writes localStorage + Supabase on every count change ──
   const saveSteps = useCallback((count: number) => {
     if (!userId) return;
     const today = format(new Date(), 'yyyy-MM-dd');
 
-    // Always update local cache immediately (offline protection)
     writeLocalCache(today, count);
 
-    // Deduplication: skip DB write if value hasn't changed
     if (count === lastSavedRef.current) return;
     lastSavedRef.current = count;
 
@@ -151,30 +198,30 @@ export function useStepCounter(userId?: string): UseStepCounterReturn {
           .from('steps_log')
           .upsert(
             { user_id: userId, date: today, steps: count, updated_at: new Date().toISOString() },
-            { onConflict: 'user_id,date' }
+            { onConflict: 'user_id,date' },
           );
       } catch {
-        // Network error — data is already in localStorage, will sync on next save
+        // Network error — data is in localStorage, will sync on next save
       }
     }, 3_000);
   }, [userId]);
 
-  // Start live sensor updates with a known baseline
-  const startTracking = useCallback(async (baselineSteps: number) => {
+  // ── iOS: start live CMPedometer updates on top of the initial count ────────
+  const startIOSTracking = useCallback(async (baselineSteps: number) => {
     const pedometer = await getPedometer();
     if (!pedometer) return;
 
     await pedometer.startMeasurementUpdates();
 
-    // The sensor emits cumulative steps since startMeasurementUpdates() was called.
-    // We keep the first emitted value as a baseline and add deltas to our daily total.
+    // CMPedometer sends steps since startUpdates() was called (not since midnight).
+    // We track a sensorBaseline so we can add the delta to our midnight baseline.
     let sensorBaseline: number | null = null;
 
     const handle = await pedometer.addListener('measurement', (event: any) => {
       const raw = event.numberOfSteps ?? 0;
 
       if (sensorBaseline === null) {
-        sensorBaseline = raw; // capture sensor value at tracking start
+        sensorBaseline = raw;
       }
 
       const delta = Math.max(0, raw - sensorBaseline);
@@ -188,7 +235,27 @@ export function useStepCounter(userId?: string): UseStepCounterReturn {
     listenerRef.current = handle;
   }, [saveSteps]);
 
-  // Initialise on mount
+  // ── Android: start Foreground Service + listen for broadcast updates ───────
+  const startAndroidTracking = useCallback(async () => {
+    // Start the native Foreground Service (idempotent — safe to call again)
+    await StepCounter.startService();
+
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const initialSteps = await resolveInitialStepsAndroid(userId, today);
+
+    setSteps(initialSteps);
+    if (initialSteps > 0) saveSteps(initialSteps);
+
+    // Live updates come from the service via BroadcastReceiver → JS event
+    const handle = await StepCounter.addListener('stepUpdate', (data) => {
+      setSteps(data.steps);
+      saveSteps(data.steps);
+    });
+
+    listenerRef.current = handle;
+  }, [userId, saveSteps]);
+
+  // ── Main initialisation effect ─────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
 
@@ -196,14 +263,17 @@ export function useStepCounter(userId?: string): UseStepCounterReturn {
       const pedometer = await getPedometer();
       if (!pedometer || cancelled) return;
 
-      const isIOS = Capacitor.getPlatform() === 'ios';
-
-      // Check / request permissions
+      // ── Permission check (same flow on both platforms) ──────────────────────
       const perm = await pedometer.checkPermissions();
+
       if (perm.activityRecognition === 'granted') {
         setHasPermission(true);
-      } else if (perm.activityRecognition === 'prompt' || perm.activityRecognition === 'prompt-with-rationale' || isIOS) {
-        // iOS + Android: auto-request so the OS dialog appears on first launch
+      } else if (
+        perm.activityRecognition === 'prompt' ||
+        perm.activityRecognition === 'prompt-with-rationale' ||
+        isIOS
+      ) {
+        // Auto-request on first launch (iOS always, Android if not yet denied)
         try {
           const result = await pedometer.requestPermissions();
           if (!cancelled && result.activityRecognition === 'granted') {
@@ -212,31 +282,39 @@ export function useStepCounter(userId?: string): UseStepCounterReturn {
         } catch {}
       }
 
+      // ── Availability check ──────────────────────────────────────────────────
       const availability = await pedometer.isAvailable();
       if (cancelled) return;
 
-      // Show component even if permission not yet granted (for the Allow button)
+      // Show widget even if permission not yet granted (so the Allow button appears)
       if (availability.stepCounting || perm.activityRecognition !== 'granted') {
         setIsAvailable(true);
       }
 
       if (!availability.stepCounting) return;
 
-      // Confirm permission again after potential request
+      // Confirm permission state after potential request
       const finalPerm = await pedometer.checkPermissions();
       if (finalPerm.activityRecognition !== 'granted') return;
-
-      // Determine today's starting count
-      const today = format(new Date(), 'yyyy-MM-dd');
-      const { steps: initialSteps, distance: initialDist } = await resolveInitialSteps(pedometer, userId, today);
-
       if (cancelled) return;
 
-      setSteps(initialSteps);
-      if (initialDist !== null) setDistance(initialDist);
-      if (initialSteps > 0) saveSteps(initialSteps);
+      // ── Platform-specific tracking ──────────────────────────────────────────
+      if (isAndroid) {
+        await startAndroidTracking();
+      } else {
+        // iOS
+        const today = format(new Date(), 'yyyy-MM-dd');
+        const { steps: initialSteps, distance: initialDist } =
+          await resolveInitialStepsIOS(pedometer, userId, today);
 
-      await startTracking(initialSteps);
+        if (cancelled) return;
+
+        setSteps(initialSteps);
+        if (initialDist !== null) setDistance(initialDist);
+        if (initialSteps > 0) saveSteps(initialSteps);
+
+        await startIOSTracking(initialSteps);
+      }
     };
 
     init().catch(console.error);
@@ -245,23 +323,35 @@ export function useStepCounter(userId?: string): UseStepCounterReturn {
       cancelled = true;
       listenerRef.current?.remove();
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      getPedometer().then(p => p?.stopMeasurementUpdates());
-    };
-  }, [startTracking, saveSteps, userId]);
 
-  // Manual permission request (Android "allow" button)
+      // iOS: stop CMPedometer updates
+      // Android: do NOT stop the service — it should keep running in background
+      if (isIOS) {
+        getPedometer().then(p => p?.stopMeasurementUpdates());
+      }
+    };
+  }, [startAndroidTracking, startIOSTracking, saveSteps, userId, isAndroid, isIOS]);
+
+  // ── Manual "Allow" button handler (Android primarily) ──────────────────────
   const requestPermission = async () => {
     const pedometer = await getPedometer();
     if (!pedometer) return;
+
     const perm = await pedometer.requestPermissions();
-    if (perm.activityRecognition === 'granted') {
-      setHasPermission(true);
+    if (perm.activityRecognition !== 'granted') return;
+
+    setHasPermission(true);
+
+    if (isAndroid) {
+      await startAndroidTracking();
+    } else {
       const today = format(new Date(), 'yyyy-MM-dd');
-      const { steps: initialSteps, distance: initialDist } = await resolveInitialSteps(pedometer, userId, today);
+      const { steps: initialSteps, distance: initialDist } =
+        await resolveInitialStepsIOS(pedometer, userId, today);
       setSteps(initialSteps);
       if (initialDist !== null) setDistance(initialDist);
       if (initialSteps > 0) saveSteps(initialSteps);
-      await startTracking(initialSteps);
+      await startIOSTracking(initialSteps);
     }
   };
 
