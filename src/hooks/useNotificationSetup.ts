@@ -15,9 +15,10 @@ function getPlatform(): 'ios' | 'android' {
  */
 async function saveTokenToProfile(token: string, userId: string): Promise<boolean> {
   try {
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const { error } = await supabase
       .from('profiles')
-      .update({ push_token: token, device_platform: getPlatform() } as any)
+      .update({ push_token: token, device_platform: getPlatform(), timezone } as any)
       .eq('id', userId);
     if (error) {
       console.error('[NotificationSetup] DB error saving token:', error.message);

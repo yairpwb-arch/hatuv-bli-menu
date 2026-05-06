@@ -86,37 +86,79 @@ function getDayInProgram(startDate: string): number {
   return Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1;
 }
 
+// ── Timezone helpers ──────────────────────────────────────────────────────────
+
+/** Returns the current local hour (0-23) for a given IANA timezone. */
+function getUserLocalHour(timezone: string | null): number {
+  const tz = timezone || 'Asia/Jerusalem';
+  const now = new Date();
+  const local = new Date(now.toLocaleString('en-US', { timeZone: tz }));
+  return local.getHours();
+}
+
+// ── notification_logs helpers ─────────────────────────────────────────────────
+
+/** Returns true if this notification type was already sent to userId today (IST). */
+async function alreadySentToday(userId: string, type: string): Promise<boolean> {
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' }); // YYYY-MM-DD
+  const { data } = await supabase
+    .from('notification_logs')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('notification_type', type)
+    .gte('sent_at', `${today}T00:00:00+03:00`)
+    .lt('sent_at', `${today}T23:59:59+03:00`)
+    .limit(1);
+  return (data?.length ?? 0) > 0;
+}
+
+/** Inserts a row into notification_logs for each userId after successful send. */
+async function logSent(userIds: string[], type: string): Promise<void> {
+  if (userIds.length === 0) return;
+  const rows = userIds.map((user_id) => ({ user_id, notification_type: type }));
+  const { error } = await supabase.from('notification_logs').insert(rows);
+  if (error) console.warn('[push] notification_logs insert error:', error.message);
+}
+
 // ── Notification handlers ─────────────────────────────────────────────────────
 
-/** 1. משפט יומי — כל יום ב-10:00 */
+/** 1. משפט יומי — כל יום ב-10:00 IST */
 async function handleDailyQuote() {
   const { data: users } = await supabase
     .from('profiles')
-    .select('push_token, device_platform')
+    .select('id, push_token, device_platform, timezone')
     .eq('is_active', true)
     .eq('notifications_enabled', true)
     .not('push_token', 'is', null);
 
-  const tokens: TokenRecord[] = (users ?? []).map((u) => ({
-    token: u.push_token as string,
-    platform: u.device_platform as string | null,
-  }));
-  return await sendPush(tokens, '💬 משפט יומי', 'יש לך משפט יומי מחכה לך באפליקציה', { type: 'daily_quote' });
+  const eligible: (TokenRecord & { userId: string })[] = [];
+  for (const user of users ?? []) {
+    if (getUserLocalHour(user.timezone) !== 10) continue;
+    if (await alreadySentToday(user.id, 'daily_quote')) continue;
+    eligible.push({ userId: user.id, token: user.push_token as string, platform: user.device_platform });
+  }
+
+  if (eligible.length === 0) return;
+  await sendPush(eligible, '💬 משפט יומי', 'יש לך משפט יומי מחכה לך באפליקציה', { type: 'daily_quote' });
+  await logSent(eligible.map((u) => u.userId), 'daily_quote');
 }
 
-/** 2. בדיקת מעבר שלב — כל שבת ב-19:00 */
+/** 2. בדיקת מעבר שלב — כל שבת ב-19:00 IST */
 async function handlePhaseCheck() {
   const { data: users } = await supabase
     .from('profiles')
-    .select('push_token, device_platform, start_date')
+    .select('id, push_token, device_platform, timezone, start_date')
     .eq('is_active', true)
     .eq('notifications_enabled', true)
     .not('push_token', 'is', null)
     .not('start_date', 'is', null);
 
-  const eligible: TokenRecord[] = [];
+  const eligible: (TokenRecord & { userId: string })[] = [];
 
   for (const user of users ?? []) {
+    if (getUserLocalHour(user.timezone) !== 19) continue;
+    if (await alreadySentToday(user.id, 'phase_check')) continue;
+
     const nextWeek = getWeekNumber(user.start_date) + 1;
     const { data: newHabits } = await supabase
       .from('habit_definitions')
@@ -126,31 +168,36 @@ async function handlePhaseCheck() {
       .limit(1);
 
     if (newHabits && newHabits.length > 0) {
-      eligible.push({ token: user.push_token, platform: user.device_platform });
+      eligible.push({ userId: user.id, token: user.push_token, platform: user.device_platform });
     }
   }
 
+  if (eligible.length === 0) return;
   await sendPush(
     eligible,
     '🎉 שלב חדש מחכה לך!',
     'השלמת את השלב הנוכחי! מחר מתחילים הרגלים חדשים — תמשיך כך!',
     { type: 'phase_check' },
   );
+  await logSent(eligible.map((u) => u.userId), 'phase_check');
 }
 
-/** 3. הרגלים חדשים — כל ראשון ב-09:00 */
+/** 3. הרגלים חדשים — כל ראשון ב-09:00 IST */
 async function handleNewHabits() {
   const { data: users } = await supabase
     .from('profiles')
-    .select('push_token, device_platform, start_date')
+    .select('id, push_token, device_platform, timezone, start_date')
     .eq('is_active', true)
     .eq('notifications_enabled', true)
     .not('push_token', 'is', null)
     .not('start_date', 'is', null);
 
-  const eligible: TokenRecord[] = [];
+  const eligible: (TokenRecord & { userId: string })[] = [];
 
   for (const user of users ?? []) {
+    if (getUserLocalHour(user.timezone) !== 9) continue;
+    if (await alreadySentToday(user.id, 'new_habits')) continue;
+
     const dayInProgram = getDayInProgram(user.start_date);
     const isFirstDayOfNewWeek = dayInProgram > 1 && (dayInProgram - 1) % 7 === 0;
     if (!isFirstDayOfNewWeek) continue;
@@ -164,52 +211,66 @@ async function handleNewHabits() {
       .limit(1);
 
     if (newHabits && newHabits.length > 0) {
-      eligible.push({ token: user.push_token, platform: user.device_platform });
+      eligible.push({ userId: user.id, token: user.push_token, platform: user.device_platform });
     }
   }
 
+  if (eligible.length === 0) return;
   await sendPush(
     eligible,
     '🔥 שבוע חדש — הרגלים חדשים!',
     'היום מתחיל שבוע חדש עם הרגלים חדשים — פתח את האפליקציה לראות מה מחכה לך!',
     { type: 'new_habits' },
   );
+  await logSent(eligible.map((u) => u.userId), 'new_habits');
 }
 
-/** 4. תזכורת שקילה + שאלון — כל חמישי ב-20:00 */
+/** 4. תזכורת שקילה + שאלון — כל חמישי ב-20:00 IST */
 async function handleWeighReminder() {
   const { data: users } = await supabase
     .from('profiles')
-    .select('push_token, device_platform')
+    .select('id, push_token, device_platform, timezone')
     .eq('is_active', true)
     .eq('notifications_enabled', true)
     .not('push_token', 'is', null);
 
-  const tokens: TokenRecord[] = (users ?? []).map((u) => ({
-    token: u.push_token as string,
-    platform: u.device_platform as string | null,
-  }));
+  const eligible: (TokenRecord & { userId: string })[] = [];
+  for (const user of users ?? []) {
+    if (getUserLocalHour(user.timezone) !== 20) continue;
+    if (await alreadySentToday(user.id, 'weigh_reminder')) continue;
+    eligible.push({ userId: user.id, token: user.push_token as string, platform: user.device_platform });
+  }
+
+  if (eligible.length === 0) return;
   await sendPush(
-    tokens,
+    eligible,
     '⚖️ תזכורת שקילה',
     'מחר בבוקר שקילה! זכור לשקול ולמלא את השאלון השבועי 📋',
     { type: 'weigh_reminder' },
   );
+  await logSent(eligible.map((u) => u.userId), 'weigh_reminder');
 }
 
-/** 5. תזכורת שאלון אם עוד לא ענה — שישי ב-12:00 ושבת ב-16:00 */
+/** 5. תזכורת שאלון אם עוד לא ענה — שישי ב-12:00 ושבת ב-16:00 IST */
 async function handleSurveyFollowup() {
   const { data: users } = await supabase
     .from('profiles')
-    .select('id, push_token, device_platform, start_date')
+    .select('id, push_token, device_platform, timezone, start_date')
     .eq('is_active', true)
     .eq('notifications_enabled', true)
     .not('push_token', 'is', null)
     .not('start_date', 'is', null);
 
-  const eligible: TokenRecord[] = [];
+  const eligible: (TokenRecord & { userId: string })[] = [];
 
   for (const user of users ?? []) {
+    const localHour = getUserLocalHour(user.timezone);
+    // Fires at 12:00 on Friday OR 16:00 on Saturday
+    const now = new Date(new Date().toLocaleString('en-US', { timeZone: user.timezone || 'Asia/Jerusalem' }));
+    const isValidTime = (localHour === 12 && now.getDay() === 5) || (localHour === 16 && now.getDay() === 6);
+    if (!isValidTime) continue;
+    if (await alreadySentToday(user.id, 'survey_followup')) continue;
+
     const week = getWeekNumber(user.start_date);
     const { data: checkin } = await supabase
       .from('weekly_checkin')
@@ -219,16 +280,18 @@ async function handleSurveyFollowup() {
       .maybeSingle();
 
     if (!checkin) {
-      eligible.push({ token: user.push_token, platform: user.device_platform });
+      eligible.push({ userId: user.id, token: user.push_token, platform: user.device_platform });
     }
   }
 
+  if (eligible.length === 0) return;
   await sendPush(
     eligible,
     '📋 שאלון שבועי ממתין',
     'עוד לא מילאת את השאלון השבועי שלך — לוקח רק 2 דקות! פתח את האפליקציה ✅',
     { type: 'survey_followup' },
   );
+  await logSent(eligible.map((u) => u.userId), 'survey_followup');
 }
 
 // ── Server ────────────────────────────────────────────────────────────────────

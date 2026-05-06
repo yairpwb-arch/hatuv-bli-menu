@@ -12,6 +12,7 @@ dependencies {
     implementation project(':capacitor-camera')
     implementation project(':capacitor-push-notifications')
     implementation project(':capgo-capacitor-pedometer')
+    implementation project(':revenuecat-purchases-capacitor')
 
 }
 
