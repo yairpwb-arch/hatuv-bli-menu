@@ -16,12 +16,8 @@ import { z } from 'zod';
 
 const registrationSchema = z.object({
   fullName: z.string().min(2, 'שם מלא חייב להכיל לפחות 2 תווים'),
-  phone: z
-    .string()
-    .min(9, 'מספר טלפון לא תקין')
-    .regex(/^[0-9+\-\s]+$/, 'מספר טלפון לא תקין'),
   email: z.string().email('כתובת אימייל לא תקינה'),
-  password: z.string().min(6, 'הסיסמה חייבת להכיל לפחות 6 תווים'),
+  password: z.string().min(7, 'הסיסמה חייבת להכיל לפחות 7 תווים'),
 });
 
 // ── Plan metadata ─────────────────────────────────────────────────────────────
@@ -57,7 +53,6 @@ const PLANS: Record<PlanId, {
 
 interface RegistrationForm {
   fullName: string;
-  phone: string;
   email: string;
   password: string;
 }
@@ -194,7 +189,6 @@ function StepRegistrationForm({
 }) {
   const [form, setForm] = useState<RegistrationForm>({
     fullName: '',
-    phone: '',
     email: '',
     password: '',
   });
@@ -260,21 +254,6 @@ function StepRegistrationForm({
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="reg-phone">טלפון</Label>
-              <Input
-                id="reg-phone"
-                type="tel"
-                placeholder="050-0000000"
-                value={form.phone}
-                onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                required
-                dir="ltr"
-                className="text-left"
-                disabled={isRegistering}
-              />
-            </div>
-
-            <div className="space-y-1.5">
               <Label htmlFor="reg-email">אימייל</Label>
               <Input
                 id="reg-email"
@@ -290,7 +269,7 @@ function StepRegistrationForm({
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="reg-password">סיסמה</Label>
+              <Label htmlFor="reg-password">סיסמה (לפחות 7 תווים)</Label>
               <Input
                 id="reg-password"
                 type="password"
@@ -367,15 +346,6 @@ export default function Pricing() {
   const handleRegistrationSubmit = async (form: RegistrationForm) => {
     if (!selectedPlan) return;
 
-    if (!isNative) {
-      toast({
-        title: 'תשלום זמין באפליקציה בלבד',
-        description: 'יש להוריד את האפליקציה מ-App Store או Google Play לביצוע תשלום',
-        variant: 'destructive',
-      });
-      return;
-    }
-
     setIsRegistering(true);
     setProcessingText('מבצע רישום...');
     setStep(3);
@@ -397,23 +367,25 @@ export default function Pricing() {
       return;
     }
 
-    // 2. Get session to retrieve userId and save phone number
-    setProcessingText('מעבד תשלום...');
+    // 2. Get the new user's session
     const { data: { session } } = await supabase.auth.getSession();
     const userId = session?.user?.id;
 
-    if (userId) {
-      // Save phone number to profiles table
-      await (supabase as any)
-        .from('profiles')
-        .update({ phone_number: form.phone })
-        .eq('id', userId);
+    // 3. On web — no IAP available, enter app directly
+    if (!isNative) {
+      setIsRegistering(false);
+      toast({ title: 'ברוך הבא!', description: 'נרשמת בהצלחה' });
+      navigate('/app');
+      return;
+    }
 
-      // Link RevenueCat to this Supabase user
+    // 4. Native — link RevenueCat to Supabase user and open IAP sheet
+    setProcessingText('מעבד תשלום...');
+
+    if (userId) {
       await initialize(userId);
     }
 
-    // 3. Trigger native IAP sheet
     const result = await purchasePlan(selectedPlan);
     setIsRegistering(false);
 
