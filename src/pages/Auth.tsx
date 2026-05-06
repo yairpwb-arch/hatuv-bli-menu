@@ -121,6 +121,17 @@ export default function Auth() {
             </form>
           </CardContent>
         </Card>
+
+        <p className="text-center text-sm text-muted-foreground mt-4">
+          אין לך עדיין מנוי?{' '}
+          <button
+            type="button"
+            onClick={() => navigate('/pricing')}
+            className="text-primary font-bold underline underline-offset-2 hover:opacity-80 transition-opacity"
+          >
+            לחץ כאן להצטרפות לתוכנית
+          </button>
+        </p>
       </div>
     </div>
   );
