@@ -17,7 +17,7 @@ import { z } from 'zod';
 const registrationSchema = z.object({
   fullName: z.string().min(2, 'שם מלא חייב להכיל לפחות 2 תווים'),
   email: z.string().email('כתובת אימייל לא תקינה'),
-  password: z.string().min(7, 'הסיסמה חייבת להכיל לפחות 7 תווים'),
+  password: z.string().min(6, 'הסיסמה חייבת להכיל לפחות 6 תווים'),
 });
 
 // ── Plan metadata ─────────────────────────────────────────────────────────────
@@ -149,7 +149,7 @@ function StepRegistrationForm({
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="reg-password">סיסמה (לפחות 7 תווים)</Label>
+              <Label htmlFor="reg-password">סיסמה (לפחות 6 תווים)</Label>
               <Input
                 id="reg-password"
                 type="password"
