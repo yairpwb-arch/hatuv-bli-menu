@@ -9,7 +9,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useRevenueCat, PlanId } from '@/hooks/useRevenueCat';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
-import { Star, Zap, Check, ArrowRight, ArrowLeft, Loader2 } from 'lucide-react';
+import { Star, Zap, Check, ArrowLeft, Loader2 } from 'lucide-react';
 import { z } from 'zod';
 
 // ── Validation ────────────────────────────────────────────────────────────────
@@ -57,134 +57,13 @@ interface RegistrationForm {
   password: string;
 }
 
-// ── Step 1 — Plan selection ───────────────────────────────────────────────────
-
-function StepPlanSelection({
-  products,
-  onSelect,
-}: {
-  products: ReturnType<typeof useRevenueCat>['products'];
-  onSelect: (plan: PlanId) => void;
-}) {
-  return (
-    <div className="w-full max-w-sm space-y-6 animate-slide-up" dir="rtl">
-      {/* Hero header */}
-      <div className="text-center space-y-3">
-        <div className="flex justify-center">
-          <img
-            src="/logo.jpg"
-            alt="חטוב בלי תפריט"
-            className="w-20 h-20 rounded-full object-cover shadow-glow"
-          />
-        </div>
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">חטוב בלי תפריט</h1>
-          <p className="text-muted-foreground mt-1">בחר את המסלול שלך</p>
-        </div>
-      </div>
-
-      {/* Plan cards */}
-      <div className="flex flex-col gap-4">
-        {/* Plan A — Full */}
-        <div className="relative">
-          {PLANS.full.badge && (
-            <div className="absolute -top-3 right-4 z-10">
-              <Badge className="gradient-primary text-primary-foreground shadow-glow px-3 py-1 text-xs font-bold">
-                <Star className="h-3 w-3 ml-1" />
-                {PLANS.full.badge}
-              </Badge>
-            </div>
-          )}
-          <Card className="glass-card border-2 border-primary/50 cursor-pointer hover:border-primary transition-colors pt-2">
-            <CardHeader className="pb-2 pt-5">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-xl">{PLANS.full.name}</CardTitle>
-                <Zap className="h-6 w-6 text-primary" />
-              </div>
-              <p className="text-2xl font-bold text-gradient mt-1">
-                {products.full?.priceString ?? PLANS.full.fallbackPrice}
-              </p>
-            </CardHeader>
-            <CardContent>
-              <ul className="space-y-2 mb-4">
-                {PLANS.full.features.map((f) => (
-                  <li key={f} className="flex items-center gap-2 text-sm">
-                    <Check className="h-4 w-4 text-primary flex-shrink-0" />
-                    <span>{f}</span>
-                  </li>
-                ))}
-              </ul>
-              <Button
-                className="w-full h-12 gradient-primary shadow-glow text-base font-bold"
-                onClick={() => onSelect('full')}
-              >
-                הצטרף למסלול המלא
-                <ArrowLeft className="h-5 w-5 mr-2" />
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Plan B — Digital */}
-        <Card
-          className="glass-card border-2 border-border/50 cursor-pointer hover:border-primary/50 transition-colors"
-          style={{ animationDelay: '0.1s' }}
-        >
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-xl">{PLANS.digital.name}</CardTitle>
-              <Zap className="h-6 w-6 text-muted-foreground" />
-            </div>
-            <p className="text-2xl font-bold text-foreground mt-1">
-              {products.digital?.priceString ?? PLANS.digital.fallbackPrice}
-            </p>
-          </CardHeader>
-          <CardContent>
-            <ul className="space-y-2 mb-4">
-              {PLANS.digital.features.map((f) => (
-                <li key={f} className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Check className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                  <span>{f}</span>
-                </li>
-              ))}
-            </ul>
-            <Button
-              variant="outline"
-              className="w-full h-12 text-base font-bold"
-              onClick={() => onSelect('digital')}
-            >
-              הצטרף למסלול הדיגיטלי
-              <ArrowLeft className="h-5 w-5 mr-2" />
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Login link */}
-      <p className="text-center text-sm text-muted-foreground">
-        כבר יש לך חשבון?{' '}
-        <a
-          href="/auth"
-          className="text-primary font-bold underline underline-offset-2 hover:opacity-80 transition-opacity"
-        >
-          התחבר כאן
-        </a>
-      </p>
-    </div>
-  );
-}
-
-// ── Step 2 — Registration form ────────────────────────────────────────────────
+// ── Step 1 — Registration form ────────────────────────────────────────────────
 
 function StepRegistrationForm({
-  selectedPlan,
   isRegistering,
-  onBack,
   onSubmit,
 }: {
-  selectedPlan: PlanId;
   isRegistering: boolean;
-  onBack: () => void;
   onSubmit: (form: RegistrationForm) => void;
 }) {
   const [form, setForm] = useState<RegistrationForm>({
@@ -210,31 +89,21 @@ function StepRegistrationForm({
     onSubmit(form);
   };
 
-  const planMeta = PLANS[selectedPlan];
-
   return (
-    <div className="w-full max-w-sm animate-slide-up" dir="rtl">
-      {/* Header row */}
-      <div className="flex items-center gap-2 mb-6">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="rounded-full w-9 h-9"
-          onClick={onBack}
-          disabled={isRegistering}
-        >
-          <ArrowRight className="h-5 w-5" />
-        </Button>
-        <h2 className="text-xl font-bold flex-1">יצירת חשבון</h2>
-        <Badge
-          className={
-            selectedPlan === 'full'
-              ? 'gradient-primary text-primary-foreground'
-              : 'bg-secondary text-secondary-foreground'
-          }
-        >
-          {planMeta.name}
-        </Badge>
+    <div className="w-full max-w-sm space-y-6 animate-slide-up" dir="rtl">
+      {/* Hero header */}
+      <div className="text-center space-y-3">
+        <div className="flex justify-center">
+          <img
+            src="/logo.jpg"
+            alt="חטוב בלי תפריט"
+            className="w-20 h-20 rounded-full object-cover shadow-glow"
+          />
+        </div>
+        <div>
+          <h1 className="text-3xl font-bold text-foreground">חטוב בלי תפריט</h1>
+          <p className="text-muted-foreground mt-1">יצירת חשבון</p>
+        </div>
       </div>
 
       <Card className="glass-card">
@@ -311,7 +180,7 @@ function StepRegistrationForm({
                 </>
               ) : (
                 <>
-                  הצטרף וסיים תשלום
+                  המשך לבחירת מסלול
                   <ArrowLeft className="h-5 w-5 mr-2" />
                 </>
               )}
@@ -319,13 +188,137 @@ function StepRegistrationForm({
           </form>
         </CardContent>
       </Card>
+
+      {/* Login link */}
+      <p className="text-center text-sm text-muted-foreground">
+        כבר יש לך חשבון?{' '}
+        <a
+          href="/auth"
+          className="text-primary font-bold underline underline-offset-2 hover:opacity-80 transition-opacity"
+        >
+          התחבר כאן
+        </a>
+      </p>
+    </div>
+  );
+}
+
+// ── Step 2 — Plan selection ───────────────────────────────────────────────────
+
+function StepPlanSelection({
+  products,
+  isPurchasing,
+  onSelect,
+}: {
+  products: ReturnType<typeof useRevenueCat>['products'];
+  isPurchasing: boolean;
+  onSelect: (plan: PlanId) => void;
+}) {
+  return (
+    <div className="w-full max-w-sm space-y-6 animate-slide-up" dir="rtl">
+      {/* Header */}
+      <div className="text-center space-y-2">
+        <h2 className="text-2xl font-bold text-foreground">בחר את המסלול שלך</h2>
+        <p className="text-muted-foreground text-sm">לאחר הבחירה יפתח חלון התשלום</p>
+      </div>
+
+      {/* Plan cards */}
+      <div className="flex flex-col gap-4">
+        {/* Plan A — Full */}
+        <div className="relative">
+          {PLANS.full.badge && (
+            <div className="absolute -top-3 right-4 z-10">
+              <Badge className="gradient-primary text-primary-foreground shadow-glow px-3 py-1 text-xs font-bold">
+                <Star className="h-3 w-3 ml-1" />
+                {PLANS.full.badge}
+              </Badge>
+            </div>
+          )}
+          <Card className="glass-card border-2 border-primary/50 cursor-pointer hover:border-primary transition-colors pt-2">
+            <CardHeader className="pb-2 pt-5">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-xl">{PLANS.full.name}</CardTitle>
+                <Zap className="h-6 w-6 text-primary" />
+              </div>
+              <p className="text-2xl font-bold text-gradient mt-1">
+                {products.full?.priceString ?? PLANS.full.fallbackPrice}
+              </p>
+            </CardHeader>
+            <CardContent>
+              <ul className="space-y-2 mb-4">
+                {PLANS.full.features.map((f) => (
+                  <li key={f} className="flex items-center gap-2 text-sm">
+                    <Check className="h-4 w-4 text-primary flex-shrink-0" />
+                    <span>{f}</span>
+                  </li>
+                ))}
+              </ul>
+              <Button
+                className="w-full h-12 gradient-primary shadow-glow text-base font-bold"
+                onClick={() => onSelect('full')}
+                disabled={isPurchasing}
+              >
+                {isPurchasing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <>
+                    הצטרף למסלול המלא
+                    <ArrowLeft className="h-5 w-5 mr-2" />
+                  </>
+                )}
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Plan B — Digital */}
+        <Card
+          className="glass-card border-2 border-border/50 cursor-pointer hover:border-primary/50 transition-colors"
+          style={{ animationDelay: '0.1s' }}
+        >
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-xl">{PLANS.digital.name}</CardTitle>
+              <Zap className="h-6 w-6 text-muted-foreground" />
+            </div>
+            <p className="text-2xl font-bold text-foreground mt-1">
+              {products.digital?.priceString ?? PLANS.digital.fallbackPrice}
+            </p>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-2 mb-4">
+              {PLANS.digital.features.map((f) => (
+                <li key={f} className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Check className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                  <span>{f}</span>
+                </li>
+              ))}
+            </ul>
+            <Button
+              variant="outline"
+              className="w-full h-12 text-base font-bold"
+              onClick={() => onSelect('digital')}
+              disabled={isPurchasing}
+            >
+              {isPurchasing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <>
+                  הצטרף למסלול הדיגיטלי
+                  <ArrowLeft className="h-5 w-5 mr-2" />
+                </>
+              )}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
 
 // ── Step 3 — Processing ───────────────────────────────────────────────────────
 
-function StepProcessing({ statusText }: { statusText: string }) {
+function StepProcessing() {
   return (
     <div
       className="w-full max-w-sm flex flex-col items-center justify-center gap-6 animate-fade-in"
@@ -335,7 +328,7 @@ function StepProcessing({ statusText }: { statusText: string }) {
         <Loader2 className="h-10 w-10 text-primary-foreground animate-spin" />
       </div>
       <div className="text-center">
-        <h2 className="text-2xl font-bold text-foreground">{statusText}</h2>
+        <h2 className="text-2xl font-bold text-foreground">מעבד תשלום...</h2>
         <p className="text-muted-foreground mt-2 text-sm">נא לא לסגור את האפליקציה</p>
       </div>
     </div>
@@ -350,28 +343,18 @@ export default function Pricing() {
   const { isNative, products, purchasePlan, initialize } = useRevenueCat();
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
-  const [selectedPlan, setSelectedPlan] = useState<PlanId | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
   const [isRegistering, setIsRegistering] = useState(false);
-  const [processingText, setProcessingText] = useState('מבצע רישום...');
+  const [isPurchasing, setIsPurchasing] = useState(false);
 
-  const handlePlanSelect = (plan: PlanId) => {
-    setSelectedPlan(plan);
-    setStep(2);
-  };
-
+  // Step 1: create Supabase account → move to plan selection
   const handleRegistrationSubmit = async (form: RegistrationForm) => {
-    if (!selectedPlan) return;
-
     setIsRegistering(true);
-    setProcessingText('מבצע רישום...');
-    setStep(3);
 
-    // 1. Create Supabase account
     const { error: signUpError } = await signUp(form.email, form.password, form.fullName);
 
     if (signUpError) {
       setIsRegistering(false);
-      setStep(2);
       toast({
         title: 'שגיאה ברישום',
         description:
@@ -383,44 +366,54 @@ export default function Pricing() {
       return;
     }
 
-    // 2. Get the new user's session
+    // Get new user's ID and link to RevenueCat
     const { data: { session } } = await supabase.auth.getSession();
-    const userId = session?.user?.id;
+    const newUserId = session?.user?.id ?? null;
+    setUserId(newUserId);
 
-    // 3. On web — no IAP available, enter app directly
+    if (isNative && newUserId) {
+      await initialize(newUserId);
+    }
+
+    setIsRegistering(false);
+    setStep(2);
+  };
+
+  // Step 2: user picks a plan → open IAP (native) or go straight to app (web)
+  const handlePlanSelect = async (plan: PlanId) => {
     if (!isNative) {
-      setIsRegistering(false);
       toast({ title: 'ברוך הבא!', description: 'נרשמת בהצלחה' });
       navigate('/app');
       return;
     }
 
-    // 4. Native — link RevenueCat to Supabase user and open IAP sheet
-    setProcessingText('מעבד תשלום...');
+    setIsPurchasing(true);
+    setStep(3);
 
+    // Re-initialize if userId available (safety net)
     if (userId) {
       await initialize(userId);
     }
 
-    const result = await purchasePlan(selectedPlan);
-    setIsRegistering(false);
+    const result = await purchasePlan(plan);
+    setIsPurchasing(false);
 
     if (result.success) {
       toast({ title: 'ברוך הבא!', description: 'נרשמת בהצלחה והתשלום בוצע' });
       navigate('/app');
     } else if (result.error === 'user_cancelled') {
+      setStep(2);
       toast({
         title: 'ביטלת את התשלום',
-        description: 'החשבון נוצר — תוכל להשלים את התשלום מאוחר יותר',
+        description: 'החשבון שלך נוצר — בחר מסלול ושלם כדי להיכנס לאפליקציה',
       });
-      navigate('/app');
     } else {
+      setStep(2);
       toast({
         title: 'שגיאה בתשלום',
-        description: 'החשבון נוצר אך התשלום נכשל. ניתן לנסות שוב מהגדרות',
+        description: 'אירעה שגיאה — אנא נסה שוב',
         variant: 'destructive',
       });
-      navigate('/app');
     }
   };
 
@@ -430,17 +423,19 @@ export default function Pricing() {
       dir="rtl"
     >
       {step === 1 && (
-        <StepPlanSelection products={products} onSelect={handlePlanSelect} />
-      )}
-      {step === 2 && selectedPlan && (
         <StepRegistrationForm
-          selectedPlan={selectedPlan}
           isRegistering={isRegistering}
-          onBack={() => setStep(1)}
           onSubmit={handleRegistrationSubmit}
         />
       )}
-      {step === 3 && <StepProcessing statusText={processingText} />}
+      {step === 2 && (
+        <StepPlanSelection
+          products={products}
+          isPurchasing={isPurchasing}
+          onSelect={handlePlanSelect}
+        />
+      )}
+      {step === 3 && <StepProcessing />}
     </div>
   );
 }
