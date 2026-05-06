@@ -29,7 +29,7 @@ export const PRODUCT_IDS: Record<PlanId, string> = {
 
 // Replace these with your actual RevenueCat API keys from:
 // RevenueCat Dashboard → Project → Apps → Public SDK Key
-const RC_API_KEY_IOS = 'appl_REPLACE_WITH_IOS_KEY';
+const RC_API_KEY_IOS = 'appl_BNrCBlnVWRQgrKxRnCqXzwxqICQ';
 const RC_API_KEY_ANDROID = 'goog_REPLACE_WITH_ANDROID_KEY';
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
