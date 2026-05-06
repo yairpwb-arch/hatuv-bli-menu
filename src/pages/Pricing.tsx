@@ -351,32 +351,41 @@ export default function Pricing() {
   const handleRegistrationSubmit = async (form: RegistrationForm) => {
     setIsRegistering(true);
 
-    const { error: signUpError } = await signUp(form.email, form.password, form.fullName);
+    try {
+      const { error: signUpError } = await signUp(form.email, form.password, form.fullName);
 
-    if (signUpError) {
-      setIsRegistering(false);
+      if (signUpError) {
+        toast({
+          title: 'שגיאה ברישום',
+          description:
+            signUpError.message === 'User already registered'
+              ? 'כתובת האימייל כבר רשומה במערכת'
+              : signUpError.message,
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      // Get new user's ID and link to RevenueCat
+      const { data: { session } } = await supabase.auth.getSession();
+      const newUserId = session?.user?.id ?? null;
+      setUserId(newUserId);
+
+      if (isNative && newUserId) {
+        await initialize(newUserId);
+      }
+
+      setStep(2);
+    } catch (err) {
+      console.error('[Pricing] registration error:', err);
       toast({
-        title: 'שגיאה ברישום',
-        description:
-          signUpError.message === 'User already registered'
-            ? 'כתובת האימייל כבר רשומה במערכת'
-            : signUpError.message,
+        title: 'שגיאה',
+        description: 'אירעה שגיאה בלתי צפויה. נסה שוב.',
         variant: 'destructive',
       });
-      return;
+    } finally {
+      setIsRegistering(false);
     }
-
-    // Get new user's ID and link to RevenueCat
-    const { data: { session } } = await supabase.auth.getSession();
-    const newUserId = session?.user?.id ?? null;
-    setUserId(newUserId);
-
-    if (isNative && newUserId) {
-      await initialize(newUserId);
-    }
-
-    setIsRegistering(false);
-    setStep(2);
   };
 
   // Step 2: user picks a plan → open IAP (native) or go straight to app (web)
