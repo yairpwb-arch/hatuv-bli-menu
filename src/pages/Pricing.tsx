@@ -192,21 +192,21 @@ function StepRegistrationForm({
     email: '',
     password: '',
   });
+  const [errors, setErrors] = useState<Partial<RegistrationForm>>({});
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    try {
-      registrationSchema.parse(form);
-    } catch (err) {
-      if (err instanceof z.ZodError) {
-        toast({
-          title: 'שגיאה',
-          description: err.errors[0].message,
-          variant: 'destructive',
-        });
-        return;
+    const result = registrationSchema.safeParse(form);
+    if (!result.success) {
+      const fieldErrors: Partial<RegistrationForm> = {};
+      for (const issue of result.error.issues) {
+        const field = issue.path[0] as keyof RegistrationForm;
+        if (!fieldErrors[field]) fieldErrors[field] = issue.message;
       }
+      setErrors(fieldErrors);
+      return;
     }
+    setErrors({});
     onSubmit(form);
   };
 
@@ -247,10 +247,16 @@ function StepRegistrationForm({
                 type="text"
                 placeholder="ישראל ישראלי"
                 value={form.fullName}
-                onChange={(e) => setForm({ ...form, fullName: e.target.value })}
-                required
+                onChange={(e) => {
+                  setForm({ ...form, fullName: e.target.value });
+                  setErrors((prev) => ({ ...prev, fullName: undefined }));
+                }}
+                className={errors.fullName ? 'border-destructive' : ''}
                 disabled={isRegistering}
               />
+              {errors.fullName && (
+                <p className="text-xs text-destructive">{errors.fullName}</p>
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -260,12 +266,17 @@ function StepRegistrationForm({
                 type="email"
                 placeholder="your@email.com"
                 value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-                required
+                onChange={(e) => {
+                  setForm({ ...form, email: e.target.value });
+                  setErrors((prev) => ({ ...prev, email: undefined }));
+                }}
                 dir="ltr"
-                className="text-left"
+                className={`text-left${errors.email ? ' border-destructive' : ''}`}
                 disabled={isRegistering}
               />
+              {errors.email && (
+                <p className="text-xs text-destructive">{errors.email}</p>
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -275,12 +286,17 @@ function StepRegistrationForm({
                 type="password"
                 placeholder="••••••••"
                 value={form.password}
-                onChange={(e) => setForm({ ...form, password: e.target.value })}
-                required
+                onChange={(e) => {
+                  setForm({ ...form, password: e.target.value });
+                  setErrors((prev) => ({ ...prev, password: undefined }));
+                }}
                 dir="ltr"
-                className="text-left"
+                className={`text-left${errors.password ? ' border-destructive' : ''}`}
                 disabled={isRegistering}
               />
+              {errors.password && (
+                <p className="text-xs text-destructive">{errors.password}</p>
+              )}
             </div>
 
             <Button
