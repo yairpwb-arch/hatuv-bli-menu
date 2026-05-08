@@ -39,8 +39,7 @@ const PART_NAMES: Record<number, { title: string; subtitle: string }> = {
 };
 
 export default function AppContent() {
-  const { currentDay, user } = useAuth();
-  const currentWeek = Math.ceil(currentDay / 7);
+  const { currentDay, currentWeek, user } = useAuth();
   const [allContent, setAllContent] = useState<ContentItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedContent, setSelectedContent] = useState<ContentItem | null>(null);

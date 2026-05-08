@@ -44,12 +44,11 @@ interface ScheduledActivity {
   day_of_week: number;
 }
 
-const STEP_GOAL = 10000;
 const CIRCLE_RADIUS = 40;
 const CIRCLE_CIRCUMFERENCE = 2 * Math.PI * CIRCLE_RADIUS; // ~251.3
 
 export default function AppProgress() {
-  const { user, currentDay } = useAuth();
+  const { user, currentDay, currentWeek } = useAuth();
   const navigate = useNavigate();
   const [weightHistory, setWeightHistory] = useState<WeightEntry[]>([]);
   const [profileData, setProfileData] = useState<ProfileData | null>(null);
@@ -73,7 +72,8 @@ export default function AppProgress() {
     fromStart: number | null;
   }>({ weekly: null, monthly: null, fromStart: null });
 
-  const currentWeek = Math.ceil(currentDay / 7);
+  const stepGoal = stepAverages.weekly ?? 10_000;
+
   const today = new Date();
   const todayDayOfWeek = today.getDay();
   const isFriday = todayDayOfWeek === 5;
@@ -88,7 +88,7 @@ export default function AppProgress() {
     return { date: label, steps: found?.steps ?? 0 };
   });
 
-  const stepProgress = Math.min((todaySteps / STEP_GOAL) * CIRCLE_CIRCUMFERENCE, CIRCLE_CIRCUMFERENCE);
+  const stepProgress = Math.min((todaySteps / stepGoal) * CIRCLE_CIRCUMFERENCE, CIRCLE_CIRCUMFERENCE);
   const strokeDashoffset = CIRCLE_CIRCUMFERENCE - stepProgress;
 
   const fetchStepAverages = useCallback(async () => {
@@ -358,7 +358,7 @@ export default function AppProgress() {
               <svg
                 className="w-full h-full -rotate-90"
                 viewBox="0 0 100 100"
-                aria-label={`${todaySteps} מתוך ${STEP_GOAL.toLocaleString()} צעדים`}
+                aria-label={`${todaySteps} מתוך ${stepGoal.toLocaleString()} צעדים`}
               >
                 {/* Track circle */}
                 <circle
@@ -386,14 +386,14 @@ export default function AppProgress() {
               {/* Center text */}
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 <span className="text-lg font-bold leading-none">
-                  {Math.round((todaySteps / STEP_GOAL) * 100)}%
+                  {Math.round((todaySteps / stepGoal) * 100)}%
                 </span>
               </div>
             </div>
             <p className="text-sm text-muted-foreground" dir="rtl">
               <span className="font-bold text-foreground">{todaySteps.toLocaleString()}</span>
               {' / '}
-              {STEP_GOAL.toLocaleString()} צעדים
+              {stepGoal.toLocaleString()} צעדים
             </p>
           </div>
 

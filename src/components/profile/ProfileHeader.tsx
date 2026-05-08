@@ -15,6 +15,7 @@ interface ProfileHeaderProps {
   avatarUrl: string | null;
   startDate: string | null;
   currentDay: number;
+  currentWeek: number;
   currentStreak: number;
   onAvatarUpdate: (url: string) => void;
   onEdit?: () => void;
@@ -26,6 +27,7 @@ export function ProfileHeader({
   avatarUrl,
   startDate,
   currentDay,
+  currentWeek,
   currentStreak,
   onAvatarUpdate,
   onEdit,
@@ -35,7 +37,6 @@ export function ProfileHeader({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isNative = Capacitor.isNativePlatform();
 
-  const currentWeek = Math.ceil(currentDay / 7);
   const phase = currentWeek <= 3 ? 'התחלה' : currentWeek <= 15 ? 'בנייה' : 'חיזוק';
 
   // Upload a base64 string (from native camera) to Supabase storage

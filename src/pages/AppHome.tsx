@@ -26,7 +26,7 @@ interface DailyQuote {
 }
 
 export default function AppHome() {
-  const { profile, currentDay, user, refreshProfile } = useAuth();
+  const { profile, currentDay, currentWeek, user, refreshProfile } = useAuth();
   const [quote, setQuote] = useState<DailyQuote | null>(null);
   const [isLoadingQuote, setIsLoadingQuote] = useState(true);
   const [quoteTab, setQuoteTab] = useState<'quote' | 'explain'>('quote');
@@ -37,7 +37,6 @@ export default function AppHome() {
   const [todayWorkoutName, setTodayWorkoutName] = useState<string | null>(null);
 
   const isWeighInDay = currentDay % 7 === 0;
-  const currentWeek = Math.ceil(currentDay / 7);
   const progressPercentage = Math.min((currentDay / 168) * 100, 100);
   const today = format(new Date(), 'yyyy-MM-dd');
 
@@ -205,19 +204,19 @@ export default function AppHome() {
             </div>
             <div className="text-right">
               <p className="text-xs text-muted-foreground">יעד</p>
-              <p className="text-sm font-semibold text-primary">10,000</p>
+              <p className="text-sm font-semibold text-primary">יעד</p>
             </div>
           </div>
           <div className="mt-3">
             <div className="h-2 bg-muted rounded-full overflow-hidden">
               <div
                 className="h-full gradient-primary rounded-full transition-all"
-                style={{ width: `${Math.min(((todaySteps ?? 0) / 10000) * 100, 100)}%` }}
+                style={{ width: `${Math.min(((todaySteps ?? 0) / 10_000) * 100, 100)}%` }}
               />
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               {todaySteps && todaySteps > 0
-                ? `${Math.round((todaySteps / 10000) * 100)}% מהיעד`
+                ? `${Math.round((todaySteps / 10_000) * 100)}% מהיעד`
                 : 'לא נמדדו צעדים היום'}
             </p>
           </div>

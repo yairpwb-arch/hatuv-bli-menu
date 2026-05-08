@@ -37,7 +37,7 @@ interface DayCompletionData {
 }
 
 export default function AppTracker() {
-  const { user, currentDay } = useAuth();
+  const { user, currentDay, currentWeek } = useAuth();
   const { stepData, isAvailable, isNative, hasPermission, requestPermission } = useStepCounter(user?.id);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [allHabitIds, setAllHabitIds] = useState<string[]>([]);
@@ -48,7 +48,6 @@ export default function AppTracker() {
   const [isLoadingExtras, setIsLoadingExtras] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const currentWeek = Math.ceil(currentDay / 7);
   const selectedDayOfWeek = selectedDate.getDay();
   const dateString = format(selectedDate, 'yyyy-MM-dd');
 

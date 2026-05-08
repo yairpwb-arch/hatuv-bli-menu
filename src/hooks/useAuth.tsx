@@ -21,6 +21,7 @@ interface AuthContextType {
   isLoading: boolean;
   isAdmin: boolean;
   currentDay: number;
+  currentWeek: number;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
@@ -38,9 +39,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   
-  const currentDay = profile?.start_date 
+  const currentDay = profile?.start_date
     ? Math.max(1, Math.floor((Date.now() - new Date(profile.start_date).getTime()) / (1000 * 60 * 60 * 24)) + 1)
     : 1;
+
+  // Calendar-week based: weeks advance only on Sundays, not rolling 7-day
+  const currentWeek = (() => {
+    if (!profile?.start_date) return 1;
+    const start = new Date(profile.start_date);
+    const startSunday = new Date(start);
+    startSunday.setDate(start.getDate() - start.getDay());
+    startSunday.setHours(0, 0, 0, 0);
+    const today = new Date();
+    const todaySunday = new Date(today);
+    todaySunday.setDate(today.getDate() - today.getDay());
+    todaySunday.setHours(0, 0, 0, 0);
+    const weeksPassed = Math.floor((todaySunday.getTime() - startSunday.getTime()) / (7 * 24 * 60 * 60 * 1000));
+    return Math.max(1, weeksPassed + 1);
+  })();
 
   const fetchProfile = async (userId: string) => {
     const { data, error } = await supabase
@@ -187,6 +203,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isLoading,
       isAdmin,
       currentDay,
+      currentWeek,
       signIn,
       signUp,
       signOut,

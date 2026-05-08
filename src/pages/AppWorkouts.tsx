@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { toast } from '@/hooks/use-toast';
 import type { WorkoutPlanDay, WorkoutPlanExercise } from '@/hooks/useWorkoutPlan';
 import { cn } from '@/lib/utils';
-import { format, differenceInDays } from 'date-fns';
+import { format } from 'date-fns';
 import { he } from 'date-fns/locale';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -20,6 +20,69 @@ import { useActiveWorkout } from '@/contexts/ActiveWorkoutContext';
 
 // Hebrew weekday labels (JS getDay(): 0=Sun=א׳ … 6=Sat=ש׳)
 const WEEKDAY_LABELS = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳'];
+
+// ---------------------------------------------------------------------------
+// UnifiedWeekBar — one row for the whole page showing workout + walk days
+// ---------------------------------------------------------------------------
+function UnifiedWeekBar({ userId }: { userId: string }) {
+  const todayWd = new Date().getDay();
+
+  const { data: workoutDays } = useQuery({
+    queryKey: ['unified-workout-days', userId],
+    queryFn: async () => {
+      const { data } = await (supabase as any)
+        .from('workout_day_schedule')
+        .select('weekday')
+        .eq('user_id', userId);
+      return (data ?? []).map((r: { weekday: number }) => r.weekday) as number[];
+    },
+  });
+
+  const { data: walkDays } = useQuery({
+    queryKey: ['walk-days', userId],
+    queryFn: async () => {
+      const { data } = await (supabase as any)
+        .from('user_walking_schedule')
+        .select('day_of_week')
+        .eq('user_id', userId)
+        .eq('is_active', true)
+        .not('day_of_week', 'is', null);
+      return (data ?? []).map((r: { day_of_week: number }) => r.day_of_week) as number[];
+    },
+  });
+
+  const wDays = workoutDays ?? [];
+  const wlDays = walkDays ?? [];
+
+  return (
+    <div className="flex gap-1.5">
+      {WEEKDAY_LABELS.map((label, wd) => {
+        const isWorkout = wDays.includes(wd);
+        const isWalk = wlDays.includes(wd);
+        const isToday = wd === todayWd;
+        const isActive = isWorkout || isWalk;
+
+        return (
+          <div
+            key={wd}
+            className={cn(
+              'flex-1 flex flex-col items-center gap-0.5 py-2 rounded-xl transition-all',
+              isActive && 'bg-orange-500 text-white shadow-sm',
+              !isActive && isToday && 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 border border-orange-300',
+              !isActive && !isToday && 'bg-muted/60 text-muted-foreground',
+            )}
+          >
+            <span className="text-xs font-bold">{label}</span>
+            {isToday && <span className="text-[9px] font-semibold leading-none">היום</span>}
+            {isWorkout && <Dumbbell className="h-2.5 w-2.5" />}
+            {isWalk && !isWorkout && <Footprints className="h-2.5 w-2.5" />}
+            {isWorkout && isWalk && <Footprints className="h-2.5 w-2.5" />}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -148,35 +211,28 @@ function WorkoutDayCard({
                   </Badge>
                 )}
               </div>
-              <p className="text-xs text-muted-foreground mt-0.5">
+              <p className="text-xs mt-0.5">
                 {scheduledWeekday !== undefined
-                  ? `מתוכנן ליום ${WEEKDAY_LABELS[scheduledWeekday]}`
-                  : 'לא נקבע יום אימון'}
+                  ? <span className="text-orange-500 font-medium">יום {WEEKDAY_LABELS[scheduledWeekday]}</span>
+                  : <span className="text-muted-foreground">לא נקבע יום אימון</span>}
               </p>
             </div>
           </div>
-          <ChevronDown
-            className={cn(
-              'h-4 w-4 text-muted-foreground transition-transform flex-shrink-0',
-              isExpanded && 'rotate-180'
-            )}
-          />
-        </div>
-
-        {/* ── Day info + edit button ── */}
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-muted-foreground">
-            {scheduledWeekday !== undefined
-              ? <span className="font-medium text-foreground">יום {WEEKDAY_LABELS[scheduledWeekday]}</span>
-              : 'לא נקבע יום'}
-          </span>
-          <button
-            onClick={startEditing}
-            className="flex items-center gap-1 text-xs text-orange-500 font-medium px-2 py-1.5 rounded-lg hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
-          >
-            <Pencil className="h-3.5 w-3.5" />
-            ערוך
-          </button>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <button
+              onClick={startEditing}
+              className="p-1.5 rounded-lg text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
+              aria-label="ערוך יום אימון"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+            <ChevronDown
+              className={cn(
+                'h-4 w-4 text-muted-foreground transition-transform',
+                isExpanded && 'rotate-180'
+              )}
+            />
+          </div>
         </div>
 
         {/* ── Edit Day Dialog ── */}
@@ -305,40 +361,33 @@ function WalkCard({ walk, onDayChange }: { walk: WalkEntry; onDayChange: (walkId
     <Card className={cn('transition-all', isToday && 'border-2 border-orange-500')}>
       <CardContent className="p-4 space-y-3">
         {/* Header */}
-        <div className="flex items-center gap-3">
-          <div className={cn('w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0',
-            isToday ? 'bg-orange-500 text-white' : 'bg-muted text-muted-foreground')}>
-            <Footprints className="h-4 w-4" />
-          </div>
-          <div>
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <h4 className="font-semibold text-foreground">
-                הליכה {walk.walk_number === 1 ? 'ראשונה' : 'שנייה'}
-              </h4>
-              {isToday && <Badge className="bg-orange-500 text-white text-xs px-2 py-0">היום</Badge>}
-            </div>
-            <p className="text-xs text-muted-foreground mt-0.5">20-30 דקות • קצב רגיל</p>
-            <p className="text-xs text-muted-foreground">
-              {walk.day_of_week !== null
-                ? `מתוכנן ליום ${WEEKDAY_LABELS[walk.day_of_week]}`
-                : 'טרם נקבע יום הליכה'}
-            </p>
-          </div>
-        </div>
-
-        {/* Day info + edit button */}
         <div className="flex items-center justify-between">
-          <span className="text-sm text-muted-foreground">
-            {walk.day_of_week !== null
-              ? <span className="font-medium text-foreground">יום {WEEKDAY_LABELS[walk.day_of_week]}</span>
-              : 'לא נקבע יום'}
-          </span>
+          <div className="flex items-center gap-3">
+            <div className={cn('w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0',
+              isToday ? 'bg-orange-500 text-white' : 'bg-muted text-muted-foreground')}>
+              <Footprints className="h-4 w-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <h4 className="font-semibold text-foreground">
+                  הליכה {walk.walk_number === 1 ? 'ראשונה' : 'שנייה'}
+                </h4>
+                {isToday && <Badge className="bg-orange-500 text-white text-xs px-2 py-0">היום</Badge>}
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">20-30 דקות • קצב רגיל</p>
+              <p className="text-xs mt-0.5">
+                {walk.day_of_week !== null
+                  ? <span className="text-orange-500 font-medium">יום {WEEKDAY_LABELS[walk.day_of_week]}</span>
+                  : <span className="text-muted-foreground">טרם נקבע יום</span>}
+              </p>
+            </div>
+          </div>
           <button
             onClick={() => { setPendingDay(walk.day_of_week); setEditOpen(true); }}
-            className="flex items-center gap-1 text-xs text-orange-500 font-medium px-2 py-1.5 rounded-lg hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
+            className="p-1.5 rounded-lg text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
+            aria-label="ערוך יום הליכה"
           >
             <Pencil className="h-3.5 w-3.5" />
-            ערוך
           </button>
         </div>
 
@@ -379,21 +428,11 @@ function WalkCard({ walk, onDayChange }: { walk: WalkEntry; onDayChange: (walkId
   );
 }
 
-function WalkingSection({ userId }: { userId: string }) {
+function WalkingSection({ userId, currentWeek }: { userId: string; currentWeek: number }) {
   const [walks, setWalks] = useState<WalkEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const load = async () => {
-    // Get user start_date to know current week
-    const { data: profile } = await (supabase as any)
-      .from('profiles').select('start_date').eq('id', userId).maybeSingle();
-    const startDate = profile?.start_date;
-    let currentWeek = 1;
-    if (startDate) {
-      const days = differenceInDays(new Date(), new Date(startDate)) + 1;
-      currentWeek = Math.max(1, Math.ceil(days / 7));
-    }
-
     const { data: existing } = await (supabase as any)
       .from('user_walking_schedule')
       .select('*')
@@ -442,25 +481,11 @@ function WalkingSection({ userId }: { userId: string }) {
 
   if (walks.length === 0) return null;
 
-  const todayWd = new Date().getDay();
-  const activeDays = walks.map(w => w.day_of_week).filter(d => d !== null) as number[];
-
   return (
-    <div className="pt-4 space-y-3">
+    <div className="pt-3 space-y-3">
       <div className="flex items-center gap-2 px-1">
         <Footprints className="h-4 w-4 text-orange-500" />
         <h3 className="text-sm font-semibold text-muted-foreground">הליכות שבועיות</h3>
-      </div>
-      {/* Weekday bar */}
-      <div className="flex gap-1">
-        {WEEKDAY_LABELS.map((label, wd) => (
-          <div key={wd} className={cn(
-            'flex-1 py-1.5 rounded-lg text-xs font-semibold text-center',
-            activeDays.includes(wd) ? 'bg-orange-500 text-white'
-            : wd === todayWd ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 border border-orange-300'
-            : 'bg-muted text-muted-foreground'
-          )}>{label}</div>
-        ))}
       </div>
       {walks.map(w => <WalkCard key={w.id} walk={w} onDayChange={handleDayChange} />)}
     </div>
@@ -513,6 +538,7 @@ function WorkoutsTab({ userId, planDays, sessions, onStartSession }: WorkoutsTab
         );
     }
     queryClient.invalidateQueries({ queryKey: ['workout-day-schedule', userId] });
+    queryClient.invalidateQueries({ queryKey: ['unified-workout-days', userId] });
     queryClient.invalidateQueries({ queryKey: ['today-workout', userId] });
   };
 
@@ -526,25 +552,8 @@ function WorkoutsTab({ userId, planDays, sessions, onStartSession }: WorkoutsTab
     );
   }
 
-  // Build weekday bar: show all days, mark those with a scheduled workout
-  const scheduledDays = Array.from(scheduleMap.values());
-
   return (
     <div className="space-y-3 pt-2">
-      {/* Weekday bar */}
-      {scheduledDays.length > 0 && (
-        <div className="flex gap-1">
-          {WEEKDAY_LABELS.map((label, wd) => (
-            <div key={wd} className={cn(
-              'flex-1 py-1.5 rounded-lg text-xs font-semibold text-center',
-              scheduledDays.includes(wd) ? 'bg-orange-500 text-white'
-              : wd === todayWeekday ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 border border-orange-300'
-              : 'bg-muted text-muted-foreground'
-            )}>{label}</div>
-          ))}
-        </div>
-      )}
-
       {planDays.map((day) => {
         const alreadyDoneToday = sessions.some(
           (s) => s.completed_at.split('T')[0] === today && s.plan_day_id === day.id
@@ -753,7 +762,7 @@ function HistoryTab({ sessions, isLoading, onDeleteSession }: HistoryTabProps) {
 // Main page
 // ---------------------------------------------------------------------------
 export default function AppWorkouts() {
-  const { user } = useAuth();
+  const { user, currentWeek } = useAuth();
   const { assignment, plan, planDays, isLoading } = useWorkoutPlan();
   const { sessions, logSession, deleteSession, isLoading: isSessionsLoading } = useWorkoutSession();
   const { start } = useActiveWorkout();
@@ -798,6 +807,9 @@ export default function AppWorkouts() {
         <p className="text-sm text-muted-foreground mt-0.5">{plan.name}</p>
       </div>
 
+      {/* Unified week bar */}
+      {user && <UnifiedWeekBar userId={user.id} />}
+
       {/* Tabs */}
       <Tabs defaultValue="workouts" dir="rtl" className="w-full">
         <TabsList className="w-full grid grid-cols-2">
@@ -820,7 +832,7 @@ export default function AppWorkouts() {
                 sessions={sessions}
                 onStartSession={handleStartSession}
               />
-              <WalkingSection userId={user.id} />
+              <WalkingSection userId={user.id} currentWeek={currentWeek} />
             </>
           )}
         </TabsContent>

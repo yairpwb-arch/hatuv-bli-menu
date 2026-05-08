@@ -31,8 +31,7 @@ interface WeightEntry {
 }
 
 export default function AppProfile() {
-  const { user, currentDay } = useAuth();
-  const currentWeek = Math.ceil(currentDay / 7);
+  const { user, currentDay, currentWeek } = useAuth();
   const { currentStreak } = useStreak(user?.id, currentWeek);
   
   const [profileData, setProfileData] = useState<ProfileData | null>(null);
@@ -107,6 +106,7 @@ export default function AppProfile() {
         avatarUrl={profileData?.avatar_url || null}
         startDate={profileData?.start_date || null}
         currentDay={currentDay}
+        currentWeek={currentWeek}
         currentStreak={currentStreak}
         onAvatarUpdate={handleAvatarUpdate}
         onEdit={() => setIsEditOpen(true)}
