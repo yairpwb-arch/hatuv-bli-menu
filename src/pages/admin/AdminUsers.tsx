@@ -80,7 +80,56 @@ interface Exercise {
   id: string;
   name: string;
   muscle_groups: string[] | null;
+  equipment: string | null;
 }
+
+// ── Exercise filter constants ────────────────────────────────────────────────
+
+const EQUIP_CATEGORIES = [
+  {
+    id: 'weights',
+    label: 'משקולות',
+    icon: '🏋️',
+    match: (eq: string | null) => {
+      if (!eq) return false;
+      const l = eq.toLowerCase();
+      return l.includes('dumbbell') || l.includes('barbell') || l.includes('weight') ||
+        l.includes('משקולת') || l.includes('משקולות') || l.includes('ברבל') || l.includes('גיר');
+    },
+  },
+  {
+    id: 'bodyweight',
+    label: 'משקל גוף',
+    icon: '🤸',
+    match: (eq: string | null) => {
+      if (!eq || eq.trim() === '') return true;
+      const l = eq.toLowerCase();
+      return l.includes('bodyweight') || l.includes('body weight') ||
+        l.includes('משקל גוף') || l.includes('ללא ציוד') || l === 'none' || l === 'אין';
+    },
+  },
+  {
+    id: 'machine',
+    label: 'מכונות חדר כושר',
+    icon: '⚙️',
+    match: (eq: string | null) => {
+      if (!eq) return false;
+      const l = eq.toLowerCase();
+      return l.includes('machine') || l.includes('cable') || l.includes('מכונה') ||
+        l.includes('מכונות') || l.includes('כבל') || l.includes('פולי');
+    },
+  },
+] as const;
+
+const MUSCLE_GROUPS = [
+  { id: 'chest',     label: 'חזה',         match: ['chest', 'חזה', 'pec'] },
+  { id: 'back',      label: 'גב',           match: ['back', 'גב', 'lat'] },
+  { id: 'shoulders', label: 'כתפיים',       match: ['shoulder', 'כתפיים', 'כתף', 'delt'] },
+  { id: 'triceps',   label: 'יד אחורית',    match: ['tricep', 'יד אחורית', 'טרייספס'] },
+  { id: 'biceps',    label: 'יד קדמית',     match: ['bicep', 'יד קדמית', 'ביספס'] },
+  { id: 'legs',      label: 'רגליים',        match: ['leg', 'quad', 'hamstring', 'glute', 'calf', 'רגליים', 'רגל'] },
+  { id: 'abs',       label: 'בטן',           match: ['ab', 'core', 'בטן'] },
+] as const;
 
 interface PlanExercise {
   id: string;
@@ -199,6 +248,8 @@ export default function AdminUsers() {
   const [isAddingDay, setIsAddingDay] = useState(false);
   const [addExerciseDayId, setAddExerciseDayId] = useState<string | null>(null);
   const [newExForm, setNewExForm] = useState({ exerciseId: '', sets: '3', repsMin: '8', repsMax: '12', rest: '60' });
+  const [exEquipFilter, setExEquipFilter] = useState<string | null>(null);
+  const [exMuscleFilter, setExMuscleFilter] = useState<string | null>(null);
   const [isTogglingPlan, setIsTogglingPlan] = useState(false);
 
   // Survey tab
@@ -298,7 +349,7 @@ export default function AdminUsers() {
     // Exercise library for plan builder
     const { data: exLib } = await (supabase as any)
       .from('exercises')
-      .select('id, name, muscle_groups')
+      .select('id, name, muscle_groups, equipment')
       .order('name', { ascending: true });
     setExerciseLibrary((exLib || []) as Exercise[]);
   };
@@ -1137,16 +1188,97 @@ export default function AdminUsers() {
                           {/* Add exercise form */}
                           {addExerciseDayId === day.id ? (
                             <div className="space-y-2 pt-2 border-t border-border/50">
-                              <Select value={newExForm.exerciseId} onValueChange={v => setNewExForm(p => ({ ...p, exerciseId: v }))}>
-                                <SelectTrigger className="text-sm">
-                                  <SelectValue placeholder="בחר תרגיל..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {exerciseLibrary.map(e => (
-                                    <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                              {/* ── Step 1: Equipment type ── */}
+                              {!exEquipFilter ? (
+                                <div className="space-y-1.5">
+                                  <p className="text-[11px] text-muted-foreground font-medium">סוג ציוד:</p>
+                                  <div className="flex flex-col gap-1.5">
+                                    {EQUIP_CATEGORIES.map(cat => (
+                                      <button
+                                        key={cat.id}
+                                        type="button"
+                                        onClick={() => setExEquipFilter(cat.id)}
+                                        className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm font-medium bg-secondary hover:bg-primary hover:text-primary-foreground transition-colors text-right"
+                                      >
+                                        <span>{cat.icon}</span>
+                                        <span>{cat.label}</span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : !exMuscleFilter ? (
+                                /* ── Step 2: Muscle group ── */
+                                <div className="space-y-1.5">
+                                  <div className="flex items-center gap-1 mb-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => setExEquipFilter(null)}
+                                      className="text-[11px] text-primary underline"
+                                    >
+                                      ← חזרה
+                                    </button>
+                                    <span className="text-[11px] text-muted-foreground">
+                                      · {EQUIP_CATEGORIES.find(c => c.id === exEquipFilter)?.label}
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px] text-muted-foreground font-medium">אזור גוף:</p>
+                                  <div className="grid grid-cols-2 gap-1.5">
+                                    {MUSCLE_GROUPS.map(mg => (
+                                      <button
+                                        key={mg.id}
+                                        type="button"
+                                        onClick={() => setExMuscleFilter(mg.id)}
+                                        className="px-2 py-1.5 rounded-lg text-xs font-medium bg-secondary hover:bg-primary hover:text-primary-foreground transition-colors"
+                                      >
+                                        {mg.label}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : (
+                                /* ── Step 3: Filtered exercise list ── */
+                                (() => {
+                                  const equipCat = EQUIP_CATEGORIES.find(c => c.id === exEquipFilter)!;
+                                  const muscleCat = MUSCLE_GROUPS.find(m => m.id === exMuscleFilter)!;
+                                  const filtered = exerciseLibrary.filter(e => {
+                                    const equipOk = equipCat.match(e.equipment);
+                                    const muscleOk = (e.muscle_groups || []).some(mg =>
+                                      muscleCat.match.some(kw => mg.toLowerCase().includes(kw))
+                                    );
+                                    return equipOk && muscleOk;
+                                  });
+                                  return (
+                                    <div className="space-y-1.5">
+                                      <div className="flex items-center gap-1 mb-1">
+                                        <button
+                                          type="button"
+                                          onClick={() => { setExMuscleFilter(null); setNewExForm(p => ({ ...p, exerciseId: '' })); }}
+                                          className="text-[11px] text-primary underline"
+                                        >
+                                          ← חזרה
+                                        </button>
+                                        <span className="text-[11px] text-muted-foreground">
+                                          · {equipCat.label} · {muscleCat.label}
+                                        </span>
+                                      </div>
+                                      {filtered.length === 0 ? (
+                                        <p className="text-xs text-muted-foreground py-2 text-center">אין תרגילים מתאימים</p>
+                                      ) : (
+                                        <Select value={newExForm.exerciseId} onValueChange={v => setNewExForm(p => ({ ...p, exerciseId: v }))}>
+                                          <SelectTrigger className="text-sm">
+                                            <SelectValue placeholder="בחר תרגיל..." />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            {filtered.map(e => (
+                                              <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      )}
+                                    </div>
+                                  );
+                                })()
+                              )}
                               <div className="grid grid-cols-4 gap-1.5 text-xs">
                                 {[
                                   { key: 'sets', label: 'סטים' },
@@ -1164,7 +1296,7 @@ export default function AdminUsers() {
                               </div>
                               <div className="flex gap-2">
                                 <Button size="sm" className="flex-1 text-xs h-8" onClick={() => handleAddExercise(day.id)}>הוסף</Button>
-                                <Button size="sm" variant="outline" className="text-xs h-8" onClick={() => setAddExerciseDayId(null)}>ביטול</Button>
+                                <Button size="sm" variant="outline" className="text-xs h-8" onClick={() => { setAddExerciseDayId(null); setExEquipFilter(null); setExMuscleFilter(null); }}>ביטול</Button>
                               </div>
                             </div>
                           ) : (
@@ -1172,7 +1304,7 @@ export default function AdminUsers() {
                               size="sm"
                               variant="ghost"
                               className="w-full text-xs h-7 text-primary mt-1"
-                              onClick={() => { setAddExerciseDayId(day.id); setNewExForm({ exerciseId: '', sets: '3', repsMin: '8', repsMax: '12', rest: '60' }); }}
+                              onClick={() => { setAddExerciseDayId(day.id); setNewExForm({ exerciseId: '', sets: '3', repsMin: '8', repsMax: '12', rest: '60' }); setExEquipFilter(null); setExMuscleFilter(null); }}
                             >
                               <Plus className="h-3 w-3 ml-1" />הוסף תרגיל
                             </Button>
