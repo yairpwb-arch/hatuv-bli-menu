@@ -39,6 +39,31 @@ interface CheckinQuestion {
   column_key: string;
 }
 
+function draftKey(userId: string, week: number) {
+  return `survey_draft_${userId}_week_${week}`;
+}
+
+function saveDraft(userId: string, week: number, answers: Record<string, string | number | boolean | null>) {
+  try {
+    localStorage.setItem(draftKey(userId, week), JSON.stringify(answers));
+  } catch {}
+}
+
+function loadDraft(userId: string, week: number): Record<string, string | number | boolean | null> | null {
+  try {
+    const raw = localStorage.getItem(draftKey(userId, week));
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearDraft(userId: string, week: number) {
+  try {
+    localStorage.removeItem(draftKey(userId, week));
+  } catch {}
+}
+
 export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props) {
   const { user } = useAuth();
 
@@ -100,14 +125,20 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
     } else {
       setExistingId(null);
       setShowAlreadyDone(false);
-      setAnswers(defaults);
+      // Restore draft if user previously filled in answers without submitting
+      const draft = user ? loadDraft(user.id, currentWeek) : null;
+      setAnswers(draft ? { ...defaults, ...draft } : defaults);
     }
 
     setIsLoading(false);
   };
 
   const updateAnswer = (columnKey: string, value: string | number | boolean | null) => {
-    setAnswers(prev => ({ ...prev, [columnKey]: value }));
+    setAnswers(prev => {
+      const next = { ...prev, [columnKey]: value };
+      if (user) saveDraft(user.id, currentWeek, next);
+      return next;
+    });
   };
 
   const handleSubmit = async () => {
@@ -147,6 +178,7 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
     if (error) {
       toast({ title: 'שגיאה', description: 'לא ניתן לשמור', variant: 'destructive' });
     } else {
+      if (user) clearDraft(user.id, currentWeek);
       toast({ title: 'הצלחה!', description: 'השאלון נשמר ✓' });
       onClose();
     }
@@ -270,7 +302,9 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
                 )}
 
                 {q.question_type === 'scale' && (
-                  <div className="space-y-3">
+                  // dir="ltr" forces the slider to go left (1) → right (10),
+                  // preventing RTL from reversing the track direction.
+                  <div className="space-y-3" dir="ltr">
                     <div className="flex items-center justify-center gap-2">
                       <span className="text-3xl font-bold text-primary tabular-nums">
                         {Number(val ?? 5)}
@@ -285,8 +319,8 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
                       onValueChange={([v]) => updateAnswer(q.column_key, v)}
                     />
                     <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>1 — נמוך</span>
-                      <span>10 — גבוה</span>
+                      <span dir="rtl">נמוך — 1</span>
+                      <span dir="rtl">גבוה — 10</span>
                     </div>
                   </div>
                 )}
