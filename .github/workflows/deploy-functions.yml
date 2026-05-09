@@ -27,3 +27,9 @@ jobs:
           supabase functions deploy push-notification \
             --project-ref bwndknbkchspvottwyho \
             --no-verify-jwt
+
+      - name: Deploy delete-account function
+        run: |
+          supabase functions deploy delete-account \
+            --project-ref bwndknbkchspvottwyho \
+            --no-verify-jwt

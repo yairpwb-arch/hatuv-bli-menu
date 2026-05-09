@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, Sun, Moon, Bell, BellOff, Info, LogOut, User, Loader2, BookOpen, ExternalLink, CheckCircle2, XCircle, Send } from 'lucide-react';
+import { ChevronLeft, Sun, Moon, Bell, BellOff, Info, LogOut, User, Loader2, BookOpen, ExternalLink, CheckCircle2, XCircle, Send, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { useTheme } from '@/hooks/useTheme';
 import { useAuth } from '@/hooks/useAuth';
 import { Capacitor } from '@capacitor/core';
@@ -61,7 +63,7 @@ function Row({
 export default function AppSettings() {
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
-  const { profile, user, refreshProfile } = useAuth();
+  const { profile, user, refreshProfile, signOut } = useAuth();
 
   const isNative = Capacitor.isNativePlatform();
 
@@ -171,8 +173,30 @@ export default function AppSettings() {
     return 'תקבל תזכורות: משפט יומי, שקילה, שאלון ועוד';
   };
 
-  // Alias for sign out since hooks can't be called inside handlers
-  const { signOut } = useAuth();
+  // Account deletion state
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDeleteAccount = async () => {
+    if (!user) return;
+    setIsDeleting(true);
+    try {
+      const { error } = await supabase.functions.invoke('delete-account', {});
+      if (error) {
+        toast({ title: 'שגיאה במחיקת החשבון', description: error.message, variant: 'destructive' });
+        return;
+      }
+      await signOut();
+      navigate('/auth');
+    } catch (err) {
+      toast({ title: 'שגיאה', description: String(err), variant: 'destructive' });
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteDialog(false);
+    }
+  };
+
   const doSignOut = async () => {
     await signOut();
     navigate('/auth');
@@ -280,7 +304,7 @@ export default function AppSettings() {
           <Row
             icon={Info}
             label="חטוב בלי תפריט"
-            description="גרסה 2.0 — © 2026"
+            description="גרסה 2.2 — © 2026"
           />
           <Row
             icon={BookOpen}
@@ -333,7 +357,7 @@ export default function AppSettings() {
           )}
         </Section>
 
-        {/* Logout */}
+        {/* Logout + Delete */}
         <Section title="חשבון">
           <Row
             icon={LogOut}
@@ -342,9 +366,46 @@ export default function AppSettings() {
             onClick={doSignOut}
             danger
           />
+          <Row
+            icon={Trash2}
+            label="מחיקת חשבון"
+            description="מחיקה מלאה ובלתי הפיכה של הנתונים"
+            onClick={() => setShowDeleteDialog(true)}
+            danger
+          />
         </Section>
 
       </div>
+
+      {/* Delete account confirmation dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={(open) => { setShowDeleteDialog(open); if (!open) setDeleteConfirmText(''); }}>
+        <DialogContent dir="rtl">
+          <DialogHeader>
+            <DialogTitle className="text-destructive">מחיקת חשבון</DialogTitle>
+            <DialogDescription>
+              פעולה זו תמחק לצמיתות את כל הנתונים שלך ולא ניתן לבטלה.
+              כדי לאשר, הקלד <strong>מחק</strong> בשדה למטה.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <Input
+              placeholder="הקלד מחק לאישור"
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              dir="rtl"
+            />
+            <Button
+              variant="destructive"
+              className="w-full"
+              disabled={deleteConfirmText !== 'מחק' || isDeleting}
+              onClick={handleDeleteAccount}
+            >
+              {isDeleting ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : null}
+              מחק את החשבון לצמיתות
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
