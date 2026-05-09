@@ -9,6 +9,10 @@ const ONESIGNAL_APP_ID = Deno.env.get('ONESIGNAL_APP_ID')!;
 const ONESIGNAL_REST_API_KEY = Deno.env.get('ONESIGNAL_REST_API_KEY')!;
 const CRON_SECRET = Deno.env.get('PUSH_CRON_SECRET');
 
+if (!ONESIGNAL_APP_ID || !ONESIGNAL_REST_API_KEY) {
+  console.error('[push] ONESIGNAL_APP_ID or ONESIGNAL_REST_API_KEY not set in secrets!');
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret',
@@ -346,20 +350,27 @@ serve(async (req) => {
           pushToken = token;
           pushPlatform = platform ?? 'ios';
         } else {
-          // User call: look up their stored push_token via JWT
+          // User call: decode JWT payload directly to extract user_id (avoids extra network call)
           const jwt = auth.startsWith('Bearer ') ? auth.slice(7) : '';
-          const { data: { user: caller } } = await supabase.auth.getUser(jwt);
-          if (!caller) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+          let userId: string | null = null;
+          try {
+            const [, rawPayload] = jwt.split('.');
+            const b64 = rawPayload.replace(/-/g, '+').replace(/_/g, '/');
+            const payload = JSON.parse(atob(b64));
+            userId = payload.sub ?? null;
+          } catch { /* invalid JWT */ }
+          if (!userId) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
           const { data: prof } = await supabase
             .from('profiles')
             .select('push_token, device_platform')
-            .eq('id', caller.id)
+            .eq('id', userId)
             .maybeSingle();
           if (!prof?.push_token) {
-            return new Response(JSON.stringify({ error: 'no_push_token', detail: 'Push token not found — make sure notifications are enabled on this device' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+            return new Response(JSON.stringify({ ok: false, error: 'no_push_token', detail: 'לא נמצא push token — ודא שהתראות מופעלות במכשיר זה' }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
           }
           pushToken = prof.push_token as string;
-          pushPlatform = (prof.device_platform as string) ?? 'ios';
+          pushPlatform = (prof.device_platform as string) ?? 'android';
         }
 
         onesignalResult = await sendPush(

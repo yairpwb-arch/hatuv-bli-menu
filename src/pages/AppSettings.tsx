@@ -75,19 +75,20 @@ export default function AppSettings() {
   } = useNotificationSetup();
 
   // Notifications state — driven by profile.notifications_enabled
-  const [notifEnabled, setNotifEnabled] = useState<boolean>(true);
+  const [notifEnabled, setNotifEnabled] = useState<boolean>(false);
   const [showSources, setShowSources] = useState(false);
 
   // Test notification state
   const [testStatus, setTestStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [testLog, setTestLog] = useState<string | null>(null);
 
-  // Sync from profile
+  // Sync from profile — re-run whenever notifications_enabled changes (not just on id change)
+  const profileNotifEnabled = (profile as any)?.notifications_enabled;
   useEffect(() => {
     if (profile) {
-      setNotifEnabled((profile as any).notifications_enabled ?? true);
+      setNotifEnabled(profileNotifEnabled ?? false);
     }
-  }, [profile?.id]);
+  }, [profile?.id, profileNotifEnabled]);
 
   // Check OS permission state on mount; re-check when app comes back to foreground
   useEffect(() => {
@@ -138,8 +139,15 @@ export default function AppSettings() {
         body: { type: 'send_test' },
       });
       if (error) {
+        // Try to extract the actual body from the Edge Function error
+        let detail = error.message;
+        try {
+          const body = await (error as any).context?.json?.();
+          if (body?.detail) detail = body.detail;
+          else if (body?.error) detail = body.error;
+        } catch { /* ignore */ }
         setTestStatus('error');
-        setTestLog(error.message ?? JSON.stringify(error));
+        setTestLog(detail);
         return;
       }
       if (data?.ok) {
