@@ -43,7 +43,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     ? Math.max(1, Math.floor((Date.now() - new Date(profile.start_date).getTime()) / (1000 * 60 * 60 * 24)) + 1)
     : 1;
 
-  // Calendar-week based: weeks advance only on Sundays, not rolling 7-day
+  // Calendar-week based (Sunday boundaries), capped by rolling 7-day week.
+  // Prevents users who start late in the week from jumping to week 2 after only 1-2 days.
   const currentWeek = (() => {
     if (!profile?.start_date) return 1;
     const start = new Date(profile.start_date);
@@ -54,8 +55,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const todaySunday = new Date(today);
     todaySunday.setDate(today.getDate() - today.getDay());
     todaySunday.setHours(0, 0, 0, 0);
-    const weeksPassed = Math.floor((todaySunday.getTime() - startSunday.getTime()) / (7 * 24 * 60 * 60 * 1000));
-    return Math.max(1, weeksPassed + 1);
+    const calendarWeek = Math.floor((todaySunday.getTime() - startSunday.getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1;
+    const rollingWeek = Math.floor((currentDay - 1) / 7) + 1;
+    return Math.max(1, Math.min(calendarWeek, rollingWeek));
   })();
 
   const fetchProfile = async (userId: string) => {
