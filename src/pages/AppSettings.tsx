@@ -161,7 +161,27 @@ export default function AppSettings() {
         return;
       }
       if (data?.ok) {
-        setTestStatus('success');
+        // Check that OneSignal actually delivered to at least one device
+        const batches: any[] = Array.isArray(data?.onesignal) ? data.onesignal : [];
+        const totalRecipients = batches.reduce((sum: number, batch: any) => {
+          const r = Object.values(batch)[0] as any;
+          return sum + (r?.recipients ?? 0);
+        }, 0);
+        const errors = batches.flatMap((batch: any) => {
+          const r = Object.values(batch)[0] as any;
+          return r?.errors ?? [];
+        });
+
+        if (totalRecipients > 0) {
+          setTestStatus('success');
+        } else {
+          setTestStatus('error');
+          setTestLog(
+            errors.length > 0
+              ? `OneSignal שגיאה: ${JSON.stringify(errors)}`
+              : `OneSignal קיבל את הבקשה אבל recipients=0 — הטוקן לא רשום ב-OneSignal dashboard. נסה לצאת ולהיכנס שוב לאפליקציה.`,
+          );
+        }
       } else {
         setTestStatus('error');
         const detail = data?.detail ?? data?.error ?? JSON.stringify(data);
