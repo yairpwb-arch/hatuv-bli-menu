@@ -78,19 +78,47 @@ export default function AppSettings() {
 
   // Notifications state — driven by profile.notifications_enabled
   const [notifEnabled, setNotifEnabled] = useState<boolean>(false);
+  const [hasToken, setHasToken] = useState<boolean>(false);
   const [showSources, setShowSources] = useState(false);
 
   // Test notification state
   const [testStatus, setTestStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [testLog, setTestLog] = useState<string | null>(null);
 
-  // Sync from profile — re-run whenever notifications_enabled changes (not just on id change)
-  const profileNotifEnabled = (profile as any)?.notifications_enabled;
+  // ── Read notification_settings directly (source of truth) ──────────────────
   useEffect(() => {
-    if (profile) {
-      setNotifEnabled(profileNotifEnabled ?? false);
-    }
-  }, [profile?.id, profileNotifEnabled]);
+    if (!user) return;
+
+    // Initial fetch
+    const fetchNS = async () => {
+      const { data } = await supabase
+        .from('notification_settings' as any)
+        .select('notifications_enabled, player_id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      setNotifEnabled((data as any)?.notifications_enabled ?? false);
+      setHasToken(!!((data as any)?.player_id));
+    };
+    fetchNS();
+
+    // Realtime subscription — updates toggle + token state when FCM token arrives
+    const channel = supabase
+      .channel(`ns_${user.id}`)
+      .on(
+        'postgres_changes' as any,
+        { event: '*', schema: 'public', table: 'notification_settings', filter: `user_id=eq.${user.id}` },
+        (payload: any) => {
+          const row = payload.new ?? payload.old;
+          if (row) {
+            setNotifEnabled(!!row.notifications_enabled);
+            setHasToken(!!row.player_id);
+          }
+        },
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user?.id]);
 
   // Check OS permission state on mount; re-check when app comes back to foreground
   useEffect(() => {
@@ -190,6 +218,7 @@ export default function AppSettings() {
     if (!isNative) return 'זמין רק באפליקציה הנייד (iOS / Android)';
     if (permissionStatus === 'denied') return 'הרשאה נדחתה — אפשר ידנית בהגדרות המכשיר';
     if (!notifEnabled) return 'לחץ להפעלת התראות';
+    if (!hasToken) return 'ממתין לרישום המכשיר... (עד 30 שניות)';
     return 'תקבל תזכורות: משפט יומי, שקילה, שאלון ועוד';
   };
 
@@ -288,8 +317,8 @@ export default function AppSettings() {
             }
           />
 
-          {/* Test notification button — only when notifications are active on native */}
-          {notifEnabled && isNative && (
+          {/* Test notification button — only when notifications are active AND token registered */}
+          {notifEnabled && hasToken && isNative && (
             <div className="px-4 py-3 space-y-2">
               <Button
                 size="sm"
