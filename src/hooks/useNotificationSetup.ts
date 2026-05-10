@@ -8,39 +8,11 @@ function getPlatform(): 'ios' | 'android' {
   return Capacitor.getPlatform() === 'ios' ? 'ios' : 'android';
 }
 
-/**
- * Saves the raw APNs (iOS) or FCM (Android) push token to the user's profile.
- * OneSignal receives these tokens via include_ios_tokens / include_android_reg_ids
- * when the Edge Function sends a notification.
- */
-async function saveTokenToProfile(token: string, userId: string): Promise<boolean> {
+function getUserTimezone(): string {
   try {
-    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const { error } = await supabase
-      .from('profiles')
-      .update({ push_token: token, device_platform: getPlatform(), timezone } as any)
-      .eq('id', userId);
-    if (error) {
-      console.error('[NotificationSetup] DB error saving token:', error.message);
-      return false;
-    }
-    console.log('[NotificationSetup] Token saved to DB');
-
-    // Register device in OneSignal immediately so it appears as subscribed in the dashboard
-    try {
-      const { error: fnErr } = await supabase.functions.invoke('push-notification', {
-        body: { type: 'register_device' },
-      });
-      if (fnErr) console.warn('[NotificationSetup] OneSignal registration error:', fnErr.message);
-      else console.log('[NotificationSetup] Registered with OneSignal');
-    } catch (e) {
-      console.warn('[NotificationSetup] OneSignal registration failed (non-fatal):', e);
-    }
-
-    return true;
-  } catch (e) {
-    console.error('[NotificationSetup] Exception saving token:', e);
-    return false;
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Jerusalem';
+  } catch {
+    return 'Asia/Jerusalem';
   }
 }
 
@@ -53,8 +25,46 @@ function handleNotificationTap(type: string) {
     weigh_reminder: '/app/tracker',
     survey_followup: '/app',
   };
-  const route = routes[type] ?? '/app';
-  window.location.hash = '#' + route;
+  window.location.hash = '#' + (routes[type] ?? '/app');
+}
+
+// ── Saves the push token to notification_settings via upsert (never fails silently) ──
+async function saveTokenToDatabase(
+  token: string,
+  platform: 'ios' | 'android',
+  userId: string,
+): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from('notification_settings' as any)
+      .upsert(
+        {
+          user_id: userId,
+          player_id: token,
+          device_platform: platform,
+          timezone: getUserTimezone(),
+          notifications_enabled: true,
+        },
+        { onConflict: 'user_id' },
+      );
+
+    if (error) {
+      console.error('[NotificationSetup] DB error saving token:', error.message);
+      return false;
+    }
+
+    // Mirror to profiles so useAuth can still read the flag
+    await supabase
+      .from('profiles')
+      .update({ notifications_enabled: true, push_token: token, device_platform: platform } as any)
+      .eq('id', userId);
+
+    console.log('[NotificationSetup] Token saved to notification_settings');
+    return true;
+  } catch (e) {
+    console.error('[NotificationSetup] Exception saving token:', e);
+    return false;
+  }
 }
 
 export function useNotificationSetup() {
@@ -89,7 +99,7 @@ export function useNotificationSetup() {
         }
       }
 
-      // Token received from OS → cache it and auto-save if notifications are enabled
+      // Token received from OS → cache + auto-save if notifications already enabled
       registrationHandle = await PushNotifications.addListener('registration', async ({ value }) => {
         if (!value) return;
         console.log('[NotificationSetup] Push token received');
@@ -98,13 +108,16 @@ export function useNotificationSetup() {
         try {
           const { data: { user } } = await supabase.auth.getUser();
           if (user?.id) {
-            const { data: profile } = await supabase
-              .from('profiles')
+            // Check notification_settings (source of truth)
+            const { data: existing } = await supabase
+              .from('notification_settings' as any)
               .select('notifications_enabled')
-              .eq('id', user.id)
+              .eq('user_id', user.id)
               .maybeSingle();
-            if ((profile as any)?.notifications_enabled) {
-              await saveTokenToProfile(value, user.id);
+
+            if ((existing as any)?.notifications_enabled) {
+              // Token refreshed by OS — update it
+              await saveTokenToDatabase(value, getPlatform(), user.id);
             }
           }
         } catch (e) {
@@ -112,11 +125,23 @@ export function useNotificationSetup() {
         }
       });
 
-      errorHandle = await PushNotifications.addListener('registrationError', (err) => {
-        console.error('[NotificationSetup] Registration error:', err);
+      // Log registration errors to DB for debugging (e.g. wrong APNs env, missing entitlement)
+      errorHandle = await PushNotifications.addListener('registrationError', async (err) => {
+        const errorMsg = String((err as any)?.error ?? JSON.stringify(err));
+        console.error('[NotificationSetup] Registration error:', errorMsg);
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user?.id) {
+            await supabase
+              .from('notification_settings' as any)
+              .upsert(
+                { user_id: user.id, registration_error: errorMsg },
+                { onConflict: 'user_id' },
+              );
+          }
+        } catch { /* non-fatal */ }
       });
 
-      // Foreground: show a toast banner (Android doesn't auto-display when app is open)
       foregroundHandle = await PushNotifications.addListener('pushNotificationReceived', (notification) => {
         const title = notification.title ?? '';
         const body = notification.body ?? '';
@@ -224,7 +249,7 @@ export function useNotificationSetup() {
     });
   }, []);
 
-  // ─── Enable notifications (called from settings toggle or trigger) ─────────
+  // ─── Enable notifications ──────────────────────────────────────────────────
 
   const enableNotifications = useCallback(async (userId: string): Promise<boolean> => {
     console.log('[NotificationSetup] ===== ENABLE NOTIFICATIONS =====');
@@ -236,7 +261,6 @@ export function useNotificationSetup() {
       if (!granted) {
         const canRequest = await canRequestPermission();
         if (!canRequest) {
-          // Permission permanently denied — user must enable in device settings
           console.warn('[NotificationSetup] Permission denied — cannot request');
           setIsLoading(false);
           return false;
@@ -255,19 +279,11 @@ export function useNotificationSetup() {
         return false;
       }
 
-      const saved = await saveTokenToProfile(token, userId);
-      if (!saved) {
-        setIsLoading(false);
-        return false;
-      }
-
-      // Mark as enabled in profile
-      await supabase
-        .from('profiles')
-        .update({ notifications_enabled: true } as any)
-        .eq('id', userId);
-
+      const saved = await saveTokenToDatabase(token, getPlatform(), userId);
       setIsLoading(false);
+
+      if (!saved) return false;
+
       console.log('[NotificationSetup] ===== SETUP COMPLETE =====');
       return true;
     } catch (e) {
@@ -282,17 +298,22 @@ export function useNotificationSetup() {
   const disableNotifications = useCallback(async (userId: string): Promise<boolean> => {
     setIsLoading(true);
     try {
-      const { error } = await supabase
+      await supabase
+        .from('notification_settings' as any)
+        .upsert(
+          { user_id: userId, notifications_enabled: false },
+          { onConflict: 'user_id' },
+        );
+      // Mirror to profiles
+      await supabase
         .from('profiles')
         .update({ notifications_enabled: false } as any)
         .eq('id', userId);
+
       setIsLoading(false);
-      if (error) {
-        console.error('[NotificationSetup] DB error disabling:', error.message);
-        return false;
-      }
       return true;
     } catch (e) {
+      console.error('[NotificationSetup] Disable error:', e);
       setIsLoading(false);
       return false;
     }

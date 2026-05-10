@@ -121,6 +121,14 @@ export default function AppSettings() {
         toast({ title: 'התראות הופעלו ✓', description: 'תקבל תזכורות יומיות ושבועיות מהאפליקציה' });
       } else if (permissionStatus === 'denied') {
         toast({ title: 'הרשאות חסומות', description: 'יש לאפשר התראות בהגדרות המכשיר ידנית', variant: 'destructive' });
+      } else if (isNative) {
+        // OS permission was granted but token hasn't arrived yet — mark enabled in DB
+        // so the background registration listener saves the token when it arrives
+        await supabase
+          .from('notification_settings' as any)
+          .upsert({ user_id: user.id, notifications_enabled: true }, { onConflict: 'user_id' });
+        setNotifEnabled(true);
+        toast({ title: 'התראות הופעלו', description: 'יתכן שיידרשו מספר שניות עד שההתראות יופעלו במלואן' });
       }
     } else {
       const success = await disableNotifications(user.id);
@@ -304,7 +312,7 @@ export default function AppSettings() {
           <Row
             icon={Info}
             label="חטוב בלי תפריט"
-            description="גרסה 2.2 — © 2026"
+            description="גרסה 2.3 — © 2026"
           />
           <Row
             icon={BookOpen}
