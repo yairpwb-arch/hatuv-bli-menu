@@ -312,7 +312,7 @@ export default function AppSettings() {
           <Row
             icon={Info}
             label="חטוב בלי תפריט"
-            description="גרסה 2.4 — © 2026"
+            description="גרסה 2.5 — © 2026"
           />
           <Row
             icon={BookOpen}
