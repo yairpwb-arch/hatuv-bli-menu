@@ -60,6 +60,22 @@ async function saveTokenToDatabase(
       .eq('id', userId);
 
     console.log('[NotificationSetup] Token saved to notification_settings');
+
+    // Register with OneSignal to get a Player ID — replaces the raw FCM/APNs token in the DB
+    // so all sends use include_player_ids (more reliable than raw tokens).
+    try {
+      const { error: regError } = await supabase.functions.invoke('push-notification', {
+        body: { type: 'register_device' },
+      });
+      if (regError) {
+        console.warn('[NotificationSetup] OneSignal registration failed:', regError.message);
+      } else {
+        console.log('[NotificationSetup] OneSignal Player ID registered');
+      }
+    } catch (e) {
+      console.warn('[NotificationSetup] OneSignal registration exception:', e);
+    }
+
     return true;
   } catch (e) {
     console.error('[NotificationSetup] Exception saving token:', e);

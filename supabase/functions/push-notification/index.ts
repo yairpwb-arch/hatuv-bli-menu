@@ -39,42 +39,29 @@ async function sendPush(
 ) {
   if (tokens.length === 0) return;
 
-  const ios     = tokens.filter((t) => t.platform === 'ios').map((t) => t.token);
-  const android = tokens.filter((t) => t.platform === 'android').map((t) => t.token);
-  const unknown = tokens.filter((t) => t.platform !== 'ios' && t.platform !== 'android').map((t) => t.token);
+  // All tokens in the DB are OneSignal Player IDs (registered via /players endpoint).
+  // include_player_ids works for both iOS and Android — no need to split by platform.
+  const playerIds = tokens.map((t) => t.token);
 
-  const sendBatch = async (extra: Record<string, unknown>) => {
-    const res = await fetch('https://onesignal.com/api/v1/notifications', {
-      method: 'POST',
-      headers: {
-        Authorization: `Basic ${ONESIGNAL_REST_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        app_id: ONESIGNAL_APP_ID,
-        headings: { he: title, en: title },
-        contents: { he: body, en: body },
-        data: data ?? {},
-        priority: 10,           // HIGH priority — bypasses Android Doze / battery optimization
-        android_visibility: 1,  // lock screen visibility: public
-        // Note: android_channel_id is NOT set here — the device uses the default channel from
-        // AndroidManifest: com.google.firebase.messaging.default_notification_channel_id = "general"
-        ...extra,
-      }),
-    });
-    const json = await res.json();
-    console.log(`[push] type=${data?.type ?? '?'} sent=${json.recipients ?? 0} errors=${JSON.stringify(json.errors ?? [])} full=${JSON.stringify(json)}`);
-    return json;
-  };
-
-  const results: unknown[] = [];
-  const promises: Promise<void>[] = [];
-  if (ios.length > 0)     promises.push(sendBatch({ include_ios_tokens: ios }).then(r => { results.push({ios: r}); }));
-  if (android.length > 0) promises.push(sendBatch({ include_android_reg_ids: android }).then(r => { results.push({android: r}); }));
-  if (unknown.length > 0) promises.push(sendBatch({ include_player_ids: unknown }).then(r => { results.push({unknown: r}); }));
-  await Promise.all(promises);
-  console.log('[push] OneSignal results:', JSON.stringify(results));
-  return results;
+  const res = await fetch('https://onesignal.com/api/v1/notifications', {
+    method: 'POST',
+    headers: {
+      Authorization: `Basic ${ONESIGNAL_REST_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      app_id: ONESIGNAL_APP_ID,
+      headings: { he: title, en: title },
+      contents: { he: body, en: body },
+      data: data ?? {},
+      priority: 10,
+      android_visibility: 1,
+      include_player_ids: playerIds,
+    }),
+  });
+  const json = await res.json();
+  console.log(`[push] type=${data?.type ?? '?'} sent=${json.recipients ?? 0} errors=${JSON.stringify(json.errors ?? [])} full=${JSON.stringify(json)}`);
+  return [{ all: json }];
 }
 
 // ── User week helpers ─────────────────────────────────────────────────────────
@@ -426,6 +413,17 @@ serve(async (req) => {
         });
         onesignalResult = await res.json();
         console.log('[push] register_device', JSON.stringify(onesignalResult));
+
+        // Save the OneSignal Player ID back to notification_settings so all future
+        // sends use include_player_ids (more reliable than raw FCM/APNs tokens).
+        const onesignalPlayerId = (onesignalResult as any)?.id;
+        if (onesignalPlayerId) {
+          await supabase
+            .from('notification_settings')
+            .update({ player_id: onesignalPlayerId })
+            .eq('user_id', userId);
+          console.log('[push] OneSignal Player ID saved:', onesignalPlayerId);
+        }
         break;
       }
       default:
