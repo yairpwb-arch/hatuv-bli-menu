@@ -61,11 +61,11 @@ async function saveTokenToDatabase(
 
     console.log('[NotificationSetup] Token saved to notification_settings');
 
-    // Register with OneSignal to get a Player ID — replaces the raw FCM/APNs token in the DB
-    // so all sends use include_player_ids (more reliable than raw tokens).
+    // Register with OneSignal — pass FCM token directly to avoid DB read timing issues.
+    // Edge Function registers with OneSignal and upserts the Player ID (or FCM token as fallback).
     try {
       const { error: regError } = await supabase.functions.invoke('push-notification', {
-        body: { type: 'register_device' },
+        body: { type: 'register_device', fcm_token: token, platform },
       });
       if (regError) {
         console.warn('[NotificationSetup] OneSignal registration failed:', regError.message);

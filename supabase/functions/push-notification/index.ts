@@ -368,35 +368,46 @@ serve(async (req) => {
         break;
       }
       case 'register_device': {
-        // Verify caller is an authenticated user (not just service role)
+        // Decode JWT directly — faster and more reliable than supabase.auth.getUser
         let userId: string | null = null;
-        if (isServiceRole) {
-          const { user_id } = body as { user_id?: string };
-          userId = user_id ?? null;
-        } else {
-          const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
-          const { data: { user } } = await supabase.auth.getUser(token);
-          userId = user?.id ?? null;
-        }
+        const rawJwt = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+        try {
+          const [, rawPayload] = rawJwt.split('.');
+          const b64 = rawPayload.replace(/-/g, '+').replace(/_/g, '/');
+          const payload = JSON.parse(atob(b64));
+          userId = payload.sub ?? null;
+        } catch { /* invalid JWT */ }
+        if (isServiceRole) userId = (body as any).user_id ?? userId;
         if (!userId) {
           return new Response(JSON.stringify({ error: 'Unauthorized' }), {
             status: 401,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
-        // Read push token from notification_settings (source of truth)
-        const { data: ns } = await supabase
-          .from('notification_settings')
-          .select('player_id, device_platform')
-          .eq('user_id', userId)
-          .maybeSingle();
-        if (!(ns as any)?.player_id) {
+
+        // Accept FCM token directly from body (primary), or fall back to DB
+        const { fcm_token, platform: bodyPlatform } = body as { fcm_token?: string; platform?: string };
+        let tokenToRegister = fcm_token;
+        let devicePlatform = bodyPlatform ?? 'android';
+
+        if (!tokenToRegister) {
+          const { data: ns } = await supabase
+            .from('notification_settings')
+            .select('player_id, device_platform')
+            .eq('user_id', userId)
+            .maybeSingle();
+          tokenToRegister = (ns as any)?.player_id ?? null;
+          devicePlatform = (ns as any)?.device_platform ?? 'android';
+        }
+
+        if (!tokenToRegister) {
           return new Response(JSON.stringify({ error: 'No push token' }), {
             status: 400,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
-        const deviceType = (ns as any).device_platform === 'ios' ? 0 : 1;
+
+        const deviceType = devicePlatform === 'ios' ? 0 : 1;
         const res = await fetch('https://onesignal.com/api/v1/players', {
           method: 'POST',
           headers: {
@@ -406,24 +417,28 @@ serve(async (req) => {
           body: JSON.stringify({
             app_id: ONESIGNAL_APP_ID,
             device_type: deviceType,
-            identifier: (ns as any).player_id,
+            identifier: tokenToRegister,
             notification_types: 1,
             language: 'he',
           }),
         });
         onesignalResult = await res.json();
-        console.log('[push] register_device', JSON.stringify(onesignalResult));
+        console.log('[push] register_device result:', JSON.stringify(onesignalResult));
 
-        // Save the OneSignal Player ID back to notification_settings so all future
-        // sends use include_player_ids (more reliable than raw FCM/APNs tokens).
-        const onesignalPlayerId = (onesignalResult as any)?.id;
-        if (onesignalPlayerId) {
-          await supabase
-            .from('notification_settings')
-            .update({ player_id: onesignalPlayerId })
-            .eq('user_id', userId);
-          console.log('[push] OneSignal Player ID saved:', onesignalPlayerId);
-        }
+        // Use OneSignal Player ID if returned, otherwise keep the raw FCM token as fallback
+        const onesignalPlayerId = (onesignalResult as any)?.id ?? null;
+        await supabase
+          .from('notification_settings')
+          .upsert(
+            {
+              user_id: userId,
+              player_id: onesignalPlayerId ?? tokenToRegister,
+              device_platform: devicePlatform,
+              notifications_enabled: true,
+            },
+            { onConflict: 'user_id' },
+          );
+        console.log('[push] player saved:', onesignalPlayerId ? `OneSignal ID ${onesignalPlayerId}` : `FCM token (fallback)`);
         break;
       }
       default:
