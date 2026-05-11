@@ -108,7 +108,7 @@ const PageLoader = () => (
 const queryClient = new QueryClient();
 
 function ProtectedRouteInner() {
-  const { user, isLoading, isAdmin } = useAuth();
+  const { user, isLoading, isAdmin, profile } = useAuth();
   const { params, isVisible, minimize, end } = useActiveWorkout();
 
   if (isLoading) {
@@ -125,6 +125,10 @@ function ProtectedRouteInner() {
 
   if (isAdmin) {
     return <Navigate to="/admin" replace />;
+  }
+
+  if (!profile?.is_active) {
+    return <Navigate to="/pricing" replace />;
   }
 
   return (
@@ -166,7 +170,7 @@ function ProtectedRoute() {
 }
 
 function AuthRoute() {
-  const { user, isLoading, isAdmin } = useAuth();
+  const { user, isLoading, isAdmin, profile } = useAuth();
 
   if (isLoading) {
     return (
@@ -177,10 +181,8 @@ function AuthRoute() {
   }
 
   if (user) {
-    // Admin goes to admin dashboard, others go to app
-    if (isAdmin) {
-      return <Navigate to="/admin" replace />;
-    }
+    if (isAdmin) return <Navigate to="/admin" replace />;
+    if (!profile?.is_active) return <Navigate to="/pricing" replace />;
     return <Navigate to="/app" replace />;
   }
 

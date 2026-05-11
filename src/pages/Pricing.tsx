@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -365,7 +365,7 @@ function StepProcessing() {
 
 export default function Pricing() {
   const navigate = useNavigate();
-  const { signUp, signIn } = useAuth();
+  const { signUp, signIn, user: existingUser } = useAuth();
   const { isNative, products, purchasePlan, initialize } = useRevenueCat();
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -373,6 +373,15 @@ export default function Pricing() {
   const [isRegistering, setIsRegistering] = useState(false);
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
+
+  // Already logged-in user with no active subscription — skip registration step
+  useEffect(() => {
+    if (existingUser && step === 1) {
+      setUserId(existingUser.id);
+      if (isNative) initialize(existingUser.id);
+      setStep(2);
+    }
+  }, [existingUser?.id]);
 
   // Step 1: create Supabase account → move to plan selection
   const handleRegistrationSubmit = async (form: RegistrationForm) => {
