@@ -2,3 +2,8 @@ project_id = "bwndknbkchspvottwyho"
 
 [functions.analyze-meal]
 verify_jwt = false
+
+# push-notification is called by pg_cron (no JWT) — verify_jwt must be false.
+# The function enforces its own auth via x-cron-secret / service_role key.
+[functions.push-notification]
+verify_jwt = false
