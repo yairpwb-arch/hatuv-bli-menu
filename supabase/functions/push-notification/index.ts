@@ -171,15 +171,20 @@ async function handlePhaseCheck() {
 
     const startDate = u.profiles?.start_date;
     if (!startDate) continue;
-    const nextWeek = getWeekNumber(startDate) + 1;
-    const { data: newHabits } = await supabase
-      .from('habit_definitions')
-      .select('id')
-      .eq('week_start', nextWeek)
-      .is('user_id', null)
-      .limit(1);
+    const currentWeek = getWeekNumber(startDate);
+    const nextWeek = currentWeek + 1;
 
-    if (newHabits && newHabits.length > 0) {
+    // Fire only when next week starts a new phase AND the current week is NOT
+    // itself a phase start — meaning the user is on the last week of their phase.
+    const [{ data: nextHabits }, { data: currentHabits }] = await Promise.all([
+      supabase.from('habit_definitions').select('id').eq('week_start', nextWeek).is('user_id', null).limit(1),
+      supabase.from('habit_definitions').select('id').eq('week_start', currentWeek).is('user_id', null).limit(1),
+    ]);
+
+    const nextPhaseExists = (nextHabits?.length ?? 0) > 0;
+    const currentIsPhaseStart = (currentHabits?.length ?? 0) > 0;
+
+    if (nextPhaseExists && !currentIsPhaseStart) {
       eligible.push({ userId: u.user_id, token: u.player_id, platform: u.device_platform });
     }
   }
