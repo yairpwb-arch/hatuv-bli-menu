@@ -21,10 +21,10 @@ const corsHeaders = {
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
 // ── OneSignal helper ──────────────────────────────────────────────────────────
-// Routes each token to the correct OneSignal field based on device platform:
-//   iOS     → include_ios_tokens       (raw APNs device token)
-//   Android → include_android_reg_ids  (raw FCM registration ID)
-//   unknown → include_player_ids       (OneSignal Player ID fallback)
+// MassAI approach: route each token to the correct OneSignal field based on platform.
+//   iOS     → include_ios_tokens      (raw APNs device token)
+//   Android → include_android_reg_ids (raw FCM registration ID)
+//   unknown → include_player_ids      (OneSignal Player ID fallback)
 
 interface TokenRecord {
   token: string;
@@ -39,29 +39,44 @@ async function sendPush(
 ) {
   if (tokens.length === 0) return;
 
-  // All tokens in the DB are OneSignal Player IDs (registered via /players endpoint).
-  // include_player_ids works for both iOS and Android — no need to split by platform.
-  const playerIds = tokens.map((t) => t.token);
+  // Split by platform for correct OneSignal field routing
+  const ios: string[] = [];
+  const android: string[] = [];
+  const unknown: string[] = [];
 
-  const res = await fetch('https://onesignal.com/api/v1/notifications', {
-    method: 'POST',
-    headers: {
-      Authorization: `Basic ${ONESIGNAL_REST_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      app_id: ONESIGNAL_APP_ID,
-      headings: { he: title, en: title },
-      contents: { he: body, en: body },
-      data: data ?? {},
-      priority: 10,
-      android_visibility: 1,
-      include_player_ids: playerIds,
-    }),
-  });
-  const json = await res.json();
-  console.log(`[push] type=${data?.type ?? '?'} sent=${json.recipients ?? 0} errors=${JSON.stringify(json.errors ?? [])} full=${JSON.stringify(json)}`);
-  return [{ all: json }];
+  for (const t of tokens) {
+    if (t.platform === 'ios') ios.push(t.token);
+    else if (t.platform === 'android') android.push(t.token);
+    else unknown.push(t.token);
+  }
+
+  const sendBatch = async (body_ext: Record<string, unknown>) => {
+    const res = await fetch('https://onesignal.com/api/v1/notifications', {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${ONESIGNAL_REST_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        app_id: ONESIGNAL_APP_ID,
+        headings: { he: title, en: title },
+        contents: { he: body, en: body },
+        data: data ?? {},
+        priority: 10,
+        android_visibility: 1,
+        ...body_ext,
+      }),
+    });
+    const json = await res.json();
+    console.log(`[push] batch sent=${json.recipients ?? 0} errors=${JSON.stringify(json.errors ?? [])} full=${JSON.stringify(json)}`);
+    return json;
+  };
+
+  const results: unknown[] = [];
+  if (ios.length > 0)     results.push(await sendBatch({ include_ios_tokens: ios }));
+  if (android.length > 0) results.push(await sendBatch({ include_android_reg_ids: android }));
+  if (unknown.length > 0) results.push(await sendBatch({ include_player_ids: unknown }));
+  return results;
 }
 
 // ── User week helpers ─────────────────────────────────────────────────────────
@@ -79,7 +94,6 @@ function getDayInProgram(startDate: string): number {
 
 // ── Timezone helpers ──────────────────────────────────────────────────────────
 
-/** Returns the current local hour (0-23) for a given IANA timezone. */
 function getUserLocalHour(timezone: string | null): number {
   const tz = timezone || 'Asia/Jerusalem';
   const now = new Date();
@@ -89,9 +103,8 @@ function getUserLocalHour(timezone: string | null): number {
 
 // ── notification_logs helpers ─────────────────────────────────────────────────
 
-/** Returns true if this notification type was already sent to userId today (IST). */
 async function alreadySentToday(userId: string, type: string): Promise<boolean> {
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' }); // YYYY-MM-DD
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
   const { data } = await supabase
     .from('notification_logs')
     .select('id')
@@ -103,7 +116,6 @@ async function alreadySentToday(userId: string, type: string): Promise<boolean> 
   return (data?.length ?? 0) > 0;
 }
 
-/** Inserts a row into notification_logs for each userId after successful send. */
 async function logSent(userIds: string[], type: string): Promise<void> {
   if (userIds.length === 0) return;
   const rows = userIds.map((user_id) => ({ user_id, notification_type: type }));
@@ -112,8 +124,6 @@ async function logSent(userIds: string[], type: string): Promise<void> {
 }
 
 // ── Fetch active users with push tokens ───────────────────────────────────────
-// Reads from notification_settings (source of truth) joined with profiles for
-// is_active and start_date. Filters out rows without a player_id.
 
 async function fetchEligibleUsers(includeStartDate = false) {
   const selectCols = includeStartDate
@@ -131,17 +141,15 @@ async function fetchEligibleUsers(includeStartDate = false) {
     return [];
   }
 
-  // Keep only active users (inner join guarantees profile exists; filter is_active here)
   return (data ?? []).filter((s: any) => s.profiles?.is_active === true);
 }
 
 // ── Notification handlers ─────────────────────────────────────────────────────
 
-/** 1. משפט יומי — כל יום ב-10:00 IST */
 async function handleDailyQuote() {
   const users = await fetchEligibleUsers(false);
-
   const eligible: (TokenRecord & { userId: string })[] = [];
+
   for (const u of users as any[]) {
     if (getUserLocalHour(u.timezone) !== 10) continue;
     if (await alreadySentToday(u.user_id, 'daily_quote')) continue;
@@ -153,11 +161,10 @@ async function handleDailyQuote() {
   await logSent(eligible.map((u) => u.userId), 'daily_quote');
 }
 
-/** 2. בדיקת מעבר שלב — כל שבת ב-19:00 IST */
 async function handlePhaseCheck() {
   const users = await fetchEligibleUsers(true);
-
   const eligible: (TokenRecord & { userId: string })[] = [];
+
   for (const u of users as any[]) {
     if (getUserLocalHour(u.timezone) !== 19) continue;
     if (await alreadySentToday(u.user_id, 'phase_check')) continue;
@@ -187,11 +194,10 @@ async function handlePhaseCheck() {
   await logSent(eligible.map((u) => u.userId), 'phase_check');
 }
 
-/** 3. הרגלים חדשים — כל ראשון ב-09:00 IST */
 async function handleNewHabits() {
   const users = await fetchEligibleUsers(true);
-
   const eligible: (TokenRecord & { userId: string })[] = [];
+
   for (const u of users as any[]) {
     if (getUserLocalHour(u.timezone) !== 9) continue;
     if (await alreadySentToday(u.user_id, 'new_habits')) continue;
@@ -225,11 +231,10 @@ async function handleNewHabits() {
   await logSent(eligible.map((u) => u.userId), 'new_habits');
 }
 
-/** 4. תזכורת שקילה + שאלון — כל חמישי ב-20:00 IST */
 async function handleWeighReminder() {
   const users = await fetchEligibleUsers(false);
-
   const eligible: (TokenRecord & { userId: string })[] = [];
+
   for (const u of users as any[]) {
     if (getUserLocalHour(u.timezone) !== 20) continue;
     if (await alreadySentToday(u.user_id, 'weigh_reminder')) continue;
@@ -246,11 +251,10 @@ async function handleWeighReminder() {
   await logSent(eligible.map((u) => u.userId), 'weigh_reminder');
 }
 
-/** 5. תזכורת שאלון אם עוד לא ענה — שישי ב-12:00 ושבת ב-16:00 IST */
 async function handleSurveyFollowup() {
   const users = await fetchEligibleUsers(true);
-
   const eligible: (TokenRecord & { userId: string })[] = [];
+
   for (const u of users as any[]) {
     const localHour = getUserLocalHour(u.timezone);
     const now = new Date(new Date().toLocaleString('en-US', { timeZone: u.timezone || 'Asia/Jerusalem' }));
@@ -296,12 +300,10 @@ serve(async (req) => {
     const isServiceRole = auth.includes(SERVICE_ROLE_KEY);
     const isCron = CRON_SECRET && cronHeader === CRON_SECRET;
 
-    // Parse body first so we can check type for register_device auth bypass
     const body = await req.json().catch(() => ({}));
     const { type } = body;
 
-    // register_device and send_test accept any valid Supabase user JWT — check auth per-case
-    if (!isServiceRole && !isCron && type !== 'register_device' && type !== 'send_test') {
+    if (!isServiceRole && !isCron && type !== 'send_test') {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -315,27 +317,18 @@ serve(async (req) => {
       case 'new_habits':      onesignalResult = await handleNewHabits();      break;
       case 'weigh_reminder':  onesignalResult = await handleWeighReminder();  break;
       case 'survey_followup': onesignalResult = await handleSurveyFollowup(); break;
-      case 'check_delivery': {
-        const { id } = body as { id?: string };
-        if (!id) return new Response(JSON.stringify({ error: 'missing id' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-        const r = await fetch(`https://onesignal.com/api/v1/notifications/${id}?app_id=${ONESIGNAL_APP_ID}`, {
-          headers: { Authorization: `Basic ${ONESIGNAL_REST_API_KEY}` },
-        });
-        onesignalResult = await r.json();
-        break;
-      }
+
       case 'send_test': {
         let pushToken: string;
         let pushPlatform: string;
 
         if (isServiceRole) {
-          // Admin call: token + platform supplied directly in body
           const { token, platform } = body as { token?: string; platform?: string };
           if (!token) return new Response(JSON.stringify({ error: 'missing token' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
           pushToken = token;
-          pushPlatform = platform ?? 'ios';
+          pushPlatform = platform ?? 'android';
         } else {
-          // User call: decode JWT payload directly to extract user_id
+          // Decode JWT directly — faster than supabase.auth.getUser()
           const jwt = auth.startsWith('Bearer ') ? auth.slice(7) : '';
           let userId: string | null = null;
           try {
@@ -346,14 +339,17 @@ serve(async (req) => {
           } catch { /* invalid JWT */ }
           if (!userId) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-          // Read push token from notification_settings (source of truth)
           const { data: ns } = await supabase
             .from('notification_settings')
             .select('player_id, device_platform')
             .eq('user_id', userId)
             .maybeSingle();
+
           if (!(ns as any)?.player_id) {
-            return new Response(JSON.stringify({ ok: false, error: 'no_push_token', detail: 'לא נמצא push token — ודא שהתראות מופעלות במכשיר זה' }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+            return new Response(JSON.stringify({ ok: false, error: 'no_push_token', detail: 'לא נמצא push token — ודא שהתראות מופעלות במכשיר זה' }), {
+              status: 200,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
           }
           pushToken = (ns as any).player_id as string;
           pushPlatform = ((ns as any).device_platform as string) ?? 'android';
@@ -367,80 +363,7 @@ serve(async (req) => {
         );
         break;
       }
-      case 'register_device': {
-        // Decode JWT directly — faster and more reliable than supabase.auth.getUser
-        let userId: string | null = null;
-        const rawJwt = auth.startsWith('Bearer ') ? auth.slice(7) : '';
-        try {
-          const [, rawPayload] = rawJwt.split('.');
-          const b64 = rawPayload.replace(/-/g, '+').replace(/_/g, '/');
-          const payload = JSON.parse(atob(b64));
-          userId = payload.sub ?? null;
-        } catch { /* invalid JWT */ }
-        if (isServiceRole) userId = (body as any).user_id ?? userId;
-        if (!userId) {
-          return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-            status: 401,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
-        }
 
-        // Accept FCM token directly from body (primary), or fall back to DB
-        const { fcm_token, platform: bodyPlatform } = body as { fcm_token?: string; platform?: string };
-        let tokenToRegister = fcm_token;
-        let devicePlatform = bodyPlatform ?? 'android';
-
-        if (!tokenToRegister) {
-          const { data: ns } = await supabase
-            .from('notification_settings')
-            .select('player_id, device_platform')
-            .eq('user_id', userId)
-            .maybeSingle();
-          tokenToRegister = (ns as any)?.player_id ?? null;
-          devicePlatform = (ns as any)?.device_platform ?? 'android';
-        }
-
-        if (!tokenToRegister) {
-          return new Response(JSON.stringify({ error: 'No push token' }), {
-            status: 400,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
-        }
-
-        const deviceType = devicePlatform === 'ios' ? 0 : 1;
-        const res = await fetch('https://onesignal.com/api/v1/players', {
-          method: 'POST',
-          headers: {
-            Authorization: `Basic ${ONESIGNAL_REST_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            app_id: ONESIGNAL_APP_ID,
-            device_type: deviceType,
-            identifier: tokenToRegister,
-            notification_types: 1,
-            language: 'he',
-          }),
-        });
-        onesignalResult = await res.json();
-        console.log('[push] register_device result:', JSON.stringify(onesignalResult));
-
-        // Use OneSignal Player ID if returned, otherwise keep the raw FCM token as fallback
-        const onesignalPlayerId = (onesignalResult as any)?.id ?? null;
-        await supabase
-          .from('notification_settings')
-          .upsert(
-            {
-              user_id: userId,
-              player_id: onesignalPlayerId ?? tokenToRegister,
-              device_platform: devicePlatform,
-              notifications_enabled: true,
-            },
-            { onConflict: 'user_id' },
-          );
-        console.log('[push] player saved:', onesignalPlayerId ? `OneSignal ID ${onesignalPlayerId}` : `FCM token (fallback)`);
-        break;
-      }
       default:
         return new Response(JSON.stringify({ error: `Unknown type: ${type}` }), {
           status: 400,

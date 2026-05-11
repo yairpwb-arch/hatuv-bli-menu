@@ -139,11 +139,7 @@ export default function AppSettings() {
 
     if (enabled) {
       if (isNative && permissionStatus === 'denied') {
-        toast({
-          title: 'הרשאות חסומות',
-          description: 'יש לאפשר התראות בהגדרות המכשיר ידנית',
-          variant: 'destructive',
-        });
+        toast({ title: 'הרשאות חסומות', description: 'יש לאפשר התראות בהגדרות המכשיר ידנית', variant: 'destructive' });
         return;
       }
       const success = await enableNotifications(user.id);
@@ -151,8 +147,21 @@ export default function AppSettings() {
         setNotifEnabled(true);
         await refreshProfile();
         toast({ title: 'התראות הופעלו ✓', description: 'תקבל תזכורות יומיות ושבועיות מהאפליקציה' });
-      } else if (permissionStatus === 'denied') {
-        toast({ title: 'הרשאות חסומות', description: 'יש לאפשר התראות בהגדרות המכשיר ידנית', variant: 'destructive' });
+      } else {
+        // MassAI fallback: if OS permission was granted but token timed out,
+        // still mark as enabled so the user can retry registration later.
+        const osGranted = await getPermissionStatus();
+        if (osGranted) {
+          const tz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Jerusalem'; } catch { return 'Asia/Jerusalem'; } })();
+          await (supabase as any)
+            .from('notification_settings')
+            .upsert({ user_id: user.id, notifications_enabled: true, timezone: tz }, { onConflict: 'user_id' });
+          setNotifEnabled(true);
+          await refreshProfile();
+          toast({ title: 'התראות הופעלו', description: 'ממתין לרישום המכשיר — לחץ "נסה לרשום מחדש" אם לא מגיע' });
+        } else {
+          toast({ title: 'הרשאות חסומות', description: 'יש לאפשר התראות בהגדרות המכשיר ידנית', variant: 'destructive' });
+        }
       }
     } else {
       const success = await disableNotifications(user.id);

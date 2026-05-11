@@ -28,7 +28,8 @@ function handleNotificationTap(type: string) {
   window.location.hash = '#' + (routes[type] ?? '/app');
 }
 
-// ── Saves the push token to notification_settings via upsert (never fails silently) ──
+// Saves the raw FCM / APNs token directly to notification_settings.
+// MassAI approach: store the raw platform token — no OneSignal Player ID lookup.
 async function saveTokenToDatabase(
   token: string,
   platform: 'ios' | 'android',
@@ -53,29 +54,7 @@ async function saveTokenToDatabase(
       return false;
     }
 
-    // Mirror to profiles so useAuth can still read the flag
-    await supabase
-      .from('profiles')
-      .update({ notifications_enabled: true, push_token: token, device_platform: platform } as any)
-      .eq('id', userId);
-
-    console.log('[NotificationSetup] Token saved to notification_settings');
-
-    // Register with OneSignal — pass FCM token directly to avoid DB read timing issues.
-    // Edge Function registers with OneSignal and upserts the Player ID (or FCM token as fallback).
-    try {
-      const { error: regError } = await supabase.functions.invoke('push-notification', {
-        body: { type: 'register_device', fcm_token: token, platform },
-      });
-      if (regError) {
-        console.warn('[NotificationSetup] OneSignal registration failed:', regError.message);
-      } else {
-        console.log('[NotificationSetup] OneSignal Player ID registered');
-      }
-    } catch (e) {
-      console.warn('[NotificationSetup] OneSignal registration exception:', e);
-    }
-
+    console.log('[NotificationSetup] Token saved to DB');
     return true;
   } catch (e) {
     console.error('[NotificationSetup] Exception saving token:', e);
@@ -87,8 +66,6 @@ export function useNotificationSetup() {
   const [isLoading, setIsLoading] = useState(false);
   const [permissionStatus, setPermissionStatus] = useState<'granted' | 'denied' | 'not_determined'>('not_determined');
   const pushTokenRef = useRef<string | null>(null);
-  // userId stored for direct save from registration listener after enableNotifications
-  const pendingUserIdRef = useRef<string | null>(null);
 
   // ─── Persistent listeners — set up once on mount ───────────────────────────
   useEffect(() => {
@@ -117,24 +94,12 @@ export function useNotificationSetup() {
         }
       }
 
-      // Token received from OS → cache + save
-      // If pendingUserIdRef is set (enableNotifications just called register()),
-      // save directly without a DB round-trip. Otherwise check notifications_enabled
-      // before saving (token refresh by OS when user had notifications enabled).
+      // Auto-save token when OS refreshes it and notifications are already enabled
       registrationHandle = await PushNotifications.addListener('registration', async ({ value }) => {
         if (!value) return;
-        console.log('[NotificationSetup] Push token received');
+        console.log('[NotificationSetup] Push token received and cached');
         pushTokenRef.current = value;
 
-        // Direct save path — called right after enableNotifications
-        if (pendingUserIdRef.current) {
-          const uid = pendingUserIdRef.current;
-          pendingUserIdRef.current = null;
-          await saveTokenToDatabase(value, getPlatform(), uid);
-          return;
-        }
-
-        // Token refresh path — only save if user still has notifications enabled
         try {
           const { data: { user } } = await supabase.auth.getUser();
           if (user?.id) {
@@ -146,6 +111,7 @@ export function useNotificationSetup() {
 
             if ((existing as any)?.notifications_enabled) {
               await saveTokenToDatabase(value, getPlatform(), user.id);
+              console.log('[NotificationSetup] Token auto-saved to DB');
             }
           }
         } catch (e) {
@@ -153,7 +119,7 @@ export function useNotificationSetup() {
         }
       });
 
-      // Log registration errors to DB for debugging (e.g. wrong APNs env, missing entitlement)
+      // Log registration errors to DB for debugging
       errorHandle = await PushNotifications.addListener('registrationError', async (err) => {
         const errorMsg = String((err as any)?.error ?? JSON.stringify(err));
         console.error('[NotificationSetup] Registration error:', errorMsg);
@@ -244,9 +210,43 @@ export function useNotificationSetup() {
     }
   }, []);
 
+  // ─── Get device token (MassAI approach — wait up to 15s) ──────────────────
+  // Sets up a one-time listener and waits for the FCM / APNs token.
+  // Returns null if the token doesn't arrive within 15 seconds.
+
+  const getDeviceToken = useCallback((): Promise<string | null> => {
+    if (pushTokenRef.current) {
+      console.log('[NotificationSetup] Using cached push token');
+      return Promise.resolve(pushTokenRef.current);
+    }
+
+    return new Promise(async (resolve) => {
+      let handle: any;
+
+      // iOS APNs registration can take up to 15s on first run
+      const timer = setTimeout(() => {
+        console.warn('[NotificationSetup] Token timeout after 15s');
+        handle?.remove();
+        resolve(null);
+      }, 15_000);
+
+      try {
+        handle = await PushNotifications.addListener('registration', ({ value }) => {
+          clearTimeout(timer);
+          handle?.remove();
+          if (value) pushTokenRef.current = value;
+          resolve(value || null);
+        });
+        await PushNotifications.register();
+      } catch (e) {
+        clearTimeout(timer);
+        handle?.remove();
+        resolve(null);
+      }
+    });
+  }, []);
+
   // ─── Enable notifications ──────────────────────────────────────────────────
-  // Optimistic approach: mark enabled immediately, token arrives async via registration listener.
-  // This avoids the 15s timeout race condition on slow FCM delivery.
 
   const enableNotifications = useCallback(async (userId: string): Promise<boolean> => {
     console.log('[NotificationSetup] ===== ENABLE NOTIFICATIONS =====');
@@ -269,48 +269,42 @@ export function useNotificationSetup() {
         }
       }
 
-      // Mark enabled in DB immediately — the mount-time registration listener
-      // will save the token and call register_device when FCM delivers it.
-      const { error } = await (supabase as any)
-        .from('notification_settings')
-        .upsert({ user_id: userId, notifications_enabled: true }, { onConflict: 'user_id' });
-      if (error) console.warn('[NotificationSetup] upsert enabled flag failed:', error.message);
+      const token = await getDeviceToken();
+      if (!token) {
+        console.error('[NotificationSetup] No push token received after 15s');
+        setIsLoading(false);
+        return false;
+      }
 
-      // Set userId so the registration listener can save the token directly
-      // (bypasses DB round-trip check which can race with the upsert above)
-      pendingUserIdRef.current = userId;
-
-      // Trigger FCM registration — fires the registration event handled by the listener above.
-      await PushNotifications.register();
-
+      const platform = getPlatform();
+      const saved = await saveTokenToDatabase(token, platform, userId);
       setIsLoading(false);
-      console.log('[NotificationSetup] ===== ENABLED (token arriving async) =====');
-      return true;
+
+      if (saved) {
+        console.log('[NotificationSetup] ===== SETUP COMPLETE =====');
+      }
+      return saved;
     } catch (e) {
       console.error('[NotificationSetup] Unexpected error:', e);
       setIsLoading(false);
       return false;
     }
-  }, [getPermissionStatus, canRequestPermission, requestPermission]);
+  }, [getPermissionStatus, canRequestPermission, requestPermission, getDeviceToken]);
 
   // ─── Disable notifications ─────────────────────────────────────────────────
 
   const disableNotifications = useCallback(async (userId: string): Promise<boolean> => {
     setIsLoading(true);
     try {
-      await supabase
+      const { error } = await supabase
         .from('notification_settings' as any)
-        .upsert(
-          { user_id: userId, notifications_enabled: false },
-          { onConflict: 'user_id' },
-        );
-      // Mirror to profiles
-      await supabase
-        .from('profiles')
-        .update({ notifications_enabled: false } as any)
-        .eq('id', userId);
-
+        .update({ notifications_enabled: false })
+        .eq('user_id', userId);
       setIsLoading(false);
+      if (error) {
+        console.error('[NotificationSetup] DB error disabling:', error.message);
+        return false;
+      }
       return true;
     } catch (e) {
       console.error('[NotificationSetup] Disable error:', e);
@@ -319,18 +313,26 @@ export function useNotificationSetup() {
     }
   }, []);
 
+  // ─── Retry registration ────────────────────────────────────────────────────
+  // Triggers another FCM/APNs registration attempt and saves if token arrives.
+
   const retryRegistration = useCallback(async (userId: string): Promise<void> => {
     if (!Capacitor.isNativePlatform()) return;
     try {
       const { receive } = await PushNotifications.checkPermissions();
       if (receive !== 'granted') return;
-      pendingUserIdRef.current = userId;
-      await PushNotifications.register();
-      console.log('[NotificationSetup] Retry registration triggered');
+
+      const token = await getDeviceToken();
+      if (token) {
+        await saveTokenToDatabase(token, getPlatform(), userId);
+        console.log('[NotificationSetup] Retry: token saved');
+      } else {
+        console.warn('[NotificationSetup] Retry: token still not received');
+      }
     } catch (e) {
       console.warn('[NotificationSetup] Retry registration failed:', e);
     }
-  }, []);
+  }, [getDeviceToken]);
 
   return {
     enableNotifications,

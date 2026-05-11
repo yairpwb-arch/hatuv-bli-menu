@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C \"c:\\\\Users\\\\Student_CY\\\\hatuv-bli-menu\" add src/hooks/useNotificationSetup.ts src/pages/AppSettings.tsx)",
+      "Bash(git -C 'c:\\\\Users\\\\Student_CY\\\\hatuv-bli-menu' commit -m ' *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Student_CY\\\\Documents\\\\מפתחות API בשביל האפליקציה\\\\msssai\" -Recurse -Force)",
+      "Bash(Select-Object -First 50)",
+      "PowerShell(head -50)",
+      "PowerShell(dir \"C:\\\\Users\\\\Student_CY\\\\Documents\\\\מפתחות API בשביל האפליקציה\\\\msssai\\\\supabase\" -Recurse | Where-Object { $_.Extension -in '.ts', '.sql' } | Select-Object FullName)"
+    ]
+  }
+}
