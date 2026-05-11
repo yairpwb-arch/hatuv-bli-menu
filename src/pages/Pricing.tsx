@@ -321,6 +321,23 @@ function StepPlanSelection({
           </CardContent>
         </Card>
       </div>
+
+      {/* Terms of Use — Apple guideline 3.1.2(c) */}
+      <p className="text-center text-xs text-muted-foreground leading-relaxed">
+        בלחיצה על &ldquo;הצטרף&rdquo; אתה מסכים{' '}
+        <button
+          className="text-primary underline underline-offset-2 font-medium"
+          onClick={() =>
+            window.open(
+              'https://docs.google.com/document/d/1PquUiaPZ6_v2TYH-qOlAbxGqwjpf8E0-hqzYtmomebs/edit?usp=sharing',
+              '_blank',
+            )
+          }
+        >
+          לתנאי השימוש
+        </button>{' '}
+        של האפליקציה
+      </p>
     </div>
   );
 }
