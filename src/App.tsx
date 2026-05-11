@@ -35,8 +35,8 @@ function ScrollToTop() {
 
 /**
  * Re-registers for push token on app startup if notifications were previously enabled.
- * Never auto-requests permission — only re-registers if OS permission is already granted.
- * New users: if notifications_enabled defaults to true in DB, will trigger permission dialog.
+ * Reads from notification_settings (source of truth, not profiles).
+ * Never auto-requests permission — only calls enableNotifications if OS permission is granted.
  */
 function NotificationPermissionTrigger() {
   const { user } = useAuth();
@@ -50,13 +50,13 @@ function NotificationPermissionTrigger() {
     const check = async () => {
       try {
         const { data } = await supabase
-          .from('profiles')
+          .from('notification_settings' as any)
           .select('notifications_enabled')
-          .eq('id', user.id)
+          .eq('user_id', user.id)
           .maybeSingle();
 
         if ((data as any)?.notifications_enabled === true) {
-          console.log('[NotificationTrigger] Running push setup for user', user.id);
+          console.log('[NotificationTrigger] Notifications enabled — re-registering token for user', user.id);
           triggered.current = true;
           await enableNotifications(user.id);
         }
