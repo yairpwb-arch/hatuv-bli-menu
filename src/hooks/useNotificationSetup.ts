@@ -87,6 +87,8 @@ export function useNotificationSetup() {
   const [isLoading, setIsLoading] = useState(false);
   const [permissionStatus, setPermissionStatus] = useState<'granted' | 'denied' | 'not_determined'>('not_determined');
   const pushTokenRef = useRef<string | null>(null);
+  // userId stored for direct save from registration listener after enableNotifications
+  const pendingUserIdRef = useRef<string | null>(null);
 
   // ─── Persistent listeners — set up once on mount ───────────────────────────
   useEffect(() => {
@@ -115,16 +117,27 @@ export function useNotificationSetup() {
         }
       }
 
-      // Token received from OS → cache + auto-save if notifications already enabled
+      // Token received from OS → cache + save
+      // If pendingUserIdRef is set (enableNotifications just called register()),
+      // save directly without a DB round-trip. Otherwise check notifications_enabled
+      // before saving (token refresh by OS when user had notifications enabled).
       registrationHandle = await PushNotifications.addListener('registration', async ({ value }) => {
         if (!value) return;
         console.log('[NotificationSetup] Push token received');
         pushTokenRef.current = value;
 
+        // Direct save path — called right after enableNotifications
+        if (pendingUserIdRef.current) {
+          const uid = pendingUserIdRef.current;
+          pendingUserIdRef.current = null;
+          await saveTokenToDatabase(value, getPlatform(), uid);
+          return;
+        }
+
+        // Token refresh path — only save if user still has notifications enabled
         try {
           const { data: { user } } = await supabase.auth.getUser();
           if (user?.id) {
-            // Check notification_settings (source of truth)
             const { data: existing } = await supabase
               .from('notification_settings' as any)
               .select('notifications_enabled')
@@ -132,7 +145,6 @@ export function useNotificationSetup() {
               .maybeSingle();
 
             if ((existing as any)?.notifications_enabled) {
-              // Token refreshed by OS — update it
               await saveTokenToDatabase(value, getPlatform(), user.id);
             }
           }
@@ -264,6 +276,10 @@ export function useNotificationSetup() {
         .upsert({ user_id: userId, notifications_enabled: true }, { onConflict: 'user_id' });
       if (error) console.warn('[NotificationSetup] upsert enabled flag failed:', error.message);
 
+      // Set userId so the registration listener can save the token directly
+      // (bypasses DB round-trip check which can race with the upsert above)
+      pendingUserIdRef.current = userId;
+
       // Trigger FCM registration — fires the registration event handled by the listener above.
       await PushNotifications.register();
 
@@ -303,11 +319,25 @@ export function useNotificationSetup() {
     }
   }, []);
 
+  const retryRegistration = useCallback(async (userId: string): Promise<void> => {
+    if (!Capacitor.isNativePlatform()) return;
+    try {
+      const { receive } = await PushNotifications.checkPermissions();
+      if (receive !== 'granted') return;
+      pendingUserIdRef.current = userId;
+      await PushNotifications.register();
+      console.log('[NotificationSetup] Retry registration triggered');
+    } catch (e) {
+      console.warn('[NotificationSetup] Retry registration failed:', e);
+    }
+  }, []);
+
   return {
     enableNotifications,
     disableNotifications,
     getPermissionStatus,
     canRequestPermission,
+    retryRegistration,
     permissionStatus,
     isLoading,
   };

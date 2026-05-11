@@ -72,13 +72,15 @@ export default function AppSettings() {
     enableNotifications,
     disableNotifications,
     getPermissionStatus,
+    retryRegistration,
     permissionStatus,
     isLoading: notifLoading,
   } = useNotificationSetup();
 
-  // Notifications state — driven by profile.notifications_enabled
+  // Notifications state — driven by notification_settings table
   const [notifEnabled, setNotifEnabled] = useState<boolean>(false);
   const [hasToken, setHasToken] = useState<boolean>(false);
+  const [registrationError, setRegistrationError] = useState<string | null>(null);
   const [showSources, setShowSources] = useState(false);
 
   // Test notification state
@@ -93,11 +95,12 @@ export default function AppSettings() {
     const fetchNS = async () => {
       const { data } = await supabase
         .from('notification_settings' as any)
-        .select('notifications_enabled, player_id')
+        .select('notifications_enabled, player_id, registration_error')
         .eq('user_id', user.id)
         .maybeSingle();
       setNotifEnabled((data as any)?.notifications_enabled ?? false);
       setHasToken(!!((data as any)?.player_id));
+      setRegistrationError((data as any)?.registration_error ?? null);
     };
     fetchNS();
 
@@ -112,6 +115,7 @@ export default function AppSettings() {
           if (row) {
             setNotifEnabled(!!row.notifications_enabled);
             setHasToken(!!row.player_id);
+            setRegistrationError(row.registration_error ?? null);
           }
         },
       )
@@ -218,7 +222,8 @@ export default function AppSettings() {
     if (!isNative) return 'זמין רק באפליקציה הנייד (iOS / Android)';
     if (permissionStatus === 'denied') return 'הרשאה נדחתה — אפשר ידנית בהגדרות המכשיר';
     if (!notifEnabled) return 'לחץ להפעלת התראות';
-    if (!hasToken) return 'ממתין לרישום המכשיר... (עד 30 שניות)';
+    if (!hasToken && registrationError) return 'שגיאת רישום FCM — לחץ "נסה שוב" למטה';
+    if (!hasToken) return 'ממתין לרישום המכשיר... לחץ "נסה שוב" אם תקוע';
     return 'תקבל תזכורות: משפט יומי, שקילה, שאלון ועוד';
   };
 
@@ -316,6 +321,30 @@ export default function AppSettings() {
               </div>
             }
           />
+
+          {/* Retry button + error — when enabled but no token yet */}
+          {notifEnabled && !hasToken && isNative && (
+            <div className="px-4 py-3 space-y-2">
+              {registrationError && (
+                <div className="flex items-start gap-2 rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2 text-xs text-destructive" dir="rtl">
+                  <XCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold mb-0.5">שגיאת FCM:</p>
+                    <p className="break-all opacity-80">{registrationError}</p>
+                  </div>
+                </div>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full h-9 text-sm gap-2"
+                onClick={() => user && retryRegistration(user.id)}
+              >
+                <Bell className="h-3.5 w-3.5" />
+                נסה לרשום מחדש
+              </Button>
+            </div>
+          )}
 
           {/* Test notification button — only when notifications are active AND token registered */}
           {notifEnabled && hasToken && isNative && (
