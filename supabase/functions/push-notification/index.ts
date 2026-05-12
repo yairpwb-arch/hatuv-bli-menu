@@ -81,7 +81,9 @@ async function sendFcmBatch(
 
   let sa: { project_id: string; client_email: string; private_key: string };
   try {
-    sa = JSON.parse(FIREBASE_SA_JSON);
+    // Secret is stored as base64 to avoid shell-escaping issues with JSON quotes
+    const decoded = atob(FIREBASE_SA_JSON);
+    sa = JSON.parse(decoded);
   } catch (e) {
     return { sent: 0, errors: [`Invalid FIREBASE_SERVICE_ACCOUNT_JSON: ${e}`] };
   }
