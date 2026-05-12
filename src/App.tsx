@@ -33,6 +33,30 @@ function ScrollToTop() {
   return null;
 }
 
+// Requests step counter (ACTIVITY_RECOGNITION) permission once at app startup.
+function StepPermissionTrigger() {
+  const { user } = useAuth();
+  const triggered = useRef(false);
+
+  useEffect(() => {
+    if (!user || triggered.current) return;
+    if (!Capacitor.isNativePlatform()) return;
+    triggered.current = true;
+
+    (async () => {
+      try {
+        const { CapacitorPedometer } = await import('@capgo/capacitor-pedometer');
+        const perm = await CapacitorPedometer.checkPermissions();
+        if (perm.activityRecognition !== 'granted') {
+          await CapacitorPedometer.requestPermissions();
+        }
+      } catch { /* plugin not available — ignore */ }
+    })();
+  }, [user?.id]);
+
+  return null;
+}
+
 /**
  * Re-registers for push token on app startup if notifications were previously enabled.
  * Reads from notification_settings (source of truth, not profiles).
@@ -134,6 +158,7 @@ function ProtectedRouteInner() {
   return (
     <div className="min-h-screen bg-background">
       <NotificationPermissionTrigger />
+      <StepPermissionTrigger />
       <AppHeader />
       <Outlet />
       <BottomNav />

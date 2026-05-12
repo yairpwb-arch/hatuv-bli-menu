@@ -96,8 +96,8 @@ serve(async (req) => {
       });
     }
 
-    // Update profile with extra fields
-    const updateData: Record<string, unknown> = {};
+    // Update profile — always activate admin-created users regardless of trigger default
+    const updateData: Record<string, unknown> = { is_active: true };
     if (start_date) updateData.start_date = start_date;
     if (height) updateData.height = parseFloat(height);
     if (initial_weight) {
@@ -109,21 +109,19 @@ serve(async (req) => {
     if (birthdate) updateData.birthdate = birthdate;
     if (target_weight) updateData.target_weight = parseFloat(target_weight);
 
-    if (Object.keys(updateData).length > 0) {
-      await fetch(
-        `${SUPABASE_URL}/rest/v1/profiles?id=eq.${newUser.id}`,
-        {
-          method: 'PATCH',
-          headers: {
-            authorization: `Bearer ${SERVICE_ROLE_KEY}`,
-            apikey: SERVICE_ROLE_KEY,
-            'Content-Type': 'application/json',
-            Prefer: 'return=minimal',
-          },
-          body: JSON.stringify(updateData),
-        }
-      );
-    }
+    await fetch(
+      `${SUPABASE_URL}/rest/v1/profiles?id=eq.${newUser.id}`,
+      {
+        method: 'PATCH',
+        headers: {
+          authorization: `Bearer ${SERVICE_ROLE_KEY}`,
+          apikey: SERVICE_ROLE_KEY,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify(updateData),
+      }
+    );
 
     return new Response(JSON.stringify({ user: newUser }), {
       status: 200,

@@ -272,7 +272,7 @@ export default function AdminUsers() {
 
   const fetchUsers = useCallback(async () => {
     setIsLoading(true);
-    const { data, error } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
+    const { data, error } = await supabase.from('profiles').select('*').eq('is_active', true).order('created_at', { ascending: false });
     if (error) { toast({ title: 'שגיאה', description: 'לא ניתן לטעון משתמשים', variant: 'destructive' }); }
     else { setUsers(((data || []) as unknown as User[]).filter(u => !adminUserIds.includes(u.id))); }
     setIsLoading(false);
