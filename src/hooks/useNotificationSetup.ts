@@ -256,14 +256,14 @@ export function useNotificationSetup() {
       let granted = await getPermissionStatus();
 
       if (!granted) {
-        const canRequest = await canRequestPermission();
-        if (!canRequest) {
-          console.warn('[NotificationSetup] Permission denied — cannot request');
-          setIsLoading(false);
-          return false;
-        }
+        // Always attempt requestPermissions — the OS decides whether to show
+        // the dialog (Android 13+) or return immediately (older Android / already denied).
+        // Removing the canRequestPermission() gate avoids device quirks where
+        // checkPermissions() returns an unexpected value and blocks the request.
+        console.log('[NotificationSetup] Requesting permission...');
         granted = await requestPermission();
         if (!granted) {
+          console.warn('[NotificationSetup] Permission not granted');
           setIsLoading(false);
           return false;
         }

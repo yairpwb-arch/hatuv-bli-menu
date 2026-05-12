@@ -138,10 +138,6 @@ export default function AppSettings() {
     if (!user) return;
 
     if (enabled) {
-      if (isNative && permissionStatus === 'denied') {
-        toast({ title: 'הרשאות חסומות', description: 'יש לאפשר התראות בהגדרות המכשיר ידנית', variant: 'destructive' });
-        return;
-      }
       const success = await enableNotifications(user.id);
       if (success) {
         setNotifEnabled(true);
