@@ -192,23 +192,18 @@ export default function AppSettings() {
       if (data?.ok) {
         // Check that OneSignal actually delivered to at least one device
         const batches: any[] = Array.isArray(data?.onesignal) ? data.onesignal : [];
-        const totalRecipients = batches.reduce((sum: number, batch: any) => {
-          const r = Object.values(batch)[0] as any;
-          return sum + (r?.recipients ?? 0);
-        }, 0);
-        const errors = batches.flatMap((batch: any) => {
-          const r = Object.values(batch)[0] as any;
-          return r?.errors ?? [];
-        });
+        const totalRecipients = batches.reduce((sum: number, batch: any) => sum + (batch?.recipients ?? 0), 0);
+        const errors = batches.flatMap((batch: any) => batch?.errors ?? []);
 
         if (totalRecipients > 0) {
           setTestStatus('success');
         } else {
           setTestStatus('error');
+          const rawResponse = JSON.stringify(batches, null, 2);
           setTestLog(
             errors.length > 0
-              ? `OneSignal שגיאה: ${JSON.stringify(errors)}`
-              : `OneSignal קיבל את הבקשה אבל recipients=0 — הטוקן לא רשום ב-OneSignal dashboard. נסה לצאת ולהיכנס שוב לאפליקציה.`,
+              ? `OneSignal שגיאה: ${errors.join(' | ')}\n\n${rawResponse}`
+              : `recipients=0\n\n${rawResponse}`,
           );
         }
       } else {
