@@ -39,10 +39,6 @@ interface Habit {
   completed: boolean;
 }
 
-interface ScheduledActivity {
-  activity_type: 'walk' | 'workout';
-  day_of_week: number;
-}
 
 const CIRCLE_RADIUS = 40;
 const CIRCLE_CIRCUMFERENCE = 2 * Math.PI * CIRCLE_RADIUS; // ~251.3
@@ -53,8 +49,7 @@ export default function AppProgress() {
   const [weightHistory, setWeightHistory] = useState<WeightEntry[]>([]);
   const [profileData, setProfileData] = useState<ProfileData | null>(null);
   const [habits, setHabits] = useState<Habit[]>([]);
-  const [todayActivity, setTodayActivity] = useState<ScheduledActivity | null>(null);
-  const [activityCompleted, setActivityCompleted] = useState(false);
+
   const [isLoading, setIsLoading] = useState(true);
 
   // Weight modal state
@@ -138,7 +133,7 @@ export default function AppProgress() {
     if (!user) return;
     setIsLoading(true);
 
-    const [profileRes, weightRes, habitsRes, habitLogsRes, scheduleRes, activityLogRes] = await Promise.all([
+    const [profileRes, weightRes, habitsRes, habitLogsRes] = await Promise.all([
       supabase
         .from('profiles')
         .select('start_date, current_weight, initial_weight, height')
@@ -160,19 +155,6 @@ export default function AppProgress() {
         .select('habit_id')
         .eq('user_id', user.id)
         .eq('completed_at', dateString),
-      supabase
-        .from('user_activity_schedule')
-        .select('activity_type, day_of_week')
-        .eq('user_id', user.id)
-        .eq('day_of_week', todayDayOfWeek)
-        .eq('is_active', true)
-        .maybeSingle(),
-      supabase
-        .from('activity_log')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('completed_at', dateString)
-        .maybeSingle(),
     ]);
 
     if (profileRes.data) setProfileData(profileRes.data);
@@ -185,11 +167,6 @@ export default function AppProgress() {
       completed: completedHabitIds.has(h.id),
     }));
     setHabits(processedHabits);
-
-    if (scheduleRes.data) {
-      setTodayActivity(scheduleRes.data as ScheduledActivity);
-      setActivityCompleted(!!activityLogRes.data);
-    }
 
     setIsLoading(false);
   };
@@ -278,38 +255,6 @@ export default function AppProgress() {
 
       {/* Today's Status Section */}
       <div className="space-y-3">
-        {/* Activity Alert Card */}
-        {todayActivity && !activityCompleted && (
-          <Card className="border-2 border-warning/50 bg-warning/5 animate-fade-in">
-            <CardContent className="pt-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-xl bg-warning/20 flex items-center justify-center">
-                  {todayActivity.activity_type === 'walk' ? (
-                    <Footprints className="h-6 w-6 text-warning" />
-                  ) : (
-                    <Dumbbell className="h-6 w-6 text-warning" />
-                  )}
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-bold text-warning">
-                    היום יש לך {todayActivity.activity_type === 'walk' ? 'הליכה' : 'אימון'}!
-                  </h3>
-                  <p className="text-sm text-muted-foreground">
-                    אל תשכח לסמן ביומן המעקב
-                  </p>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => navigate('/app/tracker')}
-                  className="border-warning text-warning hover:bg-warning/10"
-                >
-                  למעקב
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
 
         {/* Habit Completion Snapshot */}
         <Card className="glass-card animate-fade-in" style={{ animationDelay: '0.1s' }}>
