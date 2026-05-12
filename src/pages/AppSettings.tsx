@@ -190,20 +190,23 @@ export default function AppSettings() {
         return;
       }
       if (data?.ok) {
-        // Check that OneSignal actually delivered to at least one device
+        // Check delivery: OneSignal returns `recipients`, FCM direct returns `sent`
         const batches: any[] = Array.isArray(data?.onesignal) ? data.onesignal : [];
-        const totalRecipients = batches.reduce((sum: number, batch: any) => sum + (batch?.recipients ?? 0), 0);
+        const totalSuccess = batches.reduce(
+          (sum: number, batch: any) => sum + (batch?.recipients ?? 0) + (batch?.sent ?? 0),
+          0,
+        );
         const errors = batches.flatMap((batch: any) => batch?.errors ?? []);
 
-        if (totalRecipients > 0) {
+        if (totalSuccess > 0) {
           setTestStatus('success');
         } else {
           setTestStatus('error');
           const rawResponse = JSON.stringify(batches, null, 2);
           setTestLog(
             errors.length > 0
-              ? `OneSignal שגיאה: ${errors.join(' | ')}\n\n${rawResponse}`
-              : `recipients=0\n\n${rawResponse}`,
+              ? `שגיאה: ${errors.join(' | ')}\n\n${rawResponse}`
+              : `לא נשלח — בדוק שה-push token תקין\n\n${rawResponse}`,
           );
         }
       } else {
@@ -382,7 +385,7 @@ export default function AppSettings() {
           <Row
             icon={Info}
             label="חטוב בלי תפריט"
-            description="גרסה 2.5 — © 2026"
+            description="גרסה 2.9 — © 2026"
           />
           <Row
             icon={BookOpen}

@@ -8,10 +8,7 @@ const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const ONESIGNAL_APP_ID = Deno.env.get('ONESIGNAL_APP_ID')!;
 const ONESIGNAL_REST_API_KEY = Deno.env.get('ONESIGNAL_REST_API_KEY')!;
 const CRON_SECRET = Deno.env.get('PUSH_CRON_SECRET');
-
-if (!ONESIGNAL_APP_ID || !ONESIGNAL_REST_API_KEY) {
-  console.error('[push] ONESIGNAL_APP_ID or ONESIGNAL_REST_API_KEY not set in secrets!');
-}
+const FIREBASE_SA_JSON = Deno.env.get('FIREBASE_SERVICE_ACCOUNT_JSON');
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -20,11 +17,122 @@ const corsHeaders = {
 
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
-// ── OneSignal helper ──────────────────────────────────────────────────────────
-// MassAI approach: route each token to the correct OneSignal field based on platform.
-//   iOS     → include_ios_tokens      (raw APNs device token)
-//   Android → include_android_reg_ids (raw FCM registration ID)
-//   unknown → include_player_ids      (OneSignal Player ID fallback)
+// ── Firebase FCM v1 direct (Android) ─────────────────────────────────────────
+// Bypasses OneSignal for Android — sends directly to FCM v1 API using
+// a Service Account JWT, avoiding credential configuration issues in OneSignal.
+
+async function signRs256Jwt(header: object, payload: object, pemKey: string): Promise<string> {
+  const body = pemKey.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g, '');
+  const der = Uint8Array.from(atob(body), (c) => c.charCodeAt(0));
+  const key = await crypto.subtle.importKey(
+    'pkcs8', der.buffer,
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false, ['sign'],
+  );
+  const b64u = (s: string) => {
+    const bytes = new TextEncoder().encode(s);
+    return btoa(String.fromCharCode(...bytes))
+      .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+  };
+  const sigInput = `${b64u(JSON.stringify(header))}.${b64u(JSON.stringify(payload))}`;
+  const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(sigInput));
+  const b64uRaw = (buf: ArrayBuffer) =>
+    btoa(String.fromCharCode(...new Uint8Array(buf)))
+      .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+  return `${sigInput}.${b64uRaw(sig)}`;
+}
+
+async function getFcmAccessToken(sa: { client_email: string; private_key: string }): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  const jwt = await signRs256Jwt(
+    { alg: 'RS256', typ: 'JWT' },
+    {
+      iss: sa.client_email,
+      scope: 'https://www.googleapis.com/auth/firebase.messaging',
+      aud: 'https://oauth2.googleapis.com/token',
+      iat: now,
+      exp: now + 3600,
+    },
+    sa.private_key,
+  );
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion: jwt,
+    }),
+  });
+  const json = await res.json();
+  if (!json.access_token) throw new Error(`FCM auth failed: ${JSON.stringify(json)}`);
+  return json.access_token;
+}
+
+async function sendFcmBatch(
+  tokens: string[],
+  title: string,
+  body: string,
+  data?: Record<string, string>,
+): Promise<{ sent: number; errors: string[] }> {
+  if (!FIREBASE_SA_JSON) {
+    console.error('[push] FIREBASE_SERVICE_ACCOUNT_JSON not set — cannot send to Android');
+    return { sent: 0, errors: ['FIREBASE_SERVICE_ACCOUNT_JSON not configured'] };
+  }
+
+  let sa: { project_id: string; client_email: string; private_key: string };
+  try {
+    sa = JSON.parse(FIREBASE_SA_JSON);
+  } catch (e) {
+    return { sent: 0, errors: [`Invalid FIREBASE_SERVICE_ACCOUNT_JSON: ${e}`] };
+  }
+
+  let accessToken: string;
+  try {
+    accessToken = await getFcmAccessToken(sa);
+  } catch (e) {
+    console.error('[push] FCM auth error:', e);
+    return { sent: 0, errors: [String(e)] };
+  }
+
+  let sent = 0;
+  const errors: string[] = [];
+
+  for (const token of tokens) {
+    try {
+      const res = await fetch(
+        `https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: {
+              token,
+              notification: { title, body },
+              data: data ?? {},
+              android: {
+                priority: 'high',
+                notification: { channel_id: 'general' },
+              },
+            },
+          }),
+        },
+      );
+      const json = await res.json();
+      console.log(`[push] FCM direct [...${token.slice(-8)}]: ${JSON.stringify(json)}`);
+      if (json.name) {
+        sent++;
+      } else {
+        errors.push(JSON.stringify(json.error ?? json));
+      }
+    } catch (e) {
+      errors.push(String(e));
+    }
+  }
+
+  return { sent, errors };
+}
+
+// ── OneSignal helper (iOS only) ───────────────────────────────────────────────
 
 interface TokenRecord {
   token: string;
@@ -37,9 +145,8 @@ async function sendPush(
   body: string,
   data?: Record<string, string>,
 ) {
-  if (tokens.length === 0) return;
+  if (tokens.length === 0) return [];
 
-  // Split by platform for correct OneSignal field routing
   const ios: string[] = [];
   const android: string[] = [];
   const unknown: string[] = [];
@@ -50,13 +157,13 @@ async function sendPush(
     else unknown.push(t.token);
   }
 
-  const sendBatch = async (body_ext: Record<string, unknown>) => {
+  const results: unknown[] = [];
+
+  // iOS via OneSignal (raw APNs tokens) — working
+  if (ios.length > 0) {
     const res = await fetch('https://onesignal.com/api/v1/notifications', {
       method: 'POST',
-      headers: {
-        Authorization: `Basic ${ONESIGNAL_REST_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
+      headers: { Authorization: `Basic ${ONESIGNAL_REST_API_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         app_id: ONESIGNAL_APP_ID,
         headings: { he: title, en: title },
@@ -64,18 +171,36 @@ async function sendPush(
         data: data ?? {},
         priority: 10,
         android_visibility: 1,
-        ...body_ext,
+        include_ios_tokens: ios,
       }),
     });
     const json = await res.json();
-    console.log(`[push] batch sent=${json.recipients ?? 0} errors=${JSON.stringify(json.errors ?? [])} full=${JSON.stringify(json)}`);
-    return json;
-  };
+    console.log(`[push] OneSignal iOS batch: recipients=${json.recipients ?? 0} errors=${JSON.stringify(json.errors ?? [])}`);
+    results.push(json);
+  }
 
-  const results: unknown[] = [];
-  if (ios.length > 0)     results.push(await sendBatch({ include_ios_tokens: ios }));
-  if (android.length > 0) results.push(await sendBatch({ include_android_reg_ids: android }));
-  if (unknown.length > 0) results.push(await sendBatch({ include_player_ids: unknown }));
+  // Android via FCM v1 direct — bypasses OneSignal credential dependency
+  if (android.length > 0) {
+    results.push(await sendFcmBatch(android, title, body, data));
+  }
+
+  // Unknown platform via OneSignal player IDs
+  if (unknown.length > 0) {
+    const res = await fetch('https://onesignal.com/api/v1/notifications', {
+      method: 'POST',
+      headers: { Authorization: `Basic ${ONESIGNAL_REST_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        app_id: ONESIGNAL_APP_ID,
+        headings: { he: title, en: title },
+        contents: { he: body, en: body },
+        data: data ?? {},
+        priority: 10,
+        include_player_ids: unknown,
+      }),
+    });
+    results.push(await res.json());
+  }
+
   return results;
 }
 
@@ -174,8 +299,6 @@ async function handlePhaseCheck() {
     const currentWeek = getWeekNumber(startDate);
     const nextWeek = currentWeek + 1;
 
-    // Fire only when next week starts a new phase AND the current week is NOT
-    // itself a phase start — meaning the user is on the last week of their phase.
     const [{ data: nextHabits }, { data: currentHabits }] = await Promise.all([
       supabase.from('habit_definitions').select('id').eq('week_start', nextWeek).is('user_id', null).limit(1),
       supabase.from('habit_definitions').select('id').eq('week_start', currentWeek).is('user_id', null).limit(1),
@@ -315,13 +438,13 @@ serve(async (req) => {
       });
     }
 
-    let onesignalResult: unknown;
+    let result: unknown;
     switch (type) {
-      case 'daily_quote':     onesignalResult = await handleDailyQuote();     break;
-      case 'phase_check':     onesignalResult = await handlePhaseCheck();     break;
-      case 'new_habits':      onesignalResult = await handleNewHabits();      break;
-      case 'weigh_reminder':  onesignalResult = await handleWeighReminder();  break;
-      case 'survey_followup': onesignalResult = await handleSurveyFollowup(); break;
+      case 'daily_quote':     result = await handleDailyQuote();     break;
+      case 'phase_check':     result = await handlePhaseCheck();     break;
+      case 'new_habits':      result = await handleNewHabits();      break;
+      case 'weigh_reminder':  result = await handleWeighReminder();  break;
+      case 'survey_followup': result = await handleSurveyFollowup(); break;
 
       case 'send_test': {
         let pushToken: string;
@@ -333,7 +456,6 @@ serve(async (req) => {
           pushToken = token;
           pushPlatform = platform ?? 'android';
         } else {
-          // Decode JWT directly — faster than supabase.auth.getUser()
           const jwt = auth.startsWith('Bearer ') ? auth.slice(7) : '';
           let userId: string | null = null;
           try {
@@ -360,7 +482,7 @@ serve(async (req) => {
           pushPlatform = ((ns as any).device_platform as string) ?? 'android';
         }
 
-        onesignalResult = await sendPush(
+        result = await sendPush(
           [{ token: pushToken, platform: pushPlatform }],
           '🧪 בדיקה',
           'אם קיבלת הודעה זו — ההתראות עובדות!',
@@ -376,7 +498,7 @@ serve(async (req) => {
         });
     }
 
-    return new Response(JSON.stringify({ ok: true, type, onesignal: onesignalResult }), {
+    return new Response(JSON.stringify({ ok: true, type, onesignal: result }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (err) {
