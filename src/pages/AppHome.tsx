@@ -17,6 +17,8 @@ import { StreakCard } from '@/components/StreakCard';
 import { MorningStreakPopup } from '@/components/MorningStreakPopup';
 import { useStreak } from '@/hooks/useStreak';
 import { useHabits, iconMap } from '@/hooks/useHabits';
+import { useStepCounter } from '@/hooks/useStepCounter';
+import { Capacitor } from '@capacitor/core';
 import { format } from 'date-fns';
 
 interface DailyQuote {
@@ -33,8 +35,10 @@ export default function AppHome() {
   const [weight, setWeight] = useState('');
   const [isWeightDialogOpen, setIsWeightDialogOpen] = useState(false);
   const [showConfetti, setShowConfetti] = useState<string | null>(null);
-  const [todaySteps, setTodaySteps] = useState<number | null>(null);
+  const [todayStepsDb, setTodayStepsDb] = useState<number | null>(null);
   const [todayWorkoutName, setTodayWorkoutName] = useState<string | null>(null);
+  const { stepData } = useStepCounter(user?.id);
+  const todaySteps = Capacitor.isNativePlatform() ? stepData.steps : (todayStepsDb ?? 0);
 
   const isWeighInDay = currentDay % 7 === 0;
   const progressPercentage = Math.min((currentDay / 168) * 100, 100);
@@ -63,7 +67,7 @@ export default function AppHome() {
         .eq('user_id', user.id)
         .eq('date', today)
         .maybeSingle();
-      if (data) setTodaySteps(data.steps);
+      if (data) setTodayStepsDb(data.steps);
     };
     fetchSteps();
   }, [user, today]);

@@ -335,8 +335,10 @@ async function handleNewHabits() {
     const startDate = u.profiles?.start_date;
     if (!startDate) continue;
     const dayInProgram = getDayInProgram(startDate);
-    const isFirstDayOfNewWeek = dayInProgram > 1 && (dayInProgram - 1) % 7 === 0;
-    if (!isFirstDayOfNewWeek) continue;
+    // Habits unlock on Sunday (day 2 of each program week): days 2, 9, 16, 23...
+    // The cron fires on Sunday; check if today is a habit-unlock Sunday (day >= 9).
+    const isHabitUnlockDay = dayInProgram >= 9 && (dayInProgram - 2) % 7 === 0;
+    if (!isHabitUnlockDay) continue;
 
     const currentWeek = getWeekNumber(startDate);
     const { data: newHabits } = await supabase
