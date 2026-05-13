@@ -187,6 +187,23 @@ interface AdminWalkEntry {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const WEEKDAY_LABELS = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳'];
+
+// Snap a YYYY-MM-DD string to the next/same Saturday (getDay() === 6).
+function toSaturday(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  const daysUntilSat = (6 - date.getDay() + 7) % 7;
+  date.setDate(date.getDate() + daysUntilSat);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function nextSaturdayStr(): string {
+  const today = new Date();
+  const daysUntilSat = (6 - today.getDay() + 7) % 7;
+  const sat = new Date(today);
+  sat.setDate(today.getDate() + daysUntilSat);
+  return `${sat.getFullYear()}-${String(sat.getMonth() + 1).padStart(2, '0')}-${String(sat.getDate()).padStart(2, '0')}`;
+}
 const GENDER_LABELS: Record<string, string> = { male: 'זכר', female: 'נקבה', other: 'אחר' };
 
 function calcCurrentDay(startDate: string | null): string {
@@ -378,7 +395,8 @@ export default function AdminUsers() {
     const currentDay = user.start_date
       ? differenceInDays(new Date(), new Date(user.start_date)) + 1
       : 1;
-    const currentWeek = Math.ceil(currentDay / 7);
+    // habits unlock on Sunday (day 2 of each week)
+    const currentWeek = Math.max(0, Math.floor((currentDay - 2) / 7) + 1);
 
     const { data: hd } = await (supabase as any)
       .from('habit_definitions')
@@ -610,11 +628,11 @@ export default function AdminUsers() {
 
   const handleResetStartDate = async () => {
     if (!editingUser) return;
-    const today = new Date().toISOString().split('T')[0];
-    await supabase.from('profiles').update({ start_date: today }).eq('id', editingUser.id);
-    setEditPersonal(p => ({ ...p, start_date: today }));
-    setEditingUser(u => u ? { ...u, start_date: today } : null);
-    toast({ title: 'הצלחה', description: 'יום ההתחלה אופס להיום' });
+    const sat = nextSaturdayStr();
+    await supabase.from('profiles').update({ start_date: sat }).eq('id', editingUser.id);
+    setEditPersonal(p => ({ ...p, start_date: sat }));
+    setEditingUser(u => u ? { ...u, start_date: sat } : null);
+    toast({ title: 'הצלחה', description: 'יום ההתחלה אופס לשבת הקרובה' });
     fetchUsers();
   };
 
@@ -724,8 +742,14 @@ export default function AdminUsers() {
                 <Input type="password" placeholder="••••••••" dir="ltr" className="text-left" value={newUser.password} onChange={e => setNewUser(p => ({ ...p, password: e.target.value }))} />
               </div>
               <div className="space-y-1">
-                <Label>תאריך התחלה</Label>
-                <Input type="date" dir="ltr" className="text-left" value={newUser.startDate} onChange={e => setNewUser(p => ({ ...p, startDate: e.target.value }))} />
+                <Label>תאריך התחלה <span className="text-xs text-muted-foreground font-normal">(יום שבת בלבד)</span></Label>
+                <Input
+                  type="date"
+                  dir="ltr"
+                  className="text-left"
+                  value={newUser.startDate || nextSaturdayStr()}
+                  onChange={e => e.target.value && setNewUser(p => ({ ...p, startDate: toSaturday(e.target.value) }))}
+                />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
@@ -880,8 +904,14 @@ export default function AdminUsers() {
                   <Input dir="ltr" className="text-left" value={(editPersonal as any).phone_number || ''} onChange={e => setEditPersonal(p => ({ ...p, phone_number: e.target.value } as any))} placeholder="050-000-0000" />
                 </div>
                 <div className="space-y-1">
-                  <Label>תאריך התחלה</Label>
-                  <Input type="date" dir="ltr" className="text-left" value={editPersonal.start_date || ''} onChange={e => setEditPersonal(p => ({ ...p, start_date: e.target.value }))} />
+                  <Label>תאריך התחלה <span className="text-xs text-muted-foreground font-normal">(שבת)</span></Label>
+                  <Input
+                    type="date"
+                    dir="ltr"
+                    className="text-left"
+                    value={editPersonal.start_date || ''}
+                    onChange={e => e.target.value && setEditPersonal(p => ({ ...p, start_date: toSaturday(e.target.value) }))}
+                  />
                 </div>
                 <div className="flex items-center gap-3 col-span-2 pt-1">
                   <Switch

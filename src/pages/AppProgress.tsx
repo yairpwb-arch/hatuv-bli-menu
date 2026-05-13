@@ -46,7 +46,7 @@ const CIRCLE_RADIUS = 40;
 const CIRCLE_CIRCUMFERENCE = 2 * Math.PI * CIRCLE_RADIUS; // ~251.3
 
 export default function AppProgress() {
-  const { user, currentDay, currentWeek } = useAuth();
+  const { user, currentDay, currentWeek, currentWeekForHabits } = useAuth();
   const navigate = useNavigate();
   const [weightHistory, setWeightHistory] = useState<WeightEntry[]>([]);
   const [profileData, setProfileData] = useState<ProfileData | null>(null);
@@ -151,8 +151,8 @@ export default function AppProgress() {
       (supabase as any)
         .from('habit_definitions')
         .select('id, name')
-        .lte('week_start', currentWeek)
-        .or(`week_end.gte.${currentWeek},week_end.is.null`)
+        .lte('week_start', currentWeekForHabits)
+        .or(`week_end.gte.${currentWeekForHabits},week_end.is.null`)
         .or(`user_id.is.null,user_id.eq.${user.id}`),
       supabase
         .from('daily_habits_log')

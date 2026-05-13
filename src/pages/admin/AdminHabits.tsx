@@ -44,10 +44,29 @@ interface HabitDefinition {
 
 interface HabitFormData {
   name: string;
-  week_start: number;
-  week_end: string; // empty string = null
+  day_start: number;  // program day when habit first appears (Sunday of week_start)
+  day_end: string;    // program day of last Saturday habit shows (empty = no end)
   icon: string;
   is_bonus: boolean;
+}
+
+// ─── Day ↔ Week conversions ───────────────────────────────────────────────────
+// All users start on Saturday (day 1). Habits unlock on Sunday (day 2).
+// Week N habits: visible day (N-1)*7+2 (Sun) through N*7+1 (Sat).
+//
+// day_start → week_start: floor((day - 2) / 7) + 1
+// day_end   → week_end:   floor((day - 2) / 7) + 1
+// week_start → day_start: (week - 1) * 7 + 2
+// week_end   → day_end:   week * 7 + 1
+
+function dayToWeek(day: number): number {
+  return Math.max(1, Math.floor((day - 2) / 7) + 1);
+}
+function weekToStartDay(week: number): number {
+  return (week - 1) * 7 + 2;
+}
+function weekToEndDay(week: number): number {
+  return week * 7 + 1;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -67,8 +86,8 @@ const ICON_OPTIONS = [
 
 const EMPTY_FORM: HabitFormData = {
   name: '',
-  week_start: 1,
-  week_end: '',
+  day_start: 2,   // day 2 = Sunday of week 1 (first day habits can appear)
+  day_end: '',
   icon: 'target',
   is_bonus: false,
 };
@@ -151,8 +170,8 @@ export default function AdminHabits() {
     setEditingHabit(habit);
     setForm({
       name: habit.name,
-      week_start: habit.week_start,
-      week_end: habit.week_end !== null ? String(habit.week_end) : '',
+      day_start: weekToStartDay(habit.week_start),
+      day_end: habit.week_end !== null ? String(weekToEndDay(habit.week_end)) : '',
       icon: habit.icon || 'target',
       is_bonus: habit.is_bonus,
     });
@@ -170,15 +189,18 @@ export default function AdminHabits() {
       toast({ title: 'שגיאה', description: 'יש להזין שם לרגל', variant: 'destructive' });
       return;
     }
-    if (form.week_start < 1) {
-      toast({ title: 'שגיאה', description: 'שבוע התחלה חייב להיות לפחות 1', variant: 'destructive' });
+    if (form.day_start < 2) {
+      toast({ title: 'שגיאה', description: 'יום התחלה חייב להיות לפחות 2 (ראשון של שבוע 1)', variant: 'destructive' });
       return;
     }
 
+    const week_start = dayToWeek(form.day_start);
+    const week_end = form.day_end !== '' ? dayToWeek(Number(form.day_end)) : null;
+
     const payload = {
       name: form.name.trim(),
-      week_start: form.week_start,
-      week_end: form.week_end !== '' ? Number(form.week_end) : null,
+      week_start,
+      week_end,
       icon: form.icon || null,
       is_bonus: form.is_bonus,
       ...(editingHabit ? { id: editingHabit.id } : {}),
@@ -232,8 +254,8 @@ export default function AdminHabits() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="text-right">שם</TableHead>
-                  <TableHead className="text-right">שבוע התחלה</TableHead>
-                  <TableHead className="text-right">שבוע סיום</TableHead>
+                  <TableHead className="text-right">יום התחלה</TableHead>
+                  <TableHead className="text-right">יום סיום</TableHead>
                   <TableHead className="text-right">אייקון</TableHead>
                   <TableHead className="text-right w-20">בונוס</TableHead>
                   <TableHead className="text-right w-24">פעולות</TableHead>
@@ -243,8 +265,8 @@ export default function AdminHabits() {
                 {habits.map((habit) => (
                   <TableRow key={habit.id}>
                     <TableCell className="font-medium">{habit.name}</TableCell>
-                    <TableCell>{habit.week_start}</TableCell>
-                    <TableCell>{habit.week_end ?? '—'}</TableCell>
+                    <TableCell>{weekToStartDay(habit.week_start)}</TableCell>
+                    <TableCell>{habit.week_end != null ? weekToEndDay(habit.week_end) : '—'}</TableCell>
                     <TableCell className="text-muted-foreground text-sm">
                       {iconLabel(habit.icon)}
                     </TableCell>
@@ -305,30 +327,33 @@ export default function AdminHabits() {
               />
             </div>
 
-            {/* Week start */}
+            {/* Day start */}
             <div className="space-y-2">
-              <Label>שבוע התחלה</Label>
+              <Label>
+                יום התחלה{' '}
+                <span className="text-muted-foreground font-normal text-xs">(יום 2 = ראשון שבוע 1, יום 9 = ראשון שבוע 2…)</span>
+              </Label>
               <Input
                 type="number"
-                min={1}
-                value={form.week_start}
+                min={2}
+                value={form.day_start}
                 onChange={(e) =>
-                  setForm({ ...form, week_start: Math.max(1, Number(e.target.value)) })
+                  setForm({ ...form, day_start: Math.max(2, Number(e.target.value)) })
                 }
               />
             </div>
 
-            {/* Week end (optional) */}
+            {/* Day end (optional) */}
             <div className="space-y-2">
               <Label>
-                שבוע סיום{' '}
-                <span className="text-muted-foreground font-normal text-xs">(אופציונלי)</span>
+                יום סיום{' '}
+                <span className="text-muted-foreground font-normal text-xs">(אופציונלי — יום 8 = שבת שבוע 1, יום 15 = שבת שבוע 2…)</span>
               </Label>
               <Input
                 type="number"
-                min={form.week_start}
-                value={form.week_end}
-                onChange={(e) => setForm({ ...form, week_end: e.target.value })}
+                min={form.day_start + 6}
+                value={form.day_end}
+                onChange={(e) => setForm({ ...form, day_end: e.target.value })}
                 placeholder="ללא הגבלה"
               />
             </div>
