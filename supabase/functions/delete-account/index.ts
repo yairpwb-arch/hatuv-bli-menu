@@ -38,6 +38,7 @@ serve(async (req) => {
     // Delete all user data (profiles has ON DELETE CASCADE to most tables)
     const tables = [
       'notification_logs',
+      'notification_settings',
       'steps_log',
       'step_logs',
       'workout_day_schedule',

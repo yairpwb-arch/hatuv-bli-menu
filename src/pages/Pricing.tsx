@@ -1,16 +1,21 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/hooks/useAuth';
 import { useRevenueCat, PlanId } from '@/hooks/useRevenueCat';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { Star, Zap, Check, ArrowLeft, Loader2 } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
+import { App as CapApp } from '@capacitor/app';
 import { z } from 'zod';
+
+const TERMS_URL = 'https://docs.google.com/document/d/1PquUiaPZ6_v2TYH-qOlAbxGqwjpf8E0-hqzYtmomebs/edit?usp=sharing';
 
 // ── Validation ────────────────────────────────────────────────────────────────
 
@@ -74,6 +79,7 @@ function StepRegistrationForm({
     password: '',
   });
   const [errors, setErrors] = useState<Partial<RegistrationForm>>({});
+  const [termsAccepted, setTermsAccepted] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -177,10 +183,32 @@ function StepRegistrationForm({
               )}
             </div>
 
+            {/* Terms of Use — required before submit */}
+            <div className="flex items-start gap-3 rounded-xl border p-3">
+              <Checkbox
+                id="terms"
+                checked={termsAccepted}
+                onCheckedChange={(v) => setTermsAccepted(!!v)}
+                disabled={isRegistering}
+                className="mt-0.5"
+              />
+              <label htmlFor="terms" className="text-sm leading-relaxed cursor-pointer select-none">
+                קראתי ואני מסכים/ה{' '}
+                <button
+                  type="button"
+                  className="text-primary underline underline-offset-2 font-medium"
+                  onClick={() => window.open(TERMS_URL, '_blank')}
+                >
+                  לתנאי השימוש
+                </button>{' '}
+                של האפליקציה
+              </label>
+            </div>
+
             <Button
               type="submit"
               className="w-full h-12 gradient-primary shadow-glow text-base font-bold mt-2"
-              disabled={isRegistering}
+              disabled={isRegistering || !termsAccepted}
             >
               {isRegistering ? (
                 <>
@@ -374,6 +402,36 @@ export default function Pricing() {
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
 
+  // Track whether purchase was completed — used to skip auto-delete on exit
+  const purchaseCompletedRef = useRef(false);
+  const userIdRef = useRef<string | null>(null);
+
+  // Keep userIdRef in sync
+  useEffect(() => { userIdRef.current = userId; }, [userId]);
+
+  // Auto-delete: if the user registered but exits the app without purchasing,
+  // delete their account so no orphan users accumulate in the DB.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    let handle: { remove: () => void } | null = null;
+
+    CapApp.addListener('appStateChange', async ({ isActive }) => {
+      if (isActive) return;
+      if (purchaseCompletedRef.current) return;
+      const uid = userIdRef.current;
+      if (!uid) return;
+
+      // App went to background without a completed purchase — clean up the account
+      try {
+        await supabase.functions.invoke('delete-account');
+        await supabase.auth.signOut();
+      } catch { /* non-fatal */ }
+    }).then((h) => { handle = h; });
+
+    return () => { handle?.remove(); };
+  }, []);
+
   // Already logged-in user with no active subscription — skip registration step
   useEffect(() => {
     if (existingUser && step === 1) {
@@ -430,6 +488,7 @@ export default function Pricing() {
   // Step 2: user picks a plan → open IAP (native) or go straight to app (web)
   const handlePlanSelect = async (plan: PlanId) => {
     if (!isNative) {
+      purchaseCompletedRef.current = true;
       toast({ title: 'ברוך הבא!', description: 'נרשמת בהצלחה' });
       navigate('/app');
       return;
@@ -447,6 +506,7 @@ export default function Pricing() {
     setIsPurchasing(false);
 
     if (result.success) {
+      purchaseCompletedRef.current = true;
       toast({ title: 'ברוך הבא!', description: 'נרשמת בהצלחה והתשלום בוצע' });
       navigate('/app');
     } else if (result.error === 'user_cancelled') {
