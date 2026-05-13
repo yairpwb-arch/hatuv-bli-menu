@@ -45,10 +45,20 @@ function StepPermissionTrigger() {
 
     (async () => {
       try {
-        const { CapacitorPedometer } = await import('@capgo/capacitor-pedometer');
-        const perm = await CapacitorPedometer.checkPermissions();
-        if (perm.activityRecognition !== 'granted') {
-          await CapacitorPedometer.requestPermissions();
+        if (Capacitor.getPlatform() === 'android') {
+          // Android: use our custom StepCounterPlugin which declares ACTIVITY_RECOGNITION
+          const { StepCounter } = await import('@/plugins/StepCounterPlugin');
+          const perm = await StepCounter.checkPermission();
+          if (perm.activityRecognition !== 'granted') {
+            await StepCounter.requestPermission();
+          }
+        } else {
+          // iOS: CMPedometer permission via @capgo/capacitor-pedometer
+          const { CapacitorPedometer } = await import('@capgo/capacitor-pedometer');
+          const perm = await CapacitorPedometer.checkPermissions();
+          if (perm.activityRecognition !== 'granted') {
+            await CapacitorPedometer.requestPermissions();
+          }
         }
       } catch { /* plugin not available — ignore */ }
     })();

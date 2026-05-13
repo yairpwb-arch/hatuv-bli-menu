@@ -1,15 +1,19 @@
 package com.hatovblitafrit.hatovblitafrit
 
+import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
 import com.getcapacitor.JSObject
+import com.getcapacitor.PermissionState
 import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
+import com.getcapacitor.annotation.Permission
+import com.getcapacitor.annotation.PermissionCallback
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -18,14 +22,24 @@ import java.util.Locale
  * StepCounterPlugin — Capacitor bridge between JavaScript and StepCounterService.
  *
  * Exposed methods (callable from JS via registerPlugin('StepCounter')):
- *   startService()    — starts the Foreground Service (idempotent)
- *   stopService()     — stops the Foreground Service
- *   getDailySteps()   — reads today's step count from SharedPreferences
+ *   startService()       — starts the Foreground Service (idempotent)
+ *   stopService()        — stops the Foreground Service
+ *   getDailySteps()      — reads today's step count from SharedPreferences
+ *   checkPermission()    — returns current ACTIVITY_RECOGNITION permission state
+ *   requestPermission()  — requests ACTIVITY_RECOGNITION at runtime (API 29+)
  *
  * Emitted events (via addListener in JS):
  *   'stepUpdate' { steps: number, date: string }
  */
-@CapacitorPlugin(name = "StepCounter")
+@CapacitorPlugin(
+    name = "StepCounter",
+    permissions = [
+        Permission(
+            strings = [Manifest.permission.ACTIVITY_RECOGNITION],
+            alias = "activityRecognition"
+        )
+    ]
+)
 class StepCounterPlugin : Plugin() {
 
     private var stepReceiver: BroadcastReceiver? = null
@@ -66,6 +80,29 @@ class StepCounterPlugin : Plugin() {
             put("steps", steps)
             put("date", today)
         })
+    }
+
+    @PluginMethod
+    fun checkPermission(call: PluginCall) {
+        val state = getPermissionState("activityRecognition")
+        call.resolve(JSObject().apply { put("activityRecognition", stateString(state)) })
+    }
+
+    @PluginMethod
+    fun requestPermission(call: PluginCall) {
+        requestPermissionForAlias("activityRecognition", call, "permissionCallback")
+    }
+
+    @PermissionCallback
+    private fun permissionCallback(call: PluginCall) {
+        val state = getPermissionState("activityRecognition")
+        call.resolve(JSObject().apply { put("activityRecognition", stateString(state)) })
+    }
+
+    private fun stateString(state: PermissionState): String = when (state) {
+        PermissionState.GRANTED -> "granted"
+        PermissionState.DENIED  -> "denied"
+        else                    -> "prompt"
     }
 
     // ─── BroadcastReceiver for live updates ───────────────────────────────────

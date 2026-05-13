@@ -196,7 +196,8 @@ export default function AppContent() {
 
   const handleSnacksBookClick = () => {
     if (snacksBookLink) {
-      window.open(snacksBookLink, '_blank');
+      const url = /^https?:\/\//i.test(snacksBookLink) ? snacksBookLink : `https://${snacksBookLink}`;
+      window.open(url, '_blank');
     } else {
       toast({
         title: 'ספר נשנושים',

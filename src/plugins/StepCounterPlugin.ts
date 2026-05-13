@@ -11,10 +11,16 @@ export interface StepUpdateEvent {
   date: string;
 }
 
+export interface PermissionResult {
+  activityRecognition: 'granted' | 'denied' | 'prompt';
+}
+
 export interface StepCounterPlugin {
   startService(): Promise<void>;
   stopService(): Promise<void>;
   getDailySteps(): Promise<DailyStepsResult>;
+  checkPermission(): Promise<PermissionResult>;
+  requestPermission(): Promise<PermissionResult>;
   addListener(
     eventName: 'stepUpdate',
     listenerFunc: (data: StepUpdateEvent) => void,

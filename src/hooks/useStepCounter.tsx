@@ -260,10 +260,23 @@ export function useStepCounter(userId?: string): UseStepCounterReturn {
     let cancelled = false;
 
     const init = async () => {
+      // ── Android: use StepCounter plugin directly (no @capgo/capacitor-pedometer) ──
+      if (isAndroid) {
+        setIsAvailable(true);
+        try {
+          const perm = await StepCounter.checkPermission();
+          if (perm.activityRecognition === 'granted') {
+            setHasPermission(true);
+            if (!cancelled) await startAndroidTracking();
+          }
+        } catch {}
+        return;
+      }
+
+      // ── iOS: use @capgo/capacitor-pedometer ────────────────────────────────
       const pedometer = await getPedometer();
       if (!pedometer || cancelled) return;
 
-      // ── Permission check (same flow on both platforms) ──────────────────────
       const perm = await pedometer.checkPermissions();
 
       if (perm.activityRecognition === 'granted') {
@@ -273,7 +286,6 @@ export function useStepCounter(userId?: string): UseStepCounterReturn {
         perm.activityRecognition === 'prompt-with-rationale' ||
         isIOS
       ) {
-        // Auto-request on first launch (iOS always, Android if not yet denied)
         try {
           const result = await pedometer.requestPermissions();
           if (!cancelled && result.activityRecognition === 'granted') {
@@ -282,39 +294,30 @@ export function useStepCounter(userId?: string): UseStepCounterReturn {
         } catch {}
       }
 
-      // ── Availability check ──────────────────────────────────────────────────
       const availability = await pedometer.isAvailable();
       if (cancelled) return;
 
-      // Show widget even if permission not yet granted (so the Allow button appears)
       if (availability.stepCounting || perm.activityRecognition !== 'granted') {
         setIsAvailable(true);
       }
 
       if (!availability.stepCounting) return;
 
-      // Confirm permission state after potential request
       const finalPerm = await pedometer.checkPermissions();
       if (finalPerm.activityRecognition !== 'granted') return;
       if (cancelled) return;
 
-      // ── Platform-specific tracking ──────────────────────────────────────────
-      if (isAndroid) {
-        await startAndroidTracking();
-      } else {
-        // iOS
-        const today = format(new Date(), 'yyyy-MM-dd');
-        const { steps: initialSteps, distance: initialDist } =
-          await resolveInitialStepsIOS(pedometer, userId, today);
+      const today = format(new Date(), 'yyyy-MM-dd');
+      const { steps: initialSteps, distance: initialDist } =
+        await resolveInitialStepsIOS(pedometer, userId, today);
 
-        if (cancelled) return;
+      if (cancelled) return;
 
-        setSteps(initialSteps);
-        if (initialDist !== null) setDistance(initialDist);
-        if (initialSteps > 0) saveSteps(initialSteps);
+      setSteps(initialSteps);
+      if (initialDist !== null) setDistance(initialDist);
+      if (initialSteps > 0) saveSteps(initialSteps);
 
-        await startIOSTracking(initialSteps);
-      }
+      await startIOSTracking(initialSteps);
     };
 
     init().catch(console.error);
@@ -332,8 +335,18 @@ export function useStepCounter(userId?: string): UseStepCounterReturn {
     };
   }, [startAndroidTracking, startIOSTracking, saveSteps, userId, isAndroid, isIOS]);
 
-  // ── Manual "Allow" button handler (Android primarily) ──────────────────────
+  // ── Manual "Allow" button handler ─────────────────────────────────────────
   const requestPermission = async () => {
+    if (isAndroid) {
+      try {
+        const perm = await StepCounter.requestPermission();
+        if (perm.activityRecognition !== 'granted') return;
+        setHasPermission(true);
+        await startAndroidTracking();
+      } catch {}
+      return;
+    }
+
     const pedometer = await getPedometer();
     if (!pedometer) return;
 
@@ -342,17 +355,13 @@ export function useStepCounter(userId?: string): UseStepCounterReturn {
 
     setHasPermission(true);
 
-    if (isAndroid) {
-      await startAndroidTracking();
-    } else {
-      const today = format(new Date(), 'yyyy-MM-dd');
-      const { steps: initialSteps, distance: initialDist } =
-        await resolveInitialStepsIOS(pedometer, userId, today);
-      setSteps(initialSteps);
-      if (initialDist !== null) setDistance(initialDist);
-      if (initialSteps > 0) saveSteps(initialSteps);
-      await startIOSTracking(initialSteps);
-    }
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const { steps: initialSteps, distance: initialDist } =
+      await resolveInitialStepsIOS(pedometer, userId, today);
+    setSteps(initialSteps);
+    if (initialDist !== null) setDistance(initialDist);
+    if (initialSteps > 0) saveSteps(initialSteps);
+    await startIOSTracking(initialSteps);
   };
 
   return {

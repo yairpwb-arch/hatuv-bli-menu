@@ -18,7 +18,9 @@ import { he } from 'date-fns/locale';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
+import { Capacitor } from '@capacitor/core';
 import { useStepLogs } from '@/hooks/useStepLogs';
+import { useStepCounter } from '@/hooks/useStepCounter';
 
 interface WeightEntry {
   id: string;
@@ -57,8 +59,10 @@ export default function AppProgress() {
   const [newWeight, setNewWeight] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Steps state
+  // Steps state — DB logs for history, live counter for today's display
   const { logs: stepLogs, todaySteps, isLoading: stepsLoading } = useStepLogs();
+  const { stepData } = useStepCounter(user?.id);
+  const liveSteps = Capacitor.isNativePlatform() ? stepData.steps : todaySteps;
 
   // Step averages (from steps_log — auto-counted by pedometer)
   const [stepAverages, setStepAverages] = useState<{
@@ -83,7 +87,7 @@ export default function AppProgress() {
     return { date: label, steps: found?.steps ?? 0 };
   });
 
-  const stepProgress = Math.min((todaySteps / stepGoal) * CIRCLE_CIRCUMFERENCE, CIRCLE_CIRCUMFERENCE);
+  const stepProgress = Math.min((liveSteps / stepGoal) * CIRCLE_CIRCUMFERENCE, CIRCLE_CIRCUMFERENCE);
   const strokeDashoffset = CIRCLE_CIRCUMFERENCE - stepProgress;
 
   const fetchStepAverages = useCallback(async () => {
@@ -331,12 +335,12 @@ export default function AppProgress() {
               {/* Center text */}
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 <span className="text-lg font-bold leading-none">
-                  {Math.round((todaySteps / stepGoal) * 100)}%
+                  {Math.round((liveSteps / stepGoal) * 100)}%
                 </span>
               </div>
             </div>
             <p className="text-sm text-muted-foreground" dir="rtl">
-              <span className="font-bold text-foreground">{todaySteps.toLocaleString()}</span>
+              <span className="font-bold text-foreground">{liveSteps.toLocaleString()}</span>
               {' / '}
               {stepGoal.toLocaleString()} צעדים
             </p>
