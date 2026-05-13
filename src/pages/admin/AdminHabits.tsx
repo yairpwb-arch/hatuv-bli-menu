@@ -36,8 +36,8 @@ import { Plus, Edit, Trash2, Loader2, Star } from 'lucide-react';
 interface HabitDefinition {
   id: string;
   name: string;
-  week_start: number;
-  week_end: number | null;
+  day_start: number;
+  day_end: number | null;
   icon: string | null;
   is_bonus: boolean;
 }
@@ -110,7 +110,7 @@ export default function AdminHabits() {
         .from('habit_definitions')
         .select('*')
         .is('user_id', null)
-        .order('week_start', { ascending: true });
+        .order('day_start', { ascending: true });
       if (error) throw error;
       return data as HabitDefinition[];
     },
@@ -119,7 +119,7 @@ export default function AdminHabits() {
   // ── Mutations ────────────────────────────────────────────────────────────
 
   const upsertMutation = useMutation({
-    mutationFn: async (payload: Omit<HabitDefinition, 'id'> & { id?: string }) => {
+    mutationFn: async (payload: Omit<HabitDefinition, 'id'> & { id?: string; week_start?: number; week_end?: number | null }) => {
       if (payload.id) {
         const { id, ...rest } = payload;
         const { error } = await supabase
@@ -170,8 +170,8 @@ export default function AdminHabits() {
     setEditingHabit(habit);
     setForm({
       name: habit.name,
-      day_start: weekToStartDay(habit.week_start),
-      day_end: habit.week_end !== null ? String(weekToEndDay(habit.week_end)) : '',
+      day_start: habit.day_start,
+      day_end: habit.day_end !== null ? String(habit.day_end) : '',
       icon: habit.icon || 'target',
       is_bonus: habit.is_bonus,
     });
@@ -194,13 +194,14 @@ export default function AdminHabits() {
       return;
     }
 
-    const week_start = dayToWeek(form.day_start);
-    const week_end = form.day_end !== '' ? dayToWeek(Number(form.day_end)) : null;
+    const day_end = form.day_end !== '' ? Number(form.day_end) : null;
 
     const payload = {
       name: form.name.trim(),
-      week_start,
-      week_end,
+      day_start: form.day_start,
+      day_end,
+      week_start: dayToWeek(form.day_start),
+      week_end: day_end !== null ? dayToWeek(day_end) : null,
       icon: form.icon || null,
       is_bonus: form.is_bonus,
       ...(editingHabit ? { id: editingHabit.id } : {}),
@@ -265,8 +266,8 @@ export default function AdminHabits() {
                 {habits.map((habit) => (
                   <TableRow key={habit.id}>
                     <TableCell className="font-medium">{habit.name}</TableCell>
-                    <TableCell>{weekToStartDay(habit.week_start)}</TableCell>
-                    <TableCell>{habit.week_end != null ? weekToEndDay(habit.week_end) : '—'}</TableCell>
+                    <TableCell>{habit.day_start}</TableCell>
+                    <TableCell>{habit.day_end != null ? habit.day_end : '—'}</TableCell>
                     <TableCell className="text-muted-foreground text-sm">
                       {iconLabel(habit.icon)}
                     </TableCell>

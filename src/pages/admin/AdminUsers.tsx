@@ -395,14 +395,12 @@ export default function AdminUsers() {
     const currentDay = user.start_date
       ? differenceInDays(new Date(), new Date(user.start_date)) + 1
       : 1;
-    // habits unlock on Sunday (day 2 of each week)
-    const currentWeek = Math.max(0, Math.floor((currentDay - 2) / 7) + 1);
 
     const { data: hd } = await (supabase as any)
       .from('habit_definitions')
       .select('*')
-      .lte('week_start', currentWeek)
-      .or(`week_end.is.null,week_end.gte.${currentWeek}`)
+      .lte('day_start', currentDay)
+      .or(`day_end.is.null,day_end.gte.${currentDay}`)
       .or(`user_id.is.null,user_id.eq.${user.id}`);
     const all = (hd || []) as (Habit & { user_id: string | null })[];
     setHabits(all.filter(h => !h.user_id));

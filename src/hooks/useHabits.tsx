@@ -29,7 +29,7 @@ interface UseHabitsResult {
 
 export function useHabits(
   userId: string | undefined,
-  currentWeek: number,
+  currentDay: number,
   dateString: string
 ): UseHabitsResult {
   const [habits, setHabits] = useState<Habit[]>([]);
@@ -40,15 +40,15 @@ export function useHabits(
       setIsLoading(false);
       return;
     }
-    
+
     setIsLoading(true);
 
-    // Get habit definitions for current week — global (user_id IS NULL) + personal for this user
+    // Get habit definitions unlocked by currentDay — global (user_id IS NULL) + personal for this user
     const { data: habitDefs, error: habitsError } = await supabase
       .from('habit_definitions')
       .select('*')
-      .lte('week_start', currentWeek)
-      .or(`week_end.gte.${currentWeek},week_end.is.null`)
+      .lte('day_start', currentDay)
+      .or(`day_end.gte.${currentDay},day_end.is.null`)
       .or(`user_id.is.null,user_id.eq.${userId}`);
 
     if (habitsError) {
@@ -82,7 +82,7 @@ export function useHabits(
 
     setHabits(habitsWithStatus);
     setIsLoading(false);
-  }, [userId, currentWeek, dateString]);
+  }, [userId, currentDay, dateString]);
 
   useEffect(() => {
     fetchHabits();

@@ -26,7 +26,7 @@ interface DailyQuote {
 }
 
 export default function AppHome() {
-  const { profile, currentDay, currentWeek, currentWeekForHabits, user, refreshProfile } = useAuth();
+  const { profile, currentDay, currentWeek, user, refreshProfile } = useAuth();
   const [quote, setQuote] = useState<DailyQuote | null>(null);
   const [isLoadingQuote, setIsLoadingQuote] = useState(true);
   const [quoteTab, setQuoteTab] = useState<'quote' | 'explain'>('quote');
@@ -40,8 +40,7 @@ export default function AppHome() {
   const progressPercentage = Math.min((currentDay / 168) * 100, 100);
   const today = format(new Date(), 'yyyy-MM-dd');
 
-  // Use shared habits hook — habits unlock on Sunday of each week (currentWeekForHabits)
-  const { habits, isLoading: isLoadingHabits, toggleHabit: baseToggleHabit } = useHabits(user?.id, currentWeekForHabits, today);
+  const { habits, isLoading: isLoadingHabits, toggleHabit: baseToggleHabit } = useHabits(user?.id, currentDay, today);
 
   // Get streak data
   const { currentStreak, isLoading: isStreakLoading } = useStreak(user?.id, currentWeek);

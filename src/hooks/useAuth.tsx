@@ -22,7 +22,6 @@ interface AuthContextType {
   isAdmin: boolean;
   currentDay: number;
   currentWeek: number;
-  currentWeekForHabits: number;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
@@ -60,11 +59,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const rollingWeek = Math.floor((currentDay - 1) / 7) + 1;
     return Math.max(1, Math.min(calendarWeek, rollingWeek));
   })();
-
-  // Habits unlock on Sunday (day 2 of each program week), not Saturday (day 1).
-  // formula: max(0, floor((currentDay - 2) / 7) + 1)
-  // Day 1 (Sat) → 0 (no habits), Day 2 (Sun) → 1, Day 9 (Sun wk2) → 2, etc.
-  const currentWeekForHabits = Math.max(0, Math.floor((currentDay - 2) / 7) + 1);
 
   const fetchProfile = async (userId: string) => {
     const { data, error } = await supabase
@@ -212,7 +206,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAdmin,
       currentDay,
       currentWeek,
-      currentWeekForHabits,
       signIn,
       signUp,
       signOut,
