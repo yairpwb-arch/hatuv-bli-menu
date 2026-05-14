@@ -255,6 +255,33 @@ export function useStepCounter(userId?: string): UseStepCounterReturn {
     listenerRef.current = handle;
   }, [userId, saveSteps]);
 
+  // ── Android: re-check permission when app returns to foreground ──────────────
+  // Needed because StepPermissionTrigger (App.tsx) shows the OS dialog before
+  // this hook's init can see 'granted'. When the dialog closes and app regains
+  // focus, we detect the new permission state and start tracking.
+  useEffect(() => {
+    if (!isAndroid || hasPermission) return;
+
+    let handle: { remove: () => void } | null = null;
+
+    import('@capacitor/app').then(({ App }) => {
+      App.addListener('appStateChange', async ({ isActive }: { isActive: boolean }) => {
+        if (!isActive) return;
+        try {
+          const perm = await StepCounter.checkPermission();
+          if (perm.activityRecognition === 'granted') {
+            setHasPermission(true);
+            await startAndroidTracking();
+            handle?.remove();
+            handle = null;
+          }
+        } catch {}
+      }).then((h: { remove: () => void }) => { handle = h; });
+    });
+
+    return () => { handle?.remove(); };
+  }, [isAndroid, hasPermission, startAndroidTracking]);
+
   // ── Main initialisation effect ─────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;

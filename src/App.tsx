@@ -170,7 +170,9 @@ function ProtectedRouteInner() {
       <NotificationPermissionTrigger />
       <StepPermissionTrigger />
       <AppHeader />
-      <Outlet />
+      <div className="max-w-2xl mx-auto">
+        <Outlet />
+      </div>
       <BottomNav />
 
       {/* WorkoutMiniBar — shown when session is minimized */}
@@ -224,6 +226,26 @@ function AuthRoute() {
   return <Auth />;
 }
 
+function IndexRoute() {
+  const { user, isLoading, isAdmin, profile } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (user) {
+    if (isAdmin) return <Navigate to="/admin" replace />;
+    if (!profile?.is_active) return <Navigate to="/pricing" replace />;
+    return <Navigate to="/app" replace />;
+  }
+
+  return <Index />;
+}
+
 const App = () => (
   <ThemeProvider>
   <QueryClientProvider client={queryClient}>
@@ -234,7 +256,7 @@ const App = () => (
         <AuthProvider>
           <Suspense fallback={<PageLoader />}>
           <Routes>
-            <Route path="/" element={<Index />} />
+            <Route path="/" element={<IndexRoute />} />
             <Route path="/auth" element={<AuthRoute />} />
             <Route path="/pricing" element={<Pricing />} />
             <Route path="/app" element={<ProtectedRoute />}>
