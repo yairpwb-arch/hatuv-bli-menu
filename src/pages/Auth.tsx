@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 import { z } from 'zod';
@@ -47,23 +48,50 @@ export default function Auth() {
 
     setIsLoading(true);
     const { error } = await signIn(loginData.email, loginData.password);
-    setIsLoading(false);
 
     if (error) {
+      setIsLoading(false);
       toast({
         title: 'שגיאה בהתחברות',
-        description: error.message === 'Invalid login credentials' 
-          ? 'אימייל או סיסמה שגויים' 
+        description: error.message === 'Invalid login credentials'
+          ? 'אימייל או סיסמה שגויים'
           : error.message,
         variant: 'destructive',
       });
-    } else {
-      toast({
-        title: 'ברוך הבא!',
-        description: 'התחברת בהצלחה',
-      });
-      navigate('/app');
+      return;
     }
+
+    // Explicitly check is_active so the user gets clear feedback
+    // instead of a silent redirect to /pricing
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const uid = session?.user?.id;
+      if (uid) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('is_active, full_name')
+          .eq('id', uid)
+          .maybeSingle();
+
+        setIsLoading(false);
+
+        if (profile?.is_active) {
+          toast({ title: 'ברוך הבא!', description: 'התחברת בהצלחה' });
+          navigate('/app');
+        } else {
+          toast({
+            title: 'נדרש מנוי פעיל',
+            description: 'כדי להמשיך יש לרכוש מנוי',
+          });
+          navigate('/pricing');
+        }
+        return;
+      }
+    } catch { /* fallback below */ }
+
+    setIsLoading(false);
+    toast({ title: 'ברוך הבא!', description: 'התחברת בהצלחה' });
+    navigate('/app');
   };
 
   return (
@@ -96,7 +124,6 @@ export default function Auth() {
                   placeholder="your@email.com"
                   value={loginData.email}
                   onChange={(e) => setLoginData({ ...loginData, email: e.target.value })}
-                  required
                   dir="ltr"
                   className="text-left"
                 />
@@ -109,7 +136,6 @@ export default function Auth() {
                   placeholder="••••••••"
                   value={loginData.password}
                   onChange={(e) => setLoginData({ ...loginData, password: e.target.value })}
-                  required
                   dir="ltr"
                   className="text-left"
                 />
