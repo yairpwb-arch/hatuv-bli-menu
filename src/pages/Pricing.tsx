@@ -251,6 +251,7 @@ function StepPlanSelection({
   isPurchasing: boolean;
   onSelect: (plan: PlanId) => void;
 }) {
+  const navigate = useNavigate();
   return (
     <div className="w-full max-w-sm space-y-6 animate-slide-up" dir="rtl">
       {/* Header */}
@@ -366,6 +367,17 @@ function StepPlanSelection({
         </button>{' '}
         של האפליקציה
       </p>
+
+      {/* Account deletion info */}
+      <div className="text-center">
+        <button
+          type="button"
+          className="text-xs text-muted-foreground underline underline-offset-2 hover:text-primary transition-colors"
+          onClick={() => navigate('/account-deletion')}
+        >
+          מדיניות מחיקת חשבון ונתונים
+        </button>
+      </div>
     </div>
   );
 }
