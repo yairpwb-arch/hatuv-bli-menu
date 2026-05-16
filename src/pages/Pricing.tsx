@@ -575,6 +575,13 @@ export default function Pricing() {
                 : <Trash2 className="h-4 w-4" />}
               מחק את החשבון שלי
             </Button>
+            <button
+              type="button"
+              className="w-full text-xs text-muted-foreground underline underline-offset-2 hover:text-primary transition-colors"
+              onClick={() => navigate('/account-deletion')}
+            >
+              מדיניות מחיקת חשבון ונתונים
+            </button>
           </div>
         </div>
       </div>
@@ -600,19 +607,28 @@ export default function Pricing() {
             isPurchasing={isPurchasing}
             onSelect={handlePlanSelect}
           />
-          {/* Delete account button — visible for any logged-in user on the plan screen */}
+          {/* Delete account + deletion policy link */}
           {userId && (
-            <button
-              type="button"
-              className="mt-6 text-xs text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1.5 disabled:opacity-50"
-              disabled={isDeleting}
-              onClick={handleDeleteAccount}
-            >
-              {isDeleting
-                ? <Loader2 className="h-3 w-3 animate-spin" />
-                : <Trash2 className="h-3 w-3" />}
-              מחק את החשבון שלי
-            </button>
+            <div className="mt-6 flex flex-col items-center gap-2">
+              <button
+                type="button"
+                className="text-xs text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                disabled={isDeleting}
+                onClick={handleDeleteAccount}
+              >
+                {isDeleting
+                  ? <Loader2 className="h-3 w-3 animate-spin" />
+                  : <Trash2 className="h-3 w-3" />}
+                מחק את החשבון שלי
+              </button>
+              <button
+                type="button"
+                className="text-xs text-muted-foreground underline underline-offset-2 hover:text-primary transition-colors"
+                onClick={() => navigate('/account-deletion')}
+              >
+                מדיניות מחיקת חשבון ונתונים
+              </button>
+            </div>
           )}
         </>
       )}

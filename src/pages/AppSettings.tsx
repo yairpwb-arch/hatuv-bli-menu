@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, Sun, Moon, Bell, BellOff, Info, LogOut, User, Loader2, BookOpen, ExternalLink, CheckCircle2, XCircle, Send, Trash2 } from 'lucide-react';
+import { ChevronLeft, Sun, Moon, Bell, BellOff, Info, LogOut, User, Loader2, BookOpen, ExternalLink, CheckCircle2, XCircle, Send, Trash2, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -446,6 +446,13 @@ export default function AppSettings() {
             description="יציאה מהחשבון"
             onClick={doSignOut}
             danger
+          />
+          <Row
+            icon={ShieldAlert}
+            label="מדיניות מחיקת חשבון"
+            description="הסבר על אפשרויות מחיקה ומה קורה לנתונים"
+            onClick={() => navigate('/account-deletion')}
+            right={<ChevronLeft className="h-4 w-4 text-muted-foreground" />}
           />
           <Row
             icon={Trash2}
