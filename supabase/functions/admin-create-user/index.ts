@@ -62,7 +62,7 @@ serve(async (req) => {
     }
 
     // Parse body
-    const { email, password, full_name, start_date, height, initial_weight, gender, phone_number, birthdate, target_weight } = await req.json();
+    const { email, password, full_name, start_date, height, initial_weight, gender, phone_number, birthdate, target_weight, plan_duration_days } = await req.json();
 
     if (!email || !password) {
       return new Response(JSON.stringify({ error: 'email and password are required' }), {
@@ -97,7 +97,10 @@ serve(async (req) => {
     }
 
     // Update profile — always activate admin-created users regardless of trigger default
-    const updateData: Record<string, unknown> = { is_active: true };
+    const updateData: Record<string, unknown> = {
+      is_active: true,
+      plan_duration_days: plan_duration_days ?? 168,
+    };
     if (start_date) updateData.start_date = start_date;
     if (height) updateData.height = parseFloat(height);
     if (initial_weight) {

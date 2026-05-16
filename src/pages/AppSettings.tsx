@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, Sun, Moon, Bell, BellOff, Info, LogOut, User, Loader2, BookOpen, ExternalLink, CheckCircle2, XCircle, Send, Trash2, ShieldAlert } from 'lucide-react';
+import { ChevronLeft, Sun, Moon, Bell, BellOff, Info, LogOut, User, Loader2, BookOpen, ExternalLink, CheckCircle2, XCircle, Send, Trash2, ShieldAlert, BarChart2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -286,6 +286,13 @@ export default function AppSettings() {
             label={profile?.full_name || 'הפרופיל שלי'}
             description={profile?.email || ''}
             onClick={() => navigate('/app/profile')}
+            right={<ChevronLeft className="h-4 w-4 text-muted-foreground" />}
+          />
+          <Row
+            icon={BarChart2}
+            label="סטטוס מנוי ותוכנית"
+            description="ימים שנשארו, התקדמות ותאריך סיום"
+            onClick={() => navigate('/app/settings/status')}
             right={<ChevronLeft className="h-4 w-4 text-muted-foreground" />}
           />
         </Section>

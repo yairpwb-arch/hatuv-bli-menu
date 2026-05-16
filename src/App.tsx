@@ -133,6 +133,7 @@ const NotFound = lazy(() => import("./pages/NotFound"));
 const WorkoutActiveSession = lazy(() => import("./components/WorkoutActiveSession"));
 const Pricing = lazy(() => import("./pages/Pricing"));
 const AccountDeletion = lazy(() => import("./pages/AccountDeletion"));
+const AccountStatus = lazy(() => import("./pages/AccountStatus"));
 
 const PageLoader = () => (
   <div className="min-h-screen flex items-center justify-center bg-background">
@@ -281,6 +282,7 @@ const App = () => (
               <Route path="workouts" element={<AppWorkouts />} />
               <Route path="profile" element={<AppProfile />} />
               <Route path="settings" element={<AppSettings />} />
+              <Route path="settings/status" element={<AccountStatus />} />
             </Route>
             <Route path="/admin" element={<AdminLayout />}>
               <Route index element={<AdminDashboard />} />

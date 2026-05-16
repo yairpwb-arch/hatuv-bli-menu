@@ -28,7 +28,7 @@ interface DailyQuote {
 }
 
 export default function AppHome() {
-  const { profile, currentDay, currentWeek, user, refreshProfile } = useAuth();
+  const { profile, currentDay, currentWeek, planDays, user, refreshProfile } = useAuth();
   const [quote, setQuote] = useState<DailyQuote | null>(null);
   const [isLoadingQuote, setIsLoadingQuote] = useState(true);
   const [quoteTab, setQuoteTab] = useState<'quote' | 'explain'>('quote');
@@ -41,7 +41,7 @@ export default function AppHome() {
   const todaySteps = Capacitor.isNativePlatform() ? stepData.steps : (todayStepsDb ?? 0);
 
   const isWeighInDay = currentDay % 7 === 0;
-  const progressPercentage = Math.min((currentDay / 168) * 100, 100);
+  const progressPercentage = Math.min((currentDay / planDays) * 100, 100);
   const today = format(new Date(), 'yyyy-MM-dd');
 
   const { habits, isLoading: isLoadingHabits, toggleHabit: baseToggleHabit } = useHabits(user?.id, currentDay, today);

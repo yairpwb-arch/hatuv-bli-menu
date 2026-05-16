@@ -12,6 +12,7 @@ interface Profile {
   current_weight: number | null;
   phone_number: string | null;
   is_active: boolean;
+  plan_duration_days: number | null;
 }
 
 interface AuthContextType {
@@ -22,6 +23,7 @@ interface AuthContextType {
   isAdmin: boolean;
   currentDay: number;
   currentWeek: number;
+  planDays: number;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
@@ -39,6 +41,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   
+  const planDays = profile?.plan_duration_days ?? 168;
+
   const currentDay = profile?.start_date
     ? Math.max(1, Math.floor((Date.now() - new Date(profile.start_date).getTime()) / (1000 * 60 * 60 * 24)) + 1)
     : 1;
@@ -206,6 +210,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAdmin,
       currentDay,
       currentWeek,
+      planDays,
       signIn,
       signUp,
       signOut,

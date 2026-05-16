@@ -235,7 +235,7 @@ export default function AdminUsers() {
 
   // Add-user form
   const [isAddOpen, setIsAddOpen] = useState(false);
-  const [newUser, setNewUser] = useState({ email: '', password: '', fullName: '', startDate: '', height: '', initialWeight: '', gender: '', phoneNumber: '', age: '', targetWeight: '' });
+  const [newUser, setNewUser] = useState({ email: '', password: '', fullName: '', startDate: '', height: '', initialWeight: '', gender: '', phoneNumber: '', age: '', targetWeight: '', planDuration: '168' });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Tab-specific data
@@ -696,6 +696,7 @@ export default function AdminUsers() {
         phone_number: newUser.phoneNumber || undefined,
         birthdate,
         target_weight: newUser.targetWeight || undefined,
+        plan_duration_days: parseInt(newUser.planDuration) || 168,
       },
     });
     if (fnError || fnData?.error) {
@@ -703,7 +704,7 @@ export default function AdminUsers() {
       toast({ title: 'שגיאה', description: msg, variant: 'destructive' });
     } else {
       toast({ title: 'הצלחה', description: 'המשתמש נוסף בהצלחה' });
-      setNewUser({ email: '', password: '', fullName: '', startDate: '', height: '', initialWeight: '', gender: '', phoneNumber: '', age: '', targetWeight: '' });
+      setNewUser({ email: '', password: '', fullName: '', startDate: '', height: '', initialWeight: '', gender: '', phoneNumber: '', age: '', targetWeight: '', planDuration: '168' });
       setIsAddOpen(false);
       fetchUsers();
     }
@@ -784,6 +785,25 @@ export default function AdminUsers() {
                 <div className="space-y-1">
                   <Label>משקל יעד (ק"ג)</Label>
                   <Input type="number" step="0.1" placeholder="65.0" dir="ltr" className="text-left" value={newUser.targetWeight} onChange={e => setNewUser(p => ({ ...p, targetWeight: e.target.value }))} />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Label>תוכנית</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[{ label: '4 חודשים (120 ימים)', value: '120' }, { label: '6 חודשים (168 ימים)', value: '168' }].map(opt => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setNewUser(p => ({ ...p, planDuration: opt.value }))}
+                      className={`rounded-xl border py-2.5 px-3 text-sm font-medium transition-colors text-right ${
+                        newUser.planDuration === opt.value
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-border bg-card text-muted-foreground hover:border-primary/50'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
                 </div>
               </div>
               <Button onClick={handleAddUser} className="w-full" disabled={isSubmitting}>
