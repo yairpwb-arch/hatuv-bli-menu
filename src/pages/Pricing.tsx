@@ -10,7 +10,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useRevenueCat, PlanId } from '@/hooks/useRevenueCat';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
-import { Star, Zap, Check, ArrowLeft, Loader2, Trash2 } from 'lucide-react';
+import { Star, Zap, Check, ArrowLeft, Loader2, Trash2, ShoppingCart } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { z } from 'zod';
@@ -404,6 +404,7 @@ export default function Pricing() {
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
+  const [showPurchase, setShowPurchase] = useState(false);
 
   // Track whether purchase was completed — used to skip auto-delete on exit
   const purchaseCompletedRef = useRef(false);
@@ -543,7 +544,7 @@ export default function Pricing() {
   };
 
   // Returning user whose program has ended (start_date set but is_active=false)
-  const isProgramEnded = !!existingUser && !!existingProfile?.start_date && !existingProfile?.is_active;
+  const isProgramEnded = !!existingUser && !!existingProfile?.start_date && !existingProfile?.is_active && !showPurchase;
   const monthsInProgram = existingProfile?.start_date
     ? Math.max(1, Math.round((Date.now() - new Date(existingProfile.start_date).getTime()) / (1000 * 60 * 60 * 24 * 30)))
     : 0;
@@ -565,6 +566,16 @@ export default function Pricing() {
             </p>
           </div>
           <div className="space-y-3 pt-2">
+            <Button
+              className="w-full h-12 gradient-primary shadow-glow text-base font-bold gap-2"
+              onClick={() => {
+                setShowPurchase(true);
+                setStep(2);
+              }}
+            >
+              <ShoppingCart className="h-5 w-5" />
+              רכוש מנוי חדש
+            </Button>
             <Button
               variant="ghost"
               size="sm"

@@ -62,7 +62,7 @@ serve(async (req) => {
     }
 
     // Parse body
-    const { email, password, full_name, start_date, height, initial_weight, gender, phone_number, birthdate, target_weight, plan_duration_days } = await req.json();
+    const { email, password, full_name, start_date, height, initial_weight, gender, phone_number, birthdate, target_weight, plan_duration_days, subscription_type } = await req.json();
 
     if (!email || !password) {
       return new Response(JSON.stringify({ error: 'email and password are required' }), {
@@ -100,6 +100,7 @@ serve(async (req) => {
     const updateData: Record<string, unknown> = {
       is_active: true,
       plan_duration_days: plan_duration_days ?? 168,
+      subscription_type: subscription_type ?? 'program',
     };
     if (start_date) updateData.start_date = start_date;
     if (height) updateData.height = parseFloat(height);
