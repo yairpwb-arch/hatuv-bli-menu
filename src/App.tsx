@@ -157,11 +157,22 @@ function ProtectedRouteInner() {
     return <Navigate to="/auth" replace />;
   }
 
+  // User is authenticated but profile hasn't loaded yet — wait instead of
+  // redirecting, because !null?.is_active === true would send admin-created
+  // users straight to /pricing on every first login.
+  if (!profile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
   if (isAdmin) {
     return <Navigate to="/admin" replace />;
   }
 
-  if (!profile?.is_active) {
+  if (!profile.is_active) {
     return <Navigate to="/pricing" replace />;
   }
 

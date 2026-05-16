@@ -10,7 +10,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useRevenueCat, PlanId } from '@/hooks/useRevenueCat';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
-import { Star, Zap, Check, ArrowLeft, Loader2 } from 'lucide-react';
+import { Star, Zap, Check, ArrowLeft, Loader2, Trash2 } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { z } from 'zod';
@@ -393,13 +393,14 @@ function StepProcessing() {
 
 export default function Pricing() {
   const navigate = useNavigate();
-  const { signUp, signIn, user: existingUser } = useAuth();
+  const { signUp, signIn, user: existingUser, profile: existingProfile, signOut } = useAuth();
   const { isNative, products, purchasePlan, initialize } = useRevenueCat();
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [userId, setUserId] = useState<string | null>(null);
   const [isRegistering, setIsRegistering] = useState(false);
   const [isPurchasing, setIsPurchasing] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
 
   // Track whether purchase was completed — used to skip auto-delete on exit
@@ -440,6 +441,20 @@ export default function Pricing() {
       setStep(2);
     }
   }, [existingUser?.id]);
+
+  // Delete account handler (available on both step 2 and program-ended screen)
+  const handleDeleteAccount = async () => {
+    setIsDeleting(true);
+    try {
+      await supabase.functions.invoke('delete-account');
+      await signOut();
+      navigate('/auth');
+    } catch {
+      toast({ title: 'שגיאה', description: 'לא ניתן למחוק את החשבון כרגע', variant: 'destructive' });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   // Step 1: create Supabase account → move to plan selection
   const handleRegistrationSubmit = async (form: RegistrationForm) => {
@@ -525,6 +540,47 @@ export default function Pricing() {
     }
   };
 
+  // Returning user whose program has ended (start_date set but is_active=false)
+  const isProgramEnded = !!existingUser && !!existingProfile?.start_date && !existingProfile?.is_active;
+  const monthsInProgram = existingProfile?.start_date
+    ? Math.max(1, Math.round((Date.now() - new Date(existingProfile.start_date).getTime()) / (1000 * 60 * 60 * 24 * 30)))
+    : 0;
+
+  if (isProgramEnded) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6" dir="rtl">
+        <div className="w-full max-w-sm space-y-6 text-center animate-fade-in">
+          <div className="w-20 h-20 rounded-full gradient-primary flex items-center justify-center mx-auto shadow-glow">
+            <Star className="h-10 w-10 text-primary-foreground" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">התוכנית שלך הסתיימה</h1>
+            <p className="text-muted-foreground mt-2">
+              סיימת {monthsInProgram} חודשים בתוכנית חטוב בלי תפריט
+            </p>
+            <p className="text-sm text-muted-foreground mt-3 leading-relaxed">
+              המנוי שלך לא פעיל יותר. ליצירת קשר לחידוש — פנה לאדמין.
+            </p>
+          </div>
+          <div className="space-y-3 pt-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-destructive hover:text-destructive w-full gap-2"
+              disabled={isDeleting}
+              onClick={handleDeleteAccount}
+            >
+              {isDeleting
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <Trash2 className="h-4 w-4" />}
+              מחק את החשבון שלי
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className="min-h-screen bg-background flex flex-col items-center justify-center p-4"
@@ -538,11 +594,27 @@ export default function Pricing() {
         />
       )}
       {step === 2 && (
-        <StepPlanSelection
-          products={products}
-          isPurchasing={isPurchasing}
-          onSelect={handlePlanSelect}
-        />
+        <>
+          <StepPlanSelection
+            products={products}
+            isPurchasing={isPurchasing}
+            onSelect={handlePlanSelect}
+          />
+          {/* Delete account button — visible for any logged-in user on the plan screen */}
+          {userId && (
+            <button
+              type="button"
+              className="mt-6 text-xs text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1.5 disabled:opacity-50"
+              disabled={isDeleting}
+              onClick={handleDeleteAccount}
+            >
+              {isDeleting
+                ? <Loader2 className="h-3 w-3 animate-spin" />
+                : <Trash2 className="h-3 w-3" />}
+              מחק את החשבון שלי
+            </button>
+          )}
+        </>
       )}
       {step === 3 && <StepProcessing />}
     </div>
