@@ -231,8 +231,16 @@ function AuthRoute() {
   }
 
   if (user) {
+    // Wait for profile to load before deciding where to send the user
+    if (!profile) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-background">
+          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+        </div>
+      );
+    }
     if (isAdmin) return <Navigate to="/admin" replace />;
-    if (!profile?.is_active) return <Navigate to="/pricing" replace />;
+    if (!profile.is_active) return <Navigate to="/pricing" replace />;
     return <Navigate to="/app" replace />;
   }
 

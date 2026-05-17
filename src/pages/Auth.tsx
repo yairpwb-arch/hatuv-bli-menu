@@ -32,66 +32,61 @@ export default function Auth() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    try {
-      loginSchema.parse(loginData);
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        toast({
-          title: 'שגיאה',
-          description: error.errors[0].message,
-          variant: 'destructive',
-        });
-        return;
-      }
-    }
 
-    setIsLoading(true);
-    const { error } = await signIn(loginData.email, loginData.password);
-
-    if (error) {
-      setIsLoading(false);
+    const result = loginSchema.safeParse(loginData);
+    if (!result.success) {
       toast({
-        title: 'שגיאה בהתחברות',
-        description: error.message === 'Invalid login credentials'
-          ? 'אימייל או סיסמה שגויים'
-          : error.message,
+        title: 'שגיאה',
+        description: result.error.errors[0].message,
         variant: 'destructive',
       });
       return;
     }
 
-    // Explicitly check is_active so the user gets clear feedback
-    // instead of a silent redirect to /pricing
+    setIsLoading(true);
+
     try {
+      const { error } = await signIn(loginData.email.trim(), loginData.password);
+
+      if (error) {
+        toast({
+          title: 'שגיאה בהתחברות',
+          description: error.message === 'Invalid login credentials'
+            ? 'אימייל או סיסמה שגויים'
+            : error.message,
+          variant: 'destructive',
+        });
+        return;
+      }
+
       const { data: { session } } = await supabase.auth.getSession();
       const uid = session?.user?.id;
       if (uid) {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('is_active, full_name')
+          .select('is_active')
           .eq('id', uid)
           .maybeSingle();
-
-        setIsLoading(false);
 
         if (profile?.is_active) {
           toast({ title: 'ברוך הבא!', description: 'התחברת בהצלחה' });
           navigate('/app');
         } else {
-          toast({
-            title: 'נדרש מנוי פעיל',
-            description: 'כדי להמשיך יש לרכוש מנוי',
-          });
           navigate('/pricing');
         }
         return;
       }
-    } catch { /* fallback below */ }
 
-    setIsLoading(false);
-    toast({ title: 'ברוך הבא!', description: 'התחברת בהצלחה' });
-    navigate('/app');
+      navigate('/app');
+    } catch (err) {
+      toast({
+        title: 'שגיאה בהתחברות',
+        description: 'אירעה שגיאה, נסה שוב',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
