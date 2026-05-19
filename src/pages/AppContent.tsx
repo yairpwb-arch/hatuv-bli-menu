@@ -35,7 +35,6 @@ const PART_NAMES: Record<number, { title: string; subtitle: string }> = {
   1: { title: 'חלק 1', subtitle: 'בניית היסודות' },
   2: { title: 'חלק 2', subtitle: 'אדפטציה ושדרוג תזונתי' },
   3: { title: 'חלק 3', subtitle: 'הטמעה ושיפור ביצועים' },
-  4: { title: 'שלב סיכום', subtitle: 'יום 168 — סוף התוכנית' },
   5: { title: 'הבסיס לשינוי הרגלים', subtitle: '' },
 };
 

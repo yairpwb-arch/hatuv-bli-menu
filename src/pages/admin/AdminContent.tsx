@@ -268,7 +268,6 @@ export default function AdminContent() {
     1: 'חלק 1',
     2: 'חלק 2',
     3: 'חלק 3',
-    4: 'שלב סיכום',
     5: 'הבסיס לשינוי הרגלים',
   };
 
@@ -374,7 +373,6 @@ export default function AdminContent() {
                     <SelectItem value="1">חלק 1 - בניית היסודות</SelectItem>
                     <SelectItem value="2">חלק 2 - אדפטציה ושדרוג</SelectItem>
                     <SelectItem value="3">חלק 3 - הטמעה ושיפור</SelectItem>
-                    <SelectItem value="4">שלב סיכום</SelectItem>
                     <SelectItem value="5">הבסיס לשינוי הרגלים</SelectItem>
                   </SelectContent>
                 </Select>
@@ -411,11 +409,6 @@ export default function AdminContent() {
                         <SelectItem value="מבוא">מבוא</SelectItem>
                         <SelectItem value="שבועות 16-18">שבועות 16-18</SelectItem>
                         <SelectItem value="שבועות 19-24">שבועות 19-24</SelectItem>
-                      </>
-                    )}
-                    {formData.part_number === 4 && (
-                      <>
-                        <SelectItem value="יום 168">יום 168</SelectItem>
                       </>
                     )}
                     {formData.part_number === 5 && (
