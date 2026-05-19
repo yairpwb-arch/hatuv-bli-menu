@@ -19,7 +19,7 @@ type ContentType = 'video' | 'content' | 'guide';
 
 const CONTENT_TYPE_LABELS: Record<ContentType, string> = {
   video: 'סרטון',
-  content: 'תוכן',
+  content: 'ידע',
   guide: 'מדריך',
 };
 
@@ -597,7 +597,7 @@ export default function AdminContent() {
                   <SelectItem value="content">
                     <div className="flex items-center gap-2">
                       <FileText className="h-4 w-4" />
-                      תוכן
+                      ידע
                     </div>
                   </SelectItem>
                   <SelectItem value="guide">
