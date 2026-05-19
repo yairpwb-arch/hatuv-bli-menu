@@ -64,11 +64,18 @@ export default function Auth() {
       if (uid) {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('is_active')
+          .select('is_active, subscription_type, start_date, plan_duration_days')
           .eq('id', uid)
           .maybeSingle();
 
-        if (profile?.is_active) {
+        const planDays = profile?.plan_duration_days ?? 168;
+        const startDate = profile?.start_date ? new Date(profile.start_date) : null;
+        const dayElapsed = startDate
+          ? Math.max(1, Math.floor((Date.now() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1)
+          : 1;
+        const isProgramOver = profile?.subscription_type === 'program' && dayElapsed > planDays;
+
+        if (profile?.is_active && !isProgramOver) {
           toast({ title: 'ברוך הבא!', description: 'התחברת בהצלחה' });
           navigate('/app');
         } else {

@@ -30,10 +30,14 @@ interface UseHabitsResult {
 export function useHabits(
   userId: string | undefined,
   currentDay: number,
-  dateString: string
+  dateString: string,
+  planDays?: number
 ): UseHabitsResult {
   const [habits, setHabits] = useState<Habit[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Cap at planDays so habits from the last program day stay visible after program ends
+  const effectiveDay = planDays != null ? Math.min(currentDay, planDays) : currentDay;
 
   const fetchHabits = useCallback(async () => {
     if (!userId) {
@@ -43,12 +47,12 @@ export function useHabits(
 
     setIsLoading(true);
 
-    // Get habit definitions unlocked by currentDay — global (user_id IS NULL) + personal for this user
+    // Get habit definitions unlocked by effectiveDay — global (user_id IS NULL) + personal for this user
     const { data: habitDefs, error: habitsError } = await supabase
       .from('habit_definitions')
       .select('*')
-      .lte('day_start', currentDay)
-      .or(`day_end.gte.${currentDay},day_end.is.null`)
+      .lte('day_start', effectiveDay)
+      .or(`day_end.gte.${effectiveDay},day_end.is.null`)
       .or(`user_id.is.null,user_id.eq.${userId}`);
 
     if (habitsError) {
@@ -82,7 +86,7 @@ export function useHabits(
 
     setHabits(habitsWithStatus);
     setIsLoading(false);
-  }, [userId, currentDay, dateString]);
+  }, [userId, effectiveDay, dateString]);
 
   useEffect(() => {
     fetchHabits();

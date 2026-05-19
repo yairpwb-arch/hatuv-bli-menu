@@ -144,7 +144,7 @@ const PageLoader = () => (
 const queryClient = new QueryClient();
 
 function ProtectedRouteInner() {
-  const { user, isLoading, isAdmin, profile } = useAuth();
+  const { user, isLoading, isAdmin, profile, currentDay, planDays } = useAuth();
   const { params, isVisible, minimize, end } = useActiveWorkout();
 
   if (isLoading) {
@@ -174,7 +174,8 @@ function ProtectedRouteInner() {
     return <Navigate to="/admin" replace />;
   }
 
-  if (!profile.is_active) {
+  const isProgramOver = profile.subscription_type === 'program' && currentDay > planDays;
+  if (!profile.is_active || isProgramOver) {
     return <Navigate to="/pricing" replace />;
   }
 

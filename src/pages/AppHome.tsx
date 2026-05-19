@@ -47,7 +47,7 @@ export default function AppHome() {
   const progressPercentage = Math.min((currentDay / planDays) * 100, 100);
   const today = format(new Date(), 'yyyy-MM-dd');
 
-  const { habits, isLoading: isLoadingHabits, toggleHabit: baseToggleHabit } = useHabits(user?.id, currentDay, today);
+  const { habits, isLoading: isLoadingHabits, toggleHabit: baseToggleHabit } = useHabits(user?.id, currentDay, today, planDays);
 
   // Get streak data
   const { currentStreak, isLoading: isStreakLoading } = useStreak(user?.id, currentWeek);

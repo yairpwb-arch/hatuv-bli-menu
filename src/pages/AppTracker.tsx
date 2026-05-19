@@ -38,7 +38,7 @@ interface DayCompletionData {
 }
 
 export default function AppTracker() {
-  const { user, currentDay, currentWeek } = useAuth();
+  const { user, currentDay, currentWeek, planDays } = useAuth();
   const { stepData, isAvailable, isNative, hasPermission, requestPermission } = useStepCounter(user?.id);
   const { weeklyAverage } = useStepLogs();
   const stepGoal = weeklyAverage ?? 10_000;
@@ -56,7 +56,7 @@ export default function AppTracker() {
   const dateString = format(selectedDate, 'yyyy-MM-dd');
 
   // Use shared habits hook
-  const { habits, isLoading: isLoadingHabits, toggleHabit: baseToggleHabit } = useHabits(user?.id, currentWeek, dateString);
+  const { habits, isLoading: isLoadingHabits, toggleHabit: baseToggleHabit } = useHabits(user?.id, currentDay, dateString, planDays);
 
   // Check if selected date is in the past (not today)
   const isSelectedDatePast = isBefore(startOfDay(selectedDate), startOfDay(new Date())) && !isToday(selectedDate);
