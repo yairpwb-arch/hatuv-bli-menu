@@ -29,7 +29,7 @@ interface ContentItem {
   daysUntilUnlock: number;
 }
 
-type TabType = 'all' | 'videos' | 'guides';
+type TabType = 'all' | 'videos' | 'guides' | 'knowledge' | 'bonus';
 
 const PART_NAMES: Record<number, { title: string; subtitle: string }> = {
   1: { title: 'חלק 1', subtitle: 'בניית היסודות' },
@@ -102,6 +102,8 @@ export default function AppContent() {
   const filteredContent = allContent.filter((item) => {
     if (activeTab === 'videos') return !!item.video_url;
     if (activeTab === 'guides') return !!item.resource_link && !item.video_url;
+    if (activeTab === 'knowledge') return item.content_type === 'content';
+    if (activeTab === 'bonus') return item.is_bonus === true;
     return true;
   });
 
@@ -211,7 +213,7 @@ export default function AppContent() {
     <button
       onClick={() => setActiveTab(value)}
       className={cn(
-        'px-4 py-2 rounded-full text-sm font-medium transition-all duration-200',
+        'px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 whitespace-nowrap flex-shrink-0',
         activeTab === value
           ? 'gradient-primary text-primary-foreground shadow-glow'
           : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
@@ -276,10 +278,12 @@ export default function AppContent() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 animate-fade-in" style={{ animationDelay: '0.15s' }}>
+      <div className="flex gap-2 overflow-x-auto pb-1 animate-fade-in scrollbar-hide" style={{ animationDelay: '0.15s' }}>
         <TabButton value="all" label="הכל" />
         <TabButton value="videos" label="סרטונים" />
         <TabButton value="guides" label="מדריכים" />
+        <TabButton value="knowledge" label="ידע" />
+        <TabButton value="bonus" label="הרגלי בונוס" />
       </div>
 
       {/* Content Roadmap */}
