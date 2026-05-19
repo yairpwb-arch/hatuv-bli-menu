@@ -22,6 +22,7 @@ import { cn } from '@/lib/utils';
 import { MonthlyCalendar } from '@/components/MonthlyCalendar';
 import { useHabits, iconMap } from '@/hooks/useHabits';
 import { useStepCounter } from '@/hooks/useStepCounter';
+import { useStepLogs } from '@/hooks/useStepLogs';
 
 interface ScheduledActivity {
   activity_type: 'walk' | 'workout';
@@ -39,6 +40,9 @@ interface DayCompletionData {
 export default function AppTracker() {
   const { user, currentDay, currentWeek } = useAuth();
   const { stepData, isAvailable, isNative, hasPermission, requestPermission } = useStepCounter(user?.id);
+  const { weeklyAverage } = useStepLogs();
+  const stepGoal = weeklyAverage ?? 10_000;
+  const stepPct = isNative && hasPermission ? Math.min(100, Math.round((stepData.steps / stepGoal) * 100)) : 0;
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [allHabitIds, setAllHabitIds] = useState<string[]>([]);
   const [scheduledActivities, setScheduledActivities] = useState<ScheduledActivity[]>([]);
@@ -313,14 +317,14 @@ export default function AppTracker() {
                   strokeWidth="6"
                   strokeLinecap="round"
                   strokeDasharray={`${2 * Math.PI * 32}`}
-                  strokeDashoffset={`${2 * Math.PI * 32 * (1 - (isNative && hasPermission ? stepData.percentage / 100 : 0))}`}
+                  strokeDashoffset={`${2 * Math.PI * 32 * (1 - stepPct / 100)}`}
                   className="transition-all duration-700"
                 />
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 <Footprints className="h-5 w-5 text-primary" />
                 <span className="text-xs font-bold text-primary leading-none mt-0.5">
-                  {isNative && hasPermission ? `${stepData.percentage}%` : '—'}
+                  {isNative && hasPermission ? `${stepPct}%` : '—'}
                 </span>
               </div>
             </div>
@@ -334,7 +338,7 @@ export default function AppTracker() {
                   : '—'}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
-                יעד: {(10000).toLocaleString('he-IL')} צעדים
+                יעד: {stepGoal.toLocaleString('he-IL')} צעדים
               </p>
               {stepData.distance != null && (
                 <p className="text-xs text-muted-foreground">
@@ -356,7 +360,7 @@ export default function AppTracker() {
                 <Button size="sm" variant="outline" className="text-xs h-8" onClick={requestPermission}>
                   אפשר גישה
                 </Button>
-              ) : stepData.percentage >= 100 ? (
+              ) : stepPct >= 100 ? (
                 <div className="flex flex-col items-center gap-1 text-success">
                   <Check className="h-6 w-6" />
                   <span className="text-xs font-semibold">הגעת!</span>

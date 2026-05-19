@@ -60,18 +60,17 @@ export default function AppProgress() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Steps state — DB logs for history, live counter for today's display
-  const { logs: stepLogs, todaySteps, isLoading: stepsLoading } = useStepLogs();
+  const { logs: stepLogs, todaySteps, weeklyAverage, isLoading: stepsLoading } = useStepLogs();
   const { stepData } = useStepCounter(user?.id);
   const liveSteps = Capacitor.isNativePlatform() ? stepData.steps : todaySteps;
 
-  // Step averages (from steps_log — auto-counted by pedometer)
+  // Step averages (monthly + fromStart fetched separately; weekly comes from useStepLogs)
   const [stepAverages, setStepAverages] = useState<{
-    weekly: number | null;
     monthly: number | null;
     fromStart: number | null;
-  }>({ weekly: null, monthly: null, fromStart: null });
+  }>({ monthly: null, fromStart: null });
 
-  const stepGoal = stepAverages.weekly ?? 10_000;
+  const stepGoal = weeklyAverage ?? 10_000;
 
   const today = new Date();
   const todayDayOfWeek = today.getDay();
@@ -93,25 +92,18 @@ export default function AppProgress() {
   const fetchStepAverages = useCallback(async () => {
     if (!user) return;
     const now = new Date();
-    const sevenDaysAgo = format(subDays(now, 6), 'yyyy-MM-dd');
     const thirtyDaysAgo = format(subDays(now, 29), 'yyyy-MM-dd');
 
-    const [weeklyRes, monthlyRes] = await Promise.all([
-      (supabase as any).from('steps_log').select('steps').eq('user_id', user.id).gte('date', sevenDaysAgo),
-      (supabase as any).from('steps_log').select('steps').eq('user_id', user.id).gte('date', thirtyDaysAgo),
-    ]);
+    const monthlyRes = await (supabase as any)
+      .from('steps_log').select('steps').eq('user_id', user.id)
+      .gte('date', thirtyDaysAgo).gt('steps', 0);
 
     const avg = (rows: { steps: number }[] | null) => {
       if (!rows || rows.length === 0) return null;
       return Math.round(rows.reduce((s: number, r: { steps: number }) => s + r.steps, 0) / rows.length);
     };
 
-    // fromStart requires start_date — defer to profileData effect
-    setStepAverages(prev => ({
-      ...prev,
-      weekly: avg(weeklyRes.data),
-      monthly: avg(monthlyRes.data),
-    }));
+    setStepAverages(prev => ({ ...prev, monthly: avg(monthlyRes.data) }));
   }, [user]);
 
   // Fetch from-start average once profileData is known
@@ -395,7 +387,7 @@ export default function AppProgress() {
             </p>
             <div className="grid grid-cols-3 gap-2">
               {[
-                { label: 'שבוע', value: stepAverages.weekly },
+                { label: 'שבוע', value: weeklyAverage },
                 { label: '30 יום', value: stepAverages.monthly },
                 { label: 'מתחילת תהליך', value: stepAverages.fromStart },
               ].map(({ label, value }) => (

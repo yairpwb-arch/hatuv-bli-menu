@@ -18,6 +18,7 @@ import { MorningStreakPopup } from '@/components/MorningStreakPopup';
 import { useStreak } from '@/hooks/useStreak';
 import { useHabits, iconMap } from '@/hooks/useHabits';
 import { useStepCounter } from '@/hooks/useStepCounter';
+import { useStepLogs } from '@/hooks/useStepLogs';
 import { Capacitor } from '@capacitor/core';
 import { format } from 'date-fns';
 
@@ -38,7 +39,9 @@ export default function AppHome() {
   const [todayStepsDb, setTodayStepsDb] = useState<number | null>(null);
   const [todayWorkoutName, setTodayWorkoutName] = useState<string | null>(null);
   const { stepData } = useStepCounter(user?.id);
+  const { weeklyAverage } = useStepLogs();
   const todaySteps = Capacitor.isNativePlatform() ? stepData.steps : (todayStepsDb ?? 0);
+  const stepGoal = weeklyAverage ?? 10_000;
 
   const isWeighInDay = currentDay % 7 === 0;
   const progressPercentage = Math.min((currentDay / planDays) * 100, 100);
@@ -214,12 +217,12 @@ export default function AppHome() {
             <div className="h-2 bg-muted rounded-full overflow-hidden">
               <div
                 className="h-full gradient-primary rounded-full transition-all"
-                style={{ width: `${Math.min(((todaySteps ?? 0) / 10_000) * 100, 100)}%` }}
+                style={{ width: `${Math.min(((todaySteps ?? 0) / stepGoal) * 100, 100)}%` }}
               />
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               {todaySteps && todaySteps > 0
-                ? `${Math.round((todaySteps / 10_000) * 100)}% מהיעד`
+                ? `${Math.round((todaySteps / stepGoal) * 100)}% מהיעד`
                 : 'לא נמדדו צעדים היום'}
             </p>
           </div>

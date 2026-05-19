@@ -310,8 +310,7 @@ export function useStepCounter(userId?: string): UseStepCounterReturn {
         setHasPermission(true);
       } else if (
         perm.activityRecognition === 'prompt' ||
-        perm.activityRecognition === 'prompt-with-rationale' ||
-        isIOS
+        perm.activityRecognition === 'prompt-with-rationale'
       ) {
         try {
           const result = await pedometer.requestPermissions();

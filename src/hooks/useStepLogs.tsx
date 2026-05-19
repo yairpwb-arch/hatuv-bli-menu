@@ -13,6 +13,7 @@ export interface StepLog {
 interface UseStepLogsResult {
   logs: StepLog[];
   todaySteps: number;
+  weeklyAverage: number | null;
   updateSteps: (date: string, stepCount: number) => Promise<void>;
   isLoading: boolean;
 }
@@ -76,5 +77,11 @@ export function useStepLogs(): UseStepLogsResult {
   const todayLog = logs.find((log) => log.date === today);
   const todaySteps = todayLog?.steps ?? 0;
 
-  return { logs, todaySteps, updateSteps, isLoading };
+  // Average over days that have actual step data (excludes zero-step days)
+  const activeLogs = logs.filter(l => l.steps > 0);
+  const weeklyAverage = activeLogs.length > 0
+    ? Math.round(activeLogs.reduce((sum, l) => sum + l.steps, 0) / activeLogs.length)
+    : null;
+
+  return { logs, todaySteps, weeklyAverage, updateSteps, isLoading };
 }
