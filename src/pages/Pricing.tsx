@@ -10,7 +10,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useRevenueCat, PlanId } from '@/hooks/useRevenueCat';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
-import { Star, Zap, Check, ArrowLeft, Loader2, Trash2, ShoppingCart } from 'lucide-react';
+import { Star, Zap, Check, ArrowLeft, Loader2, Trash2, ShoppingCart, LogOut, ChevronRight } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { z } from 'zod';
@@ -246,16 +246,28 @@ function StepPlanSelection({
   products,
   isPurchasing,
   onSelect,
+  onBack,
 }: {
   products: ReturnType<typeof useRevenueCat>['products'];
   isPurchasing: boolean;
   onSelect: (plan: PlanId) => void;
+  onBack?: () => void;
 }) {
   const navigate = useNavigate();
   return (
     <div className="w-full max-w-sm space-y-6 animate-slide-up" dir="rtl">
       {/* Header */}
-      <div className="text-center space-y-2">
+      <div className="relative text-center space-y-2">
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="absolute right-0 top-1 flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ChevronRight className="h-4 w-4" />
+            חזור
+          </button>
+        )}
         <h2 className="text-2xl font-bold text-foreground">בחר את המסלול שלך</h2>
         <p className="text-muted-foreground text-sm">לאחר הבחירה יפתח חלון התשלום</p>
       </div>
@@ -579,6 +591,14 @@ export default function Pricing() {
               רכוש מנוי חדש
             </Button>
             <Button
+              variant="outline"
+              className="w-full h-11 gap-2"
+              onClick={async () => { await signOut(); navigate('/auth'); }}
+            >
+              <LogOut className="h-4 w-4" />
+              התנתק
+            </Button>
+            <Button
               variant="ghost"
               size="sm"
               className="text-destructive hover:text-destructive w-full gap-2"
@@ -621,6 +641,10 @@ export default function Pricing() {
             products={products}
             isPurchasing={isPurchasing}
             onSelect={handlePlanSelect}
+            onBack={existingUser
+              ? () => setShowPurchase(false)
+              : () => setStep(1)
+            }
           />
           {/* Delete account + deletion policy link */}
           {userId && (
