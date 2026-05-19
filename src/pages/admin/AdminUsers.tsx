@@ -741,14 +741,22 @@ export default function AdminUsers() {
                 <Input type="password" placeholder="••••••••" dir="ltr" className="text-left" value={newUser.password} onChange={e => setNewUser(p => ({ ...p, password: e.target.value }))} />
               </div>
               <div className="space-y-1">
-                <Label>תאריך התחלה <span className="text-xs text-muted-foreground font-normal">(יום שבת בלבד)</span></Label>
+                <Label>תאריך התחלה</Label>
                 <Input
                   type="date"
                   dir="ltr"
                   className="text-left"
                   value={newUser.startDate || nextSaturdayStr()}
-                  onChange={e => e.target.value && setNewUser(p => ({ ...p, startDate: toSaturday(e.target.value) }))}
+                  onChange={e => setNewUser(p => ({ ...p, startDate: e.target.value }))}
                 />
+                {newUser.startDate && (() => {
+                  const d = differenceInDays(new Date(), new Date(newUser.startDate)) + 1;
+                  return (
+                    <p className={`text-xs font-medium ${d > 0 ? 'text-green-500' : 'text-destructive'}`}>
+                      {d > 0 ? `יום ${d} בתוכנית` : 'תאריך עתידי — תוכן יהיה נעול'}
+                    </p>
+                  );
+                })()}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
@@ -922,14 +930,22 @@ export default function AdminUsers() {
                   <Input dir="ltr" className="text-left" value={(editPersonal as any).phone_number || ''} onChange={e => setEditPersonal(p => ({ ...p, phone_number: e.target.value } as any))} placeholder="050-000-0000" />
                 </div>
                 <div className="space-y-1">
-                  <Label>תאריך התחלה <span className="text-xs text-muted-foreground font-normal">(שבת)</span></Label>
+                  <Label>תאריך התחלה</Label>
                   <Input
                     type="date"
                     dir="ltr"
                     className="text-left"
                     value={editPersonal.start_date || ''}
-                    onChange={e => e.target.value && setEditPersonal(p => ({ ...p, start_date: toSaturday(e.target.value) }))}
+                    onChange={e => setEditPersonal(p => ({ ...p, start_date: e.target.value || '' }))}
                   />
+                  {editPersonal.start_date && (() => {
+                    const d = differenceInDays(new Date(), new Date(editPersonal.start_date)) + 1;
+                    return (
+                      <p className={`text-xs font-medium ${d > 0 ? 'text-green-500' : 'text-destructive'}`}>
+                        {d > 0 ? `יום ${d} בתוכנית` : 'תאריך עתידי — תוכן יהיה נעול'}
+                      </p>
+                    );
+                  })()}
                 </div>
                 <div className="flex items-center gap-3 col-span-2 pt-1">
                   <Switch
