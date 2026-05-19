@@ -221,7 +221,7 @@ function ProtectedRoute() {
 }
 
 function AuthRoute() {
-  const { user, isLoading, isAdmin, profile } = useAuth();
+  const { user, isLoading, isAdmin, profile, currentDay, planDays } = useAuth();
 
   if (isLoading) {
     return (
@@ -241,7 +241,8 @@ function AuthRoute() {
       );
     }
     if (isAdmin) return <Navigate to="/admin" replace />;
-    if (!profile.is_active) return <Navigate to="/pricing" replace />;
+    const isProgramOver = profile.subscription_type === 'program' && currentDay > planDays;
+    if (!profile.is_active || isProgramOver) return <Navigate to="/pricing" replace />;
     return <Navigate to="/app" replace />;
   }
 
@@ -249,7 +250,7 @@ function AuthRoute() {
 }
 
 function IndexRoute() {
-  const { user, isLoading, isAdmin, profile } = useAuth();
+  const { user, isLoading, isAdmin, profile, currentDay, planDays } = useAuth();
 
   if (isLoading) {
     return (
@@ -261,7 +262,8 @@ function IndexRoute() {
 
   if (user) {
     if (isAdmin) return <Navigate to="/admin" replace />;
-    if (!profile?.is_active) return <Navigate to="/pricing" replace />;
+    const isProgramOver = profile?.subscription_type === 'program' && currentDay > planDays;
+    if (!profile?.is_active || isProgramOver) return <Navigate to="/pricing" replace />;
     return <Navigate to="/app" replace />;
   }
 

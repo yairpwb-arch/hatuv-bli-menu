@@ -395,7 +395,7 @@ function StepProcessing() {
 
 export default function Pricing() {
   const navigate = useNavigate();
-  const { signUp, signIn, user: existingUser, profile: existingProfile, signOut } = useAuth();
+  const { signUp, signIn, user: existingUser, profile: existingProfile, signOut, currentDay, planDays } = useAuth();
   const { isNative, products, purchasePlan, initialize } = useRevenueCat();
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -543,8 +543,10 @@ export default function Pricing() {
     }
   };
 
-  // Returning user whose program has ended (start_date set but is_active=false)
-  const isProgramEnded = !!existingUser && !!existingProfile?.start_date && !existingProfile?.is_active && !showPurchase;
+  // Returning user whose program has ended — either admin set is_active=false,
+  // or program type user has exceeded their plan duration
+  const isProgramOverByDate = existingProfile?.subscription_type === 'program' && currentDay > planDays;
+  const isProgramEnded = !!existingUser && !!existingProfile?.start_date && (!existingProfile?.is_active || isProgramOverByDate) && !showPurchase;
   const monthsInProgram = existingProfile?.start_date
     ? Math.max(1, Math.round((Date.now() - new Date(existingProfile.start_date).getTime()) / (1000 * 60 * 60 * 24 * 30)))
     : 0;
