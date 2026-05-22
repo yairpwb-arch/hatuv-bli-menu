@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,7 +12,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { Star, Zap, Check, ArrowLeft, Loader2, Trash2, ShoppingCart, LogOut, ChevronRight } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
-import { App as CapApp } from '@capacitor/app';
+
 import { z } from 'zod';
 
 const TERMS_URL = 'https://docs.google.com/document/d/1PquUiaPZ6_v2TYH-qOlAbxGqwjpf8E0-hqzYtmomebs/edit?usp=sharing';
@@ -247,11 +247,15 @@ function StepPlanSelection({
   isPurchasing,
   onSelect,
   onBack,
+  onDelete,
+  isDeleting,
 }: {
   products: ReturnType<typeof useRevenueCat>['products'];
   isPurchasing: boolean;
   onSelect: (plan: PlanId) => void;
   onBack?: () => void;
+  onDelete?: () => void;
+  isDeleting?: boolean;
 }) {
   const navigate = useNavigate();
   return (
@@ -380,6 +384,33 @@ function StepPlanSelection({
         של האפליקציה
       </p>
 
+      {/* Delete account */}
+      {onDelete && (
+        <div className="flex flex-col items-center gap-2 pt-2">
+          <Button
+            variant="ghost"
+            className="w-full h-11 text-destructive hover:text-destructive hover:bg-destructive/10 gap-2 border border-destructive/30"
+            disabled={isDeleting}
+            onClick={onDelete}
+          >
+            {isDeleting
+              ? <Loader2 className="h-4 w-4 animate-spin" />
+              : <Trash2 className="h-4 w-4" />}
+            מחק את החשבון שלי
+          </Button>
+          <p className="text-xs text-muted-foreground text-center leading-relaxed">
+            מחיקה מלאה ובלתי הפיכה של כל נתוני החשבון
+          </p>
+          <button
+            type="button"
+            className="text-xs text-muted-foreground underline underline-offset-2 hover:text-primary transition-colors"
+            onClick={() => navigate('/account-deletion')}
+          >
+            מדיניות מחיקת חשבון ונתונים
+          </button>
+        </div>
+      )}
+
     </div>
   );
 }
@@ -418,35 +449,7 @@ export default function Pricing() {
   const [serverError, setServerError] = useState<string | null>(null);
   const [showPurchase, setShowPurchase] = useState(false);
 
-  // Track whether purchase was completed — used to skip auto-delete on exit
-  const purchaseCompletedRef = useRef(false);
-  const userIdRef = useRef<string | null>(null);
 
-  // Keep userIdRef in sync
-  useEffect(() => { userIdRef.current = userId; }, [userId]);
-
-  // Auto-delete: if the user registered but exits the app without purchasing,
-  // delete their account so no orphan users accumulate in the DB.
-  useEffect(() => {
-    if (!Capacitor.isNativePlatform()) return;
-
-    let handle: { remove: () => void } | null = null;
-
-    CapApp.addListener('appStateChange', async ({ isActive }) => {
-      if (isActive) return;
-      if (purchaseCompletedRef.current) return;
-      const uid = userIdRef.current;
-      if (!uid) return;
-
-      // App went to background without a completed purchase — clean up the account
-      try {
-        await supabase.functions.invoke('delete-account');
-        await supabase.auth.signOut();
-      } catch { /* non-fatal */ }
-    }).then((h) => { handle = h; });
-
-    return () => { handle?.remove(); };
-  }, []);
 
   // Already logged-in user with no active subscription — skip registration step
   useEffect(() => {
@@ -518,7 +521,6 @@ export default function Pricing() {
   // Step 2: user picks a plan → open IAP (native) or go straight to app (web)
   const handlePlanSelect = async (plan: PlanId) => {
     if (!isNative) {
-      purchaseCompletedRef.current = true;
       toast({ title: 'ברוך הבא!', description: 'נרשמת בהצלחה' });
       navigate('/app');
       return;
@@ -536,7 +538,6 @@ export default function Pricing() {
     setIsPurchasing(false);
 
     if (result.success) {
-      purchaseCompletedRef.current = true;
       toast({ title: 'ברוך הבא!', description: 'נרשמת בהצלחה והתשלום בוצע' });
       navigate('/app');
     } else if (result.error === 'user_cancelled') {
@@ -636,8 +637,7 @@ export default function Pricing() {
         />
       )}
       {step === 2 && (
-        <>
-          <StepPlanSelection
+        <StepPlanSelection
             products={products}
             isPurchasing={isPurchasing}
             onSelect={handlePlanSelect}
@@ -645,31 +645,9 @@ export default function Pricing() {
               ? () => setShowPurchase(false)
               : () => setStep(1)
             }
+            onDelete={userId ? handleDeleteAccount : undefined}
+            isDeleting={isDeleting}
           />
-          {/* Delete account + deletion policy link */}
-          {userId && (
-            <div className="mt-6 flex flex-col items-center gap-2">
-              <button
-                type="button"
-                className="text-xs text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1.5 disabled:opacity-50"
-                disabled={isDeleting}
-                onClick={handleDeleteAccount}
-              >
-                {isDeleting
-                  ? <Loader2 className="h-3 w-3 animate-spin" />
-                  : <Trash2 className="h-3 w-3" />}
-                מחק את החשבון שלי
-              </button>
-              <button
-                type="button"
-                className="text-xs text-muted-foreground underline underline-offset-2 hover:text-primary transition-colors"
-                onClick={() => navigate('/account-deletion')}
-              >
-                מדיניות מחיקת חשבון ונתונים
-              </button>
-            </div>
-          )}
-        </>
       )}
       {step === 3 && <StepProcessing />}
     </div>
