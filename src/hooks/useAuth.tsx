@@ -12,8 +12,6 @@ interface Profile {
   current_weight: number | null;
   phone_number: string | null;
   is_active: boolean;
-  plan_duration_days: number | null;
-  subscription_type: string | null;
 }
 
 interface AuthContextType {

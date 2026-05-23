@@ -59,31 +59,7 @@ export default function Auth() {
         return;
       }
 
-      const { data: { session } } = await supabase.auth.getSession();
-      const uid = session?.user?.id;
-      if (uid) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('is_active, subscription_type, start_date, plan_duration_days')
-          .eq('id', uid)
-          .maybeSingle();
-
-        const planDays = profile?.plan_duration_days ?? 168;
-        const startDate = profile?.start_date ? new Date(profile.start_date) : null;
-        const dayElapsed = startDate
-          ? Math.max(1, Math.floor((Date.now() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1)
-          : 1;
-        const isProgramOver = profile?.subscription_type === 'program' && dayElapsed > planDays;
-
-        if (profile?.is_active && !isProgramOver) {
-          toast({ title: 'ברוך הבא!', description: 'התחברת בהצלחה' });
-          navigate('/app');
-        } else {
-          navigate('/pricing');
-        }
-        return;
-      }
-
+      toast({ title: 'ברוך הבא!', description: 'התחברת בהצלחה' });
       navigate('/app');
     } catch (err) {
       toast({

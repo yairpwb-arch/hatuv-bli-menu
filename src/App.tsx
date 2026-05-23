@@ -133,7 +133,6 @@ const NotFound = lazy(() => import("./pages/NotFound"));
 const WorkoutActiveSession = lazy(() => import("./components/WorkoutActiveSession"));
 const Pricing = lazy(() => import("./pages/Pricing"));
 const AccountDeletion = lazy(() => import("./pages/AccountDeletion"));
-const AccountStatus = lazy(() => import("./pages/AccountStatus"));
 
 const PageLoader = () => (
   <div className="min-h-screen flex items-center justify-center bg-background">
@@ -144,7 +143,7 @@ const PageLoader = () => (
 const queryClient = new QueryClient();
 
 function ProtectedRouteInner() {
-  const { user, isLoading, isAdmin, profile, currentDay, planDays } = useAuth();
+  const { user, isLoading, isAdmin, profile } = useAuth();
   const { params, isVisible, minimize, end } = useActiveWorkout();
 
   if (isLoading) {
@@ -172,11 +171,6 @@ function ProtectedRouteInner() {
 
   if (isAdmin) {
     return <Navigate to="/admin" replace />;
-  }
-
-  const isProgramOver = profile.subscription_type === 'program' && currentDay > planDays;
-  if (!profile.is_active || isProgramOver) {
-    return <Navigate to="/pricing" replace />;
   }
 
   return (
@@ -221,7 +215,7 @@ function ProtectedRoute() {
 }
 
 function AuthRoute() {
-  const { user, isLoading, isAdmin, profile, currentDay, planDays } = useAuth();
+  const { user, isLoading, isAdmin } = useAuth();
 
   if (isLoading) {
     return (
@@ -232,17 +226,7 @@ function AuthRoute() {
   }
 
   if (user) {
-    // Wait for profile to load before deciding where to send the user
-    if (!profile) {
-      return (
-        <div className="min-h-screen flex items-center justify-center bg-background">
-          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-        </div>
-      );
-    }
     if (isAdmin) return <Navigate to="/admin" replace />;
-    const isProgramOver = profile.subscription_type === 'program' && currentDay > planDays;
-    if (!profile.is_active || isProgramOver) return <Navigate to="/pricing" replace />;
     return <Navigate to="/app" replace />;
   }
 
@@ -250,7 +234,7 @@ function AuthRoute() {
 }
 
 function IndexRoute() {
-  const { user, isLoading, isAdmin, profile, currentDay, planDays } = useAuth();
+  const { user, isLoading, isAdmin } = useAuth();
 
   if (isLoading) {
     return (
@@ -262,8 +246,6 @@ function IndexRoute() {
 
   if (user) {
     if (isAdmin) return <Navigate to="/admin" replace />;
-    const isProgramOver = profile?.subscription_type === 'program' && currentDay > planDays;
-    if (!profile?.is_active || isProgramOver) return <Navigate to="/pricing" replace />;
     return <Navigate to="/app" replace />;
   }
 
@@ -293,7 +275,6 @@ const App = () => (
               <Route path="workouts" element={<AppWorkouts />} />
               <Route path="profile" element={<AppProfile />} />
               <Route path="settings" element={<AppSettings />} />
-              <Route path="settings/status" element={<AccountStatus />} />
             </Route>
             <Route path="/admin" element={<AdminLayout />}>
               <Route index element={<AdminDashboard />} />

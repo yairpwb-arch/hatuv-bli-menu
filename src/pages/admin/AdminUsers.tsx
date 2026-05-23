@@ -235,7 +235,7 @@ export default function AdminUsers() {
 
   // Add-user form
   const [isAddOpen, setIsAddOpen] = useState(false);
-  const [newUser, setNewUser] = useState({ email: '', password: '', fullName: '', startDate: '', height: '', initialWeight: '', gender: '', phoneNumber: '', age: '', targetWeight: '', planDuration: '168' });
+  const [newUser, setNewUser] = useState({ email: '', password: '', fullName: '', startDate: '', height: '', initialWeight: '', gender: '', phoneNumber: '', age: '', targetWeight: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Tab-specific data
@@ -289,7 +289,7 @@ export default function AdminUsers() {
 
   const fetchUsers = useCallback(async () => {
     setIsLoading(true);
-    const { data, error } = await supabase.from('profiles').select('*').eq('is_active', true).order('created_at', { ascending: false });
+    const { data, error } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
     if (error) { toast({ title: 'שגיאה', description: 'לא ניתן לטעון משתמשים', variant: 'destructive' }); }
     else { setUsers(((data || []) as unknown as User[]).filter(u => !adminUserIds.includes(u.id))); }
     setIsLoading(false);
@@ -696,7 +696,6 @@ export default function AdminUsers() {
         phone_number: newUser.phoneNumber || undefined,
         birthdate,
         target_weight: newUser.targetWeight || undefined,
-        plan_duration_days: parseInt(newUser.planDuration) || 168,
       },
     });
     if (fnError || fnData?.error) {
@@ -704,7 +703,7 @@ export default function AdminUsers() {
       toast({ title: 'שגיאה', description: msg, variant: 'destructive' });
     } else {
       toast({ title: 'הצלחה', description: 'המשתמש נוסף בהצלחה' });
-      setNewUser({ email: '', password: '', fullName: '', startDate: '', height: '', initialWeight: '', gender: '', phoneNumber: '', age: '', targetWeight: '', planDuration: '168' });
+      setNewUser({ email: '', password: '', fullName: '', startDate: '', height: '', initialWeight: '', gender: '', phoneNumber: '', age: '', targetWeight: '' });
       setIsAddOpen(false);
       fetchUsers();
     }

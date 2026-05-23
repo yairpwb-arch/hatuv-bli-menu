@@ -288,13 +288,6 @@ export default function AppSettings() {
             onClick={() => navigate('/app/profile')}
             right={<ChevronLeft className="h-4 w-4 text-muted-foreground" />}
           />
-          <Row
-            icon={BarChart2}
-            label="סטטוס מנוי ותוכנית"
-            description="ימים שנשארו, התקדמות ותאריך סיום"
-            onClick={() => navigate('/app/settings/status')}
-            right={<ChevronLeft className="h-4 w-4 text-muted-foreground" />}
-          />
         </Section>
 
         {/* Appearance */}
