@@ -8,7 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
-import { ArrowLeft, Loader2, Trash2 } from 'lucide-react';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 import { z } from 'zod';
 
 const TERMS_URL = 'https://docs.google.com/document/d/1PquUiaPZ6_v2TYH-qOlAbxGqwjpf8E0-hqzYtmomebs/edit?usp=sharing';
@@ -21,13 +21,12 @@ const registrationSchema = z.object({
 
 export default function Pricing() {
   const navigate = useNavigate();
-  const { signUp, signIn, user, signOut } = useAuth();
+  const { signUp, signIn, user } = useAuth();
 
   const [form, setForm] = useState({ fullName: '', email: '', password: '' });
   const [errors, setErrors] = useState<Partial<typeof form>>({});
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
 
   // If already logged in → go to app
@@ -90,18 +89,6 @@ export default function Pricing() {
     }
   };
 
-  const handleDeleteAccount = async () => {
-    setIsDeleting(true);
-    try {
-      await supabase.functions.invoke('delete-account', {});
-      await signOut();
-      navigate('/auth');
-    } catch {
-      toast({ title: 'שגיאה', description: 'לא ניתן למחוק את החשבון כרגע', variant: 'destructive' });
-    } finally {
-      setIsDeleting(false);
-    }
-  };
 
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4" dir="rtl">
@@ -211,26 +198,6 @@ export default function Pricing() {
           </a>
         </p>
 
-        {/* Delete account */}
-        <div className="flex flex-col items-center gap-2 pt-2">
-          <Button
-            variant="ghost"
-            className="w-full h-11 text-destructive hover:text-destructive hover:bg-destructive/10 gap-2 border border-destructive/30"
-            disabled={isDeleting}
-            onClick={handleDeleteAccount}
-          >
-            {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-            מחק את החשבון שלי
-          </Button>
-          <p className="text-xs text-muted-foreground text-center">מחיקה מלאה ובלתי הפיכה של כל נתוני החשבון</p>
-          <button
-            type="button"
-            className="text-xs text-muted-foreground underline underline-offset-2 hover:text-primary transition-colors"
-            onClick={() => navigate('/account-deletion')}
-          >
-            מדיניות מחיקת חשבון ונתונים
-          </button>
-        </div>
 
       </div>
     </div>
