@@ -53,31 +53,37 @@ export default function Pricing() {
     try {
       const { error: signUpError } = await signUp(form.email, form.password, form.fullName);
 
-      if (signUpError) {
-        if (signUpError.message === 'User already registered') {
-          const { error: signInError } = await signIn(form.email, form.password);
-          if (signInError) {
-            setServerError('האימייל כבר רשום — בדוק שהסיסמה נכונה או התחבר דרך מסך ההתחברות');
-            return;
-          }
-        } else {
-          setServerError(signUpError.message);
-          return;
-        }
+      if (signUpError && signUpError.message !== 'User already registered') {
+        setServerError(signUpError.message);
+        return;
       }
 
-      // Set profile active + start_date
+      // Always sign in explicitly to guarantee a session exists
+      // (signUp alone may not establish a session if email confirmation is enabled)
+      const { error: signInError } = await signIn(form.email, form.password);
+      if (signInError) {
+        if (signInError.message.toLowerCase().includes('confirm') || signInError.message.toLowerCase().includes('email')) {
+          setServerError('נשלח אימייל לאימות — אשר את החשבון ואז התחבר דרך מסך ההתחברות');
+        } else {
+          setServerError('אירעה שגיאה בהתחברות — נסה שוב');
+        }
+        return;
+      }
+
+      // Session is now guaranteed — update profile
       const { data: { session } } = await supabase.auth.getSession();
       const uid = session?.user?.id;
       if (uid) {
         const today = new Date().toISOString().split('T')[0];
-        await supabase.from('profiles').update({
-          is_active: true,
-          start_date: today,
-        }).eq('id', uid).is('start_date', null);
-
-        // If no existing start_date was null, at least ensure is_active
-        await supabase.from('profiles').update({ is_active: true }).eq('id', uid);
+        // Set start_date only if not already set
+        await supabase.from('profiles')
+          .update({ is_active: true, start_date: today })
+          .eq('id', uid)
+          .is('start_date', null);
+        // Always ensure is_active = true
+        await supabase.from('profiles')
+          .update({ is_active: true })
+          .eq('id', uid);
       }
 
       toast({ title: 'ברוך הבא!', description: 'נרשמת בהצלחה' });
