@@ -25,21 +25,7 @@ export default function AccountDeletion() {
 
       <div className="space-y-4 max-w-2xl mx-auto">
 
-        {/* Option 1 — Pricing screen */}
-        <div className="card-elevated rounded-2xl p-4 space-y-2">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-              <Trash2 className="h-4 w-4 text-primary" />
-            </div>
-            <h2 className="font-semibold text-base">מחיקה מהירה — ללא מנוי פעיל</h2>
-          </div>
-          <p className="text-sm text-muted-foreground leading-relaxed pr-12">
-            עבור לדף התשלום, גלול למטה ולחץ על כפתור <strong className="text-foreground">מחק את החשבון שלי</strong>.
-            הפעולה תמחק את החשבון ואת כל הנתונים לאלתר.
-          </p>
-        </div>
-
-        {/* Option 2 — Settings */}
+        {/* Option 1 — Settings */}
         <div className="card-elevated rounded-2xl p-4 space-y-2">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
@@ -48,12 +34,13 @@ export default function AccountDeletion() {
             <h2 className="font-semibold text-base">מחיקה דרך ההגדרות</h2>
           </div>
           <p className="text-sm text-muted-foreground leading-relaxed pr-12">
-            כנס ל<strong className="text-foreground">הגדרות</strong> בתחתית האפליקציה, גלול לסוף הדף ולחץ על
-            {' '}<strong className="text-foreground">מחיקת חשבון</strong>. תתבקש לאשר את הפעולה בחלון קופץ.
+            לחץ על תמונת הפרופיל בראש המסך כדי להיכנס ל<strong className="text-foreground">הגדרות</strong>,
+            גלול לסוף הדף ולחץ על{' '}
+            <strong className="text-foreground">מחיקת חשבון</strong>. תתבקש לאשר את הפעולה בחלון קופץ.
           </p>
         </div>
 
-        {/* Option 3 — Email */}
+        {/* Option 2 — Email */}
         <div className="card-elevated rounded-2xl p-4 space-y-2">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
@@ -70,8 +57,7 @@ export default function AccountDeletion() {
             >
               yairpwb@gmail.com
             </button>
-            {' '}עם הכותרת <strong className="text-foreground">"בקשת מחיקת חשבון"</strong> וציין את מספר הטלפון
-            או האימייל שבו נרשמת.
+            {' '}עם הכותרת <strong className="text-foreground">"בקשת מחיקת חשבון"</strong> וציין את האימייל שבו נרשמת.
           </p>
         </div>
 
@@ -81,35 +67,10 @@ export default function AccountDeletion() {
             <AlertTriangle className="h-4 w-4 text-warning shrink-0" />
             <h3 className="font-semibold text-sm">חשוב לדעת</h3>
           </div>
-          <ul className="text-sm text-muted-foreground leading-relaxed space-y-2 pr-6">
-            <li>
-              מחיקת החשבון גורמת ל<strong className="text-foreground">מחיקה מוחלטת ובלתי הפיכה</strong> של
-              כל המידע האישי וההיסטוריה שלך בתוכנית.
-            </li>
-            <li>
-              <strong className="text-foreground">מחיקת החשבון אינה מבטלת אוטומטית חיובים פעילים</strong> מ-App Store
-              או Google Play. לביטול המנוי יש לעשות זאת בנפרד דרך הגדרות המכשיר.
-            </li>
-          </ul>
-        </div>
-
-        {/* Cancel subscription links */}
-        <div className="card-elevated rounded-2xl p-4 space-y-3">
-          <h3 className="font-semibold text-sm">ביטול מנוי בחנות האפליקציות</h3>
-          <button
-            type="button"
-            className="w-full text-right text-sm text-primary underline underline-offset-2"
-            onClick={() => window.open('https://support.apple.com/en-us/118428', '_blank')}
-          >
-            ביטול מנוי ב-App Store (iOS)
-          </button>
-          <button
-            type="button"
-            className="w-full text-right text-sm text-primary underline underline-offset-2"
-            onClick={() => window.open('https://support.google.com/googleplay/answer/7018481', '_blank')}
-          >
-            ביטול מנוי ב-Google Play (Android)
-          </button>
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            מחיקת החשבון גורמת ל<strong className="text-foreground">מחיקה מוחלטת ובלתי הפיכה</strong> של
+            כל המידע האישי וההיסטוריה שלך באפליקציה.
+          </p>
         </div>
 
       </div>
