@@ -22,13 +22,16 @@ const capacitorStorage = {
   },
 };
 
-const storage = Capacitor.isNativePlatform() ? capacitorStorage : localStorage;
+const isNative = Capacitor.isNativePlatform();
+const storage = isNative ? capacitorStorage : localStorage;
 
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
     storage,
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: false,
+    // On web: detect session from URL hash (email confirmation links)
+    // On native: disable — deep links handled separately
+    detectSessionInUrl: !isNative,
   }
 });
