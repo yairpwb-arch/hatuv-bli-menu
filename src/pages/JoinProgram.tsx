@@ -56,7 +56,7 @@ export default function JoinProgram() {
           <ul className="space-y-2.5 text-sm text-foreground/80">
             {[
               'תוכנית אימונים אישית ומעקב צעדים',
-              'ליווי צמוד ומעקב שבועי',
+              'ליווי צמוד ומעקב יומי',
               'יצירת הרגלים בריאים בצורה הדרגתית',
               'גוף חטוב שנשאר לתמיד',
             ].map(item => (
