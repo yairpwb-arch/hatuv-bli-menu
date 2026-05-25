@@ -4,6 +4,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -233,6 +237,8 @@ export default function AdminUsers() {
   const [isLoading, setIsLoading] = useState(true);
   const [adminUserIds, setAdminUserIds] = useState<string[]>([]);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [deletingUser, setDeletingUser] = useState<User | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Add-user form
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -388,6 +394,31 @@ export default function AdminUsers() {
     setSessionLogsMap({});
     setExpandedSessionId(null);
     setAdminWalks([]);
+  };
+
+  const handleDeleteUser = async () => {
+    if (!deletingUser) return;
+    setIsDeleting(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-delete-user`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ userId: deletingUser.id }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'שגיאה במחיקה');
+      toast({ title: 'המשתמש נמחק', description: `${deletingUser.full_name || deletingUser.email} הוסר מהמערכת` });
+      setDeletingUser(null);
+      fetchUsers();
+    } catch (err: any) {
+      toast({ title: 'שגיאה', description: err.message, variant: 'destructive' });
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   // ── Habits ──────────────────────────────────────────────────────────────────
@@ -850,9 +881,19 @@ export default function AdminUsers() {
                       <Badge variant={user.is_active ? 'default' : 'secondary'}>{user.is_active ? 'פעיל' : 'לא פעיל'}</Badge>
                     </TableCell>
                     <TableCell>
-                      <Button variant="ghost" size="sm" onClick={() => openEdit(user)}>
-                        <Edit className="h-4 w-4 ml-1" />ערוך
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="sm" onClick={() => openEdit(user)}>
+                          <Edit className="h-4 w-4 ml-1" />ערוך
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                          onClick={() => setDeletingUser(user)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -1651,6 +1692,34 @@ export default function AdminUsers() {
           </Tabs>
         </DialogContent>
       </Dialog>
+
+      {/* ── Delete User Confirmation Dialog ── */}
+      <AlertDialog open={!!deletingUser} onOpenChange={(o) => { if (!o) setDeletingUser(null); }}>
+        <AlertDialogContent dir="rtl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>מחיקת משתמש</AlertDialogTitle>
+            <AlertDialogDescription>
+              האם אתה בטוח שברצונך למחוק את{' '}
+              <span className="font-semibold text-foreground">
+                {deletingUser?.full_name || deletingUser?.email}
+              </span>
+              ?<br />
+              פעולה זו תמחק את כל הנתונים שלו ולא ניתנת לביטול.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-row-reverse gap-2">
+            <AlertDialogCancel disabled={isDeleting}>ביטול</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={isDeleting}
+              onClick={handleDeleteUser}
+            >
+              {isDeleting ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : <Trash2 className="h-4 w-4 ml-1" />}
+              מחק משתמש
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
