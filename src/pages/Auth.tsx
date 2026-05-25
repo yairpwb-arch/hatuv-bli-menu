@@ -130,7 +130,7 @@ export default function Auth() {
           אין לך עדיין מנוי?{' '}
           <button
             type="button"
-            onClick={() => navigate('/pricing')}
+            onClick={() => navigate('/join')}
             className="text-primary font-bold underline underline-offset-2 hover:opacity-80 transition-opacity"
           >
             לחץ כאן להצטרפות לתוכנית

@@ -132,6 +132,7 @@ const AdminExercises = lazy(() => import("./pages/admin/AdminExercises"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const WorkoutActiveSession = lazy(() => import("./components/WorkoutActiveSession"));
 const Pricing = lazy(() => import("./pages/Pricing"));
+const JoinProgram = lazy(() => import("./pages/JoinProgram"));
 const AccountDeletion = lazy(() => import("./pages/AccountDeletion"));
 
 const PageLoader = () => (
@@ -264,6 +265,7 @@ const App = () => (
           <Routes>
             <Route path="/" element={<IndexRoute />} />
             <Route path="/auth" element={<AuthRoute />} />
+            <Route path="/join" element={<JoinProgram />} />
             <Route path="/pricing" element={<Pricing />} />
             <Route path="/account-deletion" element={<AccountDeletion />} />
             <Route path="/app" element={<ProtectedRoute />}>

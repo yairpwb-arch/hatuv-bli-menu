@@ -255,32 +255,78 @@ export function useStepCounter(userId?: string): UseStepCounterReturn {
     listenerRef.current = handle;
   }, [userId, saveSteps]);
 
-  // ── Android: re-check permission when app returns to foreground ──────────────
-  // Needed because StepPermissionTrigger (App.tsx) shows the OS dialog before
-  // this hook's init can see 'granted'. When the dialog closes and app regains
-  // focus, we detect the new permission state and start tracking.
+  // ── Re-check permission when app returns to foreground (Android + iOS) ───────
+  // Android: StepPermissionTrigger (App.tsx) shows the OS dialog before this hook
+  //          can see 'granted'. When dialog closes and app regains focus we detect
+  //          the new permission state and start tracking.
+  // iOS:     If user denied once, goes to Settings → Privacy → Motion & Fitness,
+  //          enables it and comes back — we detect the change and start tracking.
+  //          We also refresh the step count from CMPedometer on every foreground
+  //          so steps counted while the app was backgrounded appear immediately.
   useEffect(() => {
-    if (!isAndroid || hasPermission) return;
+    if (hasPermission && !isIOS) return; // Android: stop once granted; iOS: keep refreshing
 
     let handle: { remove: () => void } | null = null;
 
     import('@capacitor/app').then(({ App }) => {
       App.addListener('appStateChange', async ({ isActive }: { isActive: boolean }) => {
         if (!isActive) return;
-        try {
-          const perm = await StepCounter.checkPermission();
-          if (perm.activityRecognition === 'granted') {
-            setHasPermission(true);
-            await startAndroidTracking();
-            handle?.remove();
-            handle = null;
-          }
-        } catch {}
+
+        if (isAndroid) {
+          try {
+            const perm = await StepCounter.checkPermission();
+            if (perm.activityRecognition === 'granted') {
+              setHasPermission(true);
+              await startAndroidTracking();
+              handle?.remove();
+              handle = null;
+            }
+          } catch {}
+          return;
+        }
+
+        // iOS: re-check permission and refresh step count on every foreground
+        if (isIOS) {
+          const pedometer = await getPedometer();
+          if (!pedometer) return;
+          try {
+            const perm = await pedometer.checkPermissions();
+            if (perm.activityRecognition === 'granted') {
+              if (!hasPermission) {
+                setHasPermission(true);
+                const today = format(new Date(), 'yyyy-MM-dd');
+                const { steps: freshSteps, distance: freshDist } =
+                  await resolveInitialStepsIOS(pedometer, userId, today);
+                setSteps(freshSteps);
+                if (freshDist !== null) setDistance(freshDist);
+                if (freshSteps > 0) saveSteps(freshSteps);
+                await startIOSTracking(freshSteps);
+              } else {
+                // Already tracking — just refresh the historical total
+                const today = format(new Date(), 'yyyy-MM-dd');
+                const todayStart = new Date();
+                todayStart.setHours(0, 0, 0, 0);
+                try {
+                  const result = await pedometer.getMeasurement({
+                    start: todayStart.getTime(),
+                    end: Date.now(),
+                  });
+                  const freshCount = result.numberOfSteps ?? 0;
+                  if (freshCount > 0) {
+                    setSteps(freshCount);
+                    if (result.distance != null) setDistance(result.distance);
+                    saveSteps(freshCount);
+                  }
+                } catch {}
+              }
+            }
+          } catch {}
+        }
       }).then((h: { remove: () => void }) => { handle = h; });
     });
 
     return () => { handle?.remove(); };
-  }, [isAndroid, hasPermission, startAndroidTracking]);
+  }, [isAndroid, isIOS, hasPermission, startAndroidTracking, startIOSTracking, saveSteps, userId]);
 
   // ── Main initialisation effect ─────────────────────────────────────────────
   useEffect(() => {
