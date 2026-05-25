@@ -105,7 +105,8 @@ const EQUIP_CATEGORIES = [
       if (!eq || eq.trim() === '') return true;
       const l = eq.toLowerCase();
       return l.includes('bodyweight') || l.includes('body weight') ||
-        l.includes('משקל גוף') || l.includes('ללא ציוד') || l === 'none' || l === 'אין';
+        l.includes('משקל גוף') || l.includes('ללא ציוד') || l === 'none' || l === 'אין' ||
+        l.includes('pull-up') || l.includes('pullup') || l.includes('parallel bar') || l === 'bench';
     },
   },
   {
@@ -126,9 +127,9 @@ const MUSCLE_GROUPS = [
   { id: 'back',      label: 'גב',           match: ['back', 'גב', 'lat'] },
   { id: 'shoulders', label: 'כתפיים',       match: ['shoulder', 'כתפיים', 'כתף', 'delt'] },
   { id: 'triceps',   label: 'יד אחורית',    match: ['tricep', 'יד אחורית', 'טרייספס'] },
-  { id: 'biceps',    label: 'יד קדמית',     match: ['bicep', 'יד קדמית', 'ביספס'] },
-  { id: 'legs',      label: 'רגליים',        match: ['leg', 'quad', 'hamstring', 'glute', 'calf', 'רגליים', 'רגל'] },
-  { id: 'abs',       label: 'בטן',           match: ['ab', 'core', 'בטן'] },
+  { id: 'biceps',    label: 'יד קדמית',     match: ['bicep', 'יד קדמית', 'ביספס', 'ביצפס'] },
+  { id: 'legs',      label: 'רגליים',        match: ['leg', 'quad', 'hamstring', 'glute', 'calf', 'רגליים', 'רגל', 'ירכיים', 'שוק', 'גלוטאוס'] },
+  { id: 'abs',       label: 'בטן',           match: ['ab', 'core', 'בטן', 'ליבה', 'אגפיים'] },
 ] as const;
 
 interface PlanExercise {
