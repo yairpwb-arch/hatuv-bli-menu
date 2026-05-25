@@ -1,7 +1,17 @@
 import { useNavigate } from 'react-router-dom';
 import { MessageCircle, ArrowRight, Sparkles, CheckCircle2 } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
 
 const WHATSAPP_URL = 'https://wa.me/message/IZV5KBE6SSC7B';
+
+function openWhatsApp() {
+  if (Capacitor.isNativePlatform()) {
+    // '_system' tells Capacitor to hand the URL to the OS — opens WhatsApp directly
+    window.open(WHATSAPP_URL, '_system');
+  } else {
+    window.open(WHATSAPP_URL, '_blank', 'noopener,noreferrer');
+  }
+}
 
 export default function JoinProgram() {
   const navigate = useNavigate();
@@ -45,10 +55,10 @@ export default function JoinProgram() {
           {/* Feature bullets */}
           <ul className="space-y-2.5 text-sm text-foreground/80">
             {[
-              'תוכנית אימון אישית מותאמת לך',
+              'תוכנית אימונים אישית ומעקב צעדים',
               'ליווי צמוד ומעקב שבועי',
-              'תזונה חכמה בלי דיאטות משעממות',
-              'תמיכה מלאה לאורך כל הדרך',
+              'יצירת הרגלים בריאים בצורה הדרגתית',
+              'גוף חטוב שנשאר לתמיד',
             ].map(item => (
               <li key={item} className="flex items-center gap-2.5">
                 <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
@@ -58,15 +68,14 @@ export default function JoinProgram() {
           </ul>
 
           {/* WhatsApp CTA */}
-          <a
-            href={WHATSAPP_URL}
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            type="button"
+            onClick={openWhatsApp}
             className="flex items-center justify-center gap-3 w-full rounded-xl bg-[#25D366] hover:bg-[#1fb855] active:scale-95 transition-all text-white font-bold py-4 text-base shadow-md shadow-[#25D366]/30"
           >
             <MessageCircle className="h-5 w-5" />
             שמיעת פרטים על התוכנית
-          </a>
+          </button>
         </div>
 
         {/* ─── Back to login ─── */}
