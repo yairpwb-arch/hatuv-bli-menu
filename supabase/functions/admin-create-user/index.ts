@@ -127,6 +127,26 @@ serve(async (req) => {
       }
     );
 
+    // Default walking schedule: 1 walk per week starting week 1
+    await fetch(
+      `${SUPABASE_URL}/rest/v1/user_walking_schedule`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${SERVICE_ROLE_KEY}`,
+          apikey: SERVICE_ROLE_KEY,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal,resolution=ignore-duplicates',
+        },
+        body: JSON.stringify({
+          user_id: newUser.id,
+          walk_number: 1,
+          week_start: 1,
+          is_active: true,
+        }),
+      }
+    );
+
     return new Response(JSON.stringify({ user: newUser }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
