@@ -68,6 +68,13 @@ function writeLocalCache(date: string, count: number) {
   try { localStorage.setItem(localCacheKey(date), String(count)); } catch {}
 }
 
+// ─── iOS: ISO date with fractional seconds (required by capacitor-health) ────
+
+function toHealthKitISO(date: Date): string {
+  // capacitor-health Swift parser requires fractional seconds: 2026-05-30T05:44:30.000Z
+  return date.toISOString(); // already includes .sssZ
+}
+
 // ─── iOS: query today's steps from HealthKit ─────────────────────────────────
 
 async function queryHealthKitStepsToday(
@@ -76,17 +83,20 @@ async function queryHealthKitStepsToday(
   try {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
+    const now = new Date();
 
     const result = await health.queryAggregated({
-      startDate: todayStart.toISOString(),
-      endDate:   new Date().toISOString(),
+      startDate: toHealthKitISO(todayStart),
+      endDate:   toHealthKitISO(now),
       dataType:  'steps',
       bucket:    'day',
     });
 
-    const total = result.aggregatedData.reduce((sum, s) => sum + (s.value || 0), 0);
+    if (!result?.aggregatedData?.length) return 0;
+    const total = result.aggregatedData.reduce((sum, s) => sum + (s.value > 0 ? s.value : 0), 0);
     return Math.round(total);
-  } catch {
+  } catch (e) {
+    console.warn('[HealthKit] queryAggregated failed:', e);
     return 0;
   }
 }
@@ -317,7 +327,12 @@ export function useStepCounter(userId?: string): UseStepCounterReturn {
       try {
         await health.requestHealthPermissions({ permissions: ['READ_STEPS'] });
         setHasPermission(true);
-        await startIOSTracking(health);
+        const fresh = await queryHealthKitStepsToday(health);
+        if (fresh >= 0) { setSteps(fresh); saveSteps(fresh); }
+        // If still 0, guide user to open Health settings
+        if (fresh === 0) {
+          await health.openAppleHealthSettings();
+        }
       } catch {}
     }
   };
