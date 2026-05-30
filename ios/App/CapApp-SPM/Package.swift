@@ -17,8 +17,8 @@ let package = Package(
         .package(name: "CapacitorPreferences", path: "..\..\..\node_modules\@capacitor\preferences"),
         .package(name: "CapacitorPushNotifications", path: "..\..\..\node_modules\@capacitor\push-notifications"),
         .package(name: "CapgoCapacitorPedometer", path: "..\..\..\node_modules\@capgo\capacitor-pedometer"),
-        .package(name: "CapacitorHealth", path: "..\..\..\node_modules\capacitor-health"),
-        .package(name: "RevenuecatPurchasesCapacitor", path: "..\..\..\node_modules\@revenuecat\purchases-capacitor")
+        .package(name: "RevenuecatPurchasesCapacitor", path: "..\..\..\node_modules\@revenuecat\purchases-capacitor"),
+        .package(name: "CapacitorHealth", path: "..\..\..\node_modules\capacitor-health")
     ],
     targets: [
         .target(
@@ -31,8 +31,8 @@ let package = Package(
                 .product(name: "CapacitorPreferences", package: "CapacitorPreferences"),
                 .product(name: "CapacitorPushNotifications", package: "CapacitorPushNotifications"),
                 .product(name: "CapgoCapacitorPedometer", package: "CapgoCapacitorPedometer"),
-                .product(name: "CapacitorHealth", package: "CapacitorHealth"),
-                .product(name: "RevenuecatPurchasesCapacitor", package: "RevenuecatPurchasesCapacitor")
+                .product(name: "RevenuecatPurchasesCapacitor", package: "RevenuecatPurchasesCapacitor"),
+                .product(name: "CapacitorHealth", package: "CapacitorHealth")
             ]
         )
     ]
