@@ -52,7 +52,10 @@ function StepPermissionTrigger() {
             await StepCounter.requestPermission();
           }
         } else {
-          // iOS: HealthKit permission is requested by useStepCounter on mount
+          // iOS: trigger CMPedometer getMeasurement which auto-requests Motion & Fitness permission
+          const { CapacitorPedometer } = await import('@capgo/capacitor-pedometer');
+          const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
+          await CapacitorPedometer.getMeasurement({ start: startOfDay.getTime(), end: Date.now() }).catch(() => {});
         }
       } catch { /* ignore */ }
 
