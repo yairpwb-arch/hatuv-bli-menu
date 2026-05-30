@@ -53,6 +53,7 @@ export default function AppProgress() {
   const [habits, setHabits] = useState<Habit[]>([]);
 
   const [isLoading, setIsLoading] = useState(true);
+  const [weighingGuideLink, setWeighingGuideLink] = useState('');
 
   // Weight modal state
   const [isWeightModalOpen, setIsWeightModalOpen] = useState(false);
@@ -129,7 +130,7 @@ export default function AppProgress() {
     if (!user) return;
     setIsLoading(true);
 
-    const [profileRes, weightRes, habitsRes, habitLogsRes] = await Promise.all([
+    const [profileRes, weightRes, habitsRes, habitLogsRes, settingsRes] = await Promise.all([
       supabase
         .from('profiles')
         .select('start_date, current_weight, initial_weight, height')
@@ -151,10 +152,16 @@ export default function AppProgress() {
         .select('habit_id')
         .eq('user_id', user.id)
         .eq('completed_at', dateString),
+      (supabase as any)
+        .from('app_settings')
+        .select('key, value')
+        .in('key', ['weighing_guide_link']),
     ]);
 
     if (profileRes.data) setProfileData(profileRes.data);
     setWeightHistory(weightRes.data || []);
+    const link = (settingsRes.data || []).find((s: any) => s.key === 'weighing_guide_link')?.value || '';
+    setWeighingGuideLink(link);
 
     const completedHabitIds = new Set(habitLogsRes.data?.map((h) => h.habit_id) || []);
     const processedHabits = (habitsRes.data || []).map((h) => ({
@@ -477,15 +484,22 @@ export default function AppProgress() {
         </div>
 
         {/* Weighing Guide Link */}
-        <Button
-          variant="outline"
-          className="w-full border-primary/30 text-primary hover:bg-primary/5"
-          onClick={() => window.open('https://drive.google.com/file/d/1p3x2BAI9QyTPuX2PD0xuLlDhNnr_r8No/view?usp=sharing', '_blank')}
-        >
-          <BookOpen className="h-4 w-4 ml-2" />
-          מדריך שקילה נכונה
-          <ExternalLink className="h-4 w-4 mr-auto" />
-        </Button>
+        {weighingGuideLink ? (
+          <Button
+            variant="outline"
+            className="w-full border-primary/30 text-primary hover:bg-primary/5"
+            onClick={() => {
+              const url = /^https?:\/\//i.test(weighingGuideLink) ? weighingGuideLink : `https://${weighingGuideLink}`;
+              Capacitor.isNativePlatform()
+                ? window.open(url, '_system')
+                : window.open(url, '_blank');
+            }}
+          >
+            <BookOpen className="h-4 w-4 ml-2" />
+            מדריך שקילה נכונה
+            <ExternalLink className="h-4 w-4 mr-auto" />
+          </Button>
+        ) : null}
 
         {/* Weight Progress Chart */}
         <Card className="glass-card">

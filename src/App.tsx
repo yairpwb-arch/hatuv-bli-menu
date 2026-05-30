@@ -46,21 +46,24 @@ function StepPermissionTrigger() {
     (async () => {
       try {
         if (Capacitor.getPlatform() === 'android') {
-          // Android: use our custom StepCounterPlugin which declares ACTIVITY_RECOGNITION
           const { StepCounter } = await import('@/plugins/StepCounterPlugin');
           const perm = await StepCounter.checkPermission();
           if (perm.activityRecognition !== 'granted') {
             await StepCounter.requestPermission();
           }
         } else {
-          // iOS: CMPedometer permission via @capgo/capacitor-pedometer
-          const { CapacitorPedometer } = await import('@capgo/capacitor-pedometer');
-          const perm = await CapacitorPedometer.checkPermissions();
-          if (perm.activityRecognition !== 'granted') {
-            await CapacitorPedometer.requestPermissions();
-          }
+          // iOS: HealthKit permission is requested by useStepCounter on mount
         }
-      } catch { /* plugin not available — ignore */ }
+      } catch { /* ignore */ }
+
+      // After activity permission — request push notification permission
+      try {
+        const { PushNotifications } = await import('@capacitor/push-notifications');
+        const permStatus = await PushNotifications.checkPermissions();
+        if (permStatus.receive === 'prompt' || permStatus.receive === 'prompt-with-rationale') {
+          await PushNotifications.requestPermissions();
+        }
+      } catch { /* ignore */ }
     })();
   }, [user?.id]);
 

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
 import WeeklySurveyModal from '@/components/WeeklySurveyModal';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -199,7 +200,7 @@ export default function AppContent() {
   const handleSnacksBookClick = () => {
     if (snacksBookLink) {
       const url = /^https?:\/\//i.test(snacksBookLink) ? snacksBookLink : `https://${snacksBookLink}`;
-      window.open(url, '_blank');
+      Capacitor.isNativePlatform() ? window.open(url, '_system') : window.open(url, '_blank');
     } else {
       toast({
         title: 'ספר נשנושים',

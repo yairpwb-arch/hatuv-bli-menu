@@ -17,6 +17,7 @@ const loginSchema = z.object({
 
 export default function Auth() {
   const [isLoading, setIsLoading] = useState(false);
+  const [loginError, setLoginError] = useState('');
   const [loginData, setLoginData] = useState({ email: '', password: '' });
   const { signIn, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
@@ -33,13 +34,10 @@ export default function Auth() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    setLoginError('');
     const result = loginSchema.safeParse(loginData);
     if (!result.success) {
-      toast({
-        title: 'שגיאה',
-        description: result.error.errors[0].message,
-        variant: 'destructive',
-      });
+      setLoginError(result.error.errors[0].message);
       return;
     }
 
@@ -49,24 +47,19 @@ export default function Auth() {
       const { error } = await signIn(loginData.email.trim(), loginData.password);
 
       if (error) {
-        toast({
-          title: 'שגיאה בהתחברות',
-          description: error.message === 'Invalid login credentials'
-            ? 'אימייל או סיסמה שגויים'
-            : error.message,
-          variant: 'destructive',
-        });
+        setLoginError(
+          error.message === 'Invalid login credentials'
+            ? 'אימייל או סיסמה שגויים. בדוק שהפרטים נכונים ונסה שוב.'
+            : error.message === 'Email not confirmed'
+            ? 'כתובת האימייל טרם אומתה. בדוק את תיבת הדואר שלך.'
+            : 'שגיאה בהתחברות. נסה שוב מאוחר יותר.'
+        );
         return;
       }
 
-      toast({ title: 'ברוך הבא!', description: 'התחברת בהצלחה' });
       navigate('/app');
     } catch (err) {
-      toast({
-        title: 'שגיאה בהתחברות',
-        description: 'אירעה שגיאה, נסה שוב',
-        variant: 'destructive',
-      });
+      setLoginError('אירעה שגיאה, נסה שוב');
     } finally {
       setIsLoading(false);
     }
@@ -122,6 +115,11 @@ export default function Auth() {
                 {isLoading ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : null}
                 התחבר
               </Button>
+              {loginError && (
+                <p className="text-sm text-destructive text-center font-medium bg-destructive/10 rounded-lg px-3 py-2">
+                  {loginError}
+                </p>
+              )}
             </form>
           </CardContent>
         </Card>

@@ -278,6 +278,7 @@ export default function AdminUsers() {
 
   // Survey tab
   const [checkins, setCheckins] = useState<CheckinRow[]>([]);
+  const [isLoadingCheckins, setIsLoadingCheckins] = useState(false);
 
   // Walking schedule tab
   const [adminWalks, setAdminWalks] = useState<AdminWalkEntry[]>([]);
@@ -351,6 +352,7 @@ export default function AdminUsers() {
     await loadAdminWalks(user.id);
 
     // Checkins
+    setIsLoadingCheckins(true);
     const { data: ci } = await (supabase as any)
       .from('weekly_checkin')
       .select('*')
@@ -358,6 +360,7 @@ export default function AdminUsers() {
       .order('week_number', { ascending: false })
       .limit(5);
     setCheckins((ci || []) as CheckinRow[]);
+    setIsLoadingCheckins(false);
 
     // Workout sessions history
     const { data: ws } = await (supabase as any)
@@ -1631,7 +1634,11 @@ export default function AdminUsers() {
 
             {/* ── Tab 5: Survey ── */}
             <TabsContent value="survey" className="px-6 pb-6 pt-4">
-              {checkins.length === 0 ? (
+              {isLoadingCheckins ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-7 w-7 animate-spin text-primary" />
+                </div>
+              ) : checkins.length === 0 ? (
                 <p className="text-muted-foreground text-sm text-center py-8">לא נמצאו שאלונים שמולאו עדיין</p>
               ) : (
                 <Accordion type="single" collapsible className="space-y-2">
