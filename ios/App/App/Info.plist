@@ -57,6 +57,8 @@
 	<string>האפליקציה משתמשת בחיישן התנועה כדי לספור את הצעדים היומיים שלך</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>האפליקציה מבקשת גישה לנתוני בריאות כדי לספור את הצעדים היומיים שלך</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>האפליקציה מבקשת גישה לעדכון נתוני בריאות עבור מעקב הצעדים היומיים שלך</string>
 	<key>NSCameraUsageDescription</key>
 	<string>האפליקציה מבקשת גישה למצלמה כדי לצלם תמונת פרופיל</string>
 	<key>NSPhotoLibraryUsageDescription</key>
