@@ -12,7 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import {
-  Pencil, Check, X, Download, ChevronUp, ChevronDown, Loader2, Trash2, Plus,
+  Pencil, Check, X, Download, ChevronUp, ChevronDown, Loader2, Trash2, Plus, Search,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { he } from 'date-fns/locale';
@@ -327,11 +327,28 @@ function QuestionsTab() {
   );
 }
 
+// ── Week helpers ──────────────────────────────────────────────────────────────
+
+function getWeekBounds() {
+  const today = new Date();
+  const dayOfWeek = today.getDay(); // 0=Sun,1=Mon..6=Sat
+  const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - daysSinceMonday);
+  monday.setHours(0, 0, 0, 0);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  sunday.setHours(23, 59, 59, 999);
+  return { monday, sunday };
+}
+
 // ── Responses Tab ─────────────────────────────────────────────────────────────
 
 function ResponsesTab() {
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
+  const [filterPeriod, setFilterPeriod] = useState<'week' | 'all' | 'date'>('week');
   const [filterDate, setFilterDate] = useState('');
+  const [nameSearch, setNameSearch] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const { data: questions = [] } = useQuery({
@@ -366,7 +383,25 @@ function ResponsesTab() {
 
   // Client-side filter + sort
   const responses = allResponses
-    .filter(r => !filterDate || format(new Date(r.submitted_at), 'yyyy-MM-dd') === filterDate)
+    .filter(r => {
+      // Name search
+      if (nameSearch.trim()) {
+        const search = nameSearch.trim().toLowerCase();
+        const name = (r.profiles?.full_name || r.full_name || '').toLowerCase();
+        const email = (r.profiles?.email || '').toLowerCase();
+        if (!name.includes(search) && !email.includes(search)) return false;
+      }
+      // Period filter
+      if (filterPeriod === 'week') {
+        const { monday, sunday } = getWeekBounds();
+        const d = new Date(r.submitted_at);
+        return d >= monday && d <= sunday;
+      }
+      if (filterPeriod === 'date') {
+        return filterDate ? format(new Date(r.submitted_at), 'yyyy-MM-dd') === filterDate : true;
+      }
+      return true; // 'all'
+    })
     .sort((a, b) => {
       const diff = new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime();
       return sortOrder === 'desc' ? diff : -diff;
@@ -400,10 +435,34 @@ function ResponsesTab() {
     URL.revokeObjectURL(url);
   };
 
+  const { monday, sunday } = getWeekBounds();
+  const weekLabel = `${format(monday, 'dd/MM')} – ${format(sunday, 'dd/MM')}`;
+
   return (
-    <div className="space-y-4">
-      {/* Filters + Export */}
+    <div className="space-y-3">
+      {/* Row 1: period + sort */}
       <div className="flex flex-wrap items-center gap-2">
+        <Select value={filterPeriod} onValueChange={v => { setFilterPeriod(v as 'week' | 'all' | 'date'); setFilterDate(''); }}>
+          <SelectTrigger className="w-44">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="week">השבוע ({weekLabel})</SelectItem>
+            <SelectItem value="all">כל הזמן</SelectItem>
+            <SelectItem value="date">בחר תאריך</SelectItem>
+          </SelectContent>
+        </Select>
+
+        {filterPeriod === 'date' && (
+          <Input
+            type="date"
+            value={filterDate}
+            onChange={e => setFilterDate(e.target.value)}
+            className="w-36 text-sm"
+            dir="ltr"
+          />
+        )}
+
         <Select value={sortOrder} onValueChange={v => setSortOrder(v as 'desc' | 'asc')}>
           <SelectTrigger className="w-36">
             <SelectValue />
@@ -413,23 +472,33 @@ function ResponsesTab() {
             <SelectItem value="asc">מהישן לחדש</SelectItem>
           </SelectContent>
         </Select>
-        <Input
-          type="date"
-          value={filterDate}
-          onChange={e => setFilterDate(e.target.value)}
-          className="w-36 text-sm"
-          dir="ltr"
-        />
-        {filterDate && (
-          <Button variant="ghost" size="sm" onClick={() => setFilterDate('')} className="h-9 px-2 text-xs">
-            נקה
-          </Button>
-        )}
+
         <Button variant="outline" size="sm" onClick={exportCSV} disabled={responses.length === 0} className="gap-1.5 mr-auto">
           <Download className="h-4 w-4" />
           ייצוא CSV
         </Button>
       </div>
+
+      {/* Row 2: name search */}
+      <div className="relative">
+        <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+        <Input
+          value={nameSearch}
+          onChange={e => setNameSearch(e.target.value)}
+          placeholder="חפש לפי שם..."
+          className="pr-9 text-sm"
+          dir="rtl"
+        />
+        {nameSearch && (
+          <button
+            onClick={() => setNameSearch('')}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+
       <p className="text-xs text-muted-foreground">{responses.length} תשובות</p>
 
       {isLoading ? (
