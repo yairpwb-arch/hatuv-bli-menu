@@ -308,9 +308,11 @@ function ResponsesTab() {
   const { data: responses = [], isLoading } = useQuery({
     queryKey: ['checkin-responses', selectedWeek],
     queryFn: async () => {
+      // Step 1: fetch checkins without profiles join
+      // (weekly_checkin.user_id → auth.users, not profiles — PostgREST can't join directly)
       let q = (supabase as any)
         .from('weekly_checkin')
-        .select('*, profiles(full_name, email)')
+        .select('*')
         .order('week_number', { ascending: false })
         .order('submitted_at', { ascending: false });
 
@@ -320,7 +322,22 @@ function ResponsesTab() {
 
       const { data, error } = await q;
       if (error) throw error;
-      return (data || []) as CheckinResponse[];
+      const rows = (data || []) as CheckinResponse[];
+
+      // Step 2: enrich with email from profiles
+      if (rows.length > 0) {
+        const userIds = [...new Set(rows.map(r => r.user_id))];
+        const { data: profiles } = await (supabase as any)
+          .from('profiles')
+          .select('id, full_name, email')
+          .in('id', userIds);
+        const profileMap = Object.fromEntries((profiles || []).map((p: any) => [p.id, p]));
+        return rows.map(r => ({
+          ...r,
+          profiles: profileMap[r.user_id] ?? null,
+        }));
+      }
+      return rows;
     },
   });
 
