@@ -353,6 +353,7 @@ export default function AdminUsers() {
 
   // Workout history tab
   const [workoutSessions, setWorkoutSessions] = useState<AdminWorkoutSession[]>([]);
+  const [walkHistory, setWalkHistory] = useState<{ id: string; completed_at: string }[]>([]);
   const [sessionLogsMap, setSessionLogsMap] = useState<Record<string, AdminExerciseLog[]>>({});
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
 
@@ -441,6 +442,16 @@ export default function AdminUsers() {
     setSessionLogsMap({});
     setExpandedSessionId(null);
 
+    // Walk history from activity_log
+    const { data: wh } = await (supabase as any)
+      .from('activity_log')
+      .select('id, completed_at')
+      .eq('user_id', user.id)
+      .eq('activity_type', 'walk')
+      .order('completed_at', { ascending: false })
+      .limit(30);
+    setWalkHistory((wh || []) as { id: string; completed_at: string }[]);
+
     // Exercise library for plan builder
     const { data: exLib } = await (supabase as any)
       .from('exercises')
@@ -462,6 +473,7 @@ export default function AdminUsers() {
     setNewHabitName('');
     setStepsData([]);
     setWorkoutSessions([]);
+    setWalkHistory([]);
     setSessionLogsMap({});
     setExpandedSessionId(null);
     setAdminWalks([]);
@@ -1647,14 +1659,31 @@ export default function AdminUsers() {
               <div className="border-t border-border pt-4 mt-2">
                 <p className="text-sm font-semibold mb-3 flex items-center gap-2">
                   <History className="h-4 w-4 text-primary" />
-                  היסטוריית אימונים
+                  היסטוריית אימונים והליכות
                   <span className="text-xs font-normal text-muted-foreground mr-auto">
-                    {workoutSessions.length} אימונים אחרונים
+                    {workoutSessions.length} אימונים · {walkHistory.length} הליכות
                   </span>
                 </p>
-                {workoutSessions.length === 0 ? (
-                  <p className="text-muted-foreground text-sm text-center py-4">לא בוצעו אימונים עדיין</p>
-                ) : (
+
+                {/* Walk history */}
+                {walkHistory.length > 0 && (
+                  <div className="mb-3 space-y-1.5">
+                    <p className="text-xs text-muted-foreground font-medium mb-1.5 flex items-center gap-1">
+                      <Footprints className="h-3 w-3" /> הליכות שהושלמו
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {walkHistory.map(w => (
+                        <span key={w.id} className="text-xs bg-green-500/10 text-green-600 border border-green-500/20 rounded-lg px-2 py-1">
+                          {format(new Date(w.completed_at), 'dd/MM/yy', { locale: he })}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {workoutSessions.length === 0 && walkHistory.length === 0 ? (
+                  <p className="text-muted-foreground text-sm text-center py-4">לא בוצעו אימונים או הליכות עדיין</p>
+                ) : workoutSessions.length === 0 ? null : (
                   <div className="space-y-2">
                     {workoutSessions.map(ws => {
                       const isExpanded = expandedSessionId === ws.id;
