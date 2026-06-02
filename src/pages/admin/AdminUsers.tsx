@@ -87,6 +87,72 @@ interface Exercise {
   equipment: string | null;
 }
 
+// ── Exercise inline edit form ─────────────────────────────────────────────────
+
+function ExerciseEditForm({ pe, onSave, onCancel }: {
+  pe: { sets: number; reps_min: number; reps_max: number; rest_seconds: number; is_duration: boolean };
+  onSave: (u: { sets: number; reps_min: number; reps_max: number; rest_seconds: number; is_duration: boolean }) => void;
+  onCancel: () => void;
+}) {
+  const [sets, setSets] = useState(String(pe.sets));
+  const [repsMin, setRepsMin] = useState(String(pe.reps_min));
+  const [repsMax, setRepsMax] = useState(String(pe.reps_max));
+  const [rest, setRest] = useState(String(pe.rest_seconds));
+  const [isDuration, setIsDuration] = useState(pe.is_duration);
+
+  const handleSave = () => {
+    const durSec = parseInt(repsMin) || 30;
+    onSave({
+      sets: parseInt(sets) || 3,
+      reps_min: isDuration ? durSec : (parseInt(repsMin) || 8),
+      reps_max: isDuration ? durSec : (parseInt(repsMax) || 12),
+      rest_seconds: parseInt(rest) || 60,
+      is_duration: isDuration,
+    });
+  };
+
+  return (
+    <div className="space-y-2 bg-muted/30 rounded-lg p-2">
+      {/* Type toggle */}
+      <div className="flex gap-1">
+        <button type="button"
+          onClick={() => setIsDuration(false)}
+          className={`flex-1 text-xs py-1 rounded-md transition-colors ${!isDuration ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+          חזרות
+        </button>
+        <button type="button"
+          onClick={() => setIsDuration(true)}
+          className={`flex-1 text-xs py-1 rounded-md transition-colors ${isDuration ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+          שניות
+        </button>
+      </div>
+      <div className={`grid gap-1.5 text-xs ${isDuration ? 'grid-cols-3' : 'grid-cols-4'}`}>
+        {[
+          { label: 'סטים', val: sets, set: setSets },
+          ...(!isDuration ? [{ label: 'מינ׳', val: repsMin, set: setRepsMin }, { label: 'מקס׳', val: repsMax, set: setRepsMax }] : [{ label: 'שנ׳', val: repsMin, set: setRepsMin }]),
+          { label: 'מנוחה', val: rest, set: setRest },
+        ].map(f => (
+          <div key={f.label} className="space-y-0.5">
+            <label className="text-muted-foreground">{f.label}</label>
+            <input type="number" className="w-full h-7 text-xs text-center rounded-md border border-input bg-background px-1"
+              value={f.val} onChange={e => f.set(e.target.value)} dir="ltr" />
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-1.5">
+        <button type="button" onClick={handleSave}
+          className="flex-1 text-xs h-7 rounded-md bg-primary text-primary-foreground font-medium">
+          שמור
+        </button>
+        <button type="button" onClick={onCancel}
+          className="text-xs h-7 px-3 rounded-md border border-input text-muted-foreground">
+          ביטול
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Exercise filter constants ────────────────────────────────────────────────
 
 const EQUIP_CATEGORIES = [
@@ -145,6 +211,7 @@ interface PlanExercise {
   reps_max: number;
   rest_seconds: number;
   sort_order: number;
+  is_duration: boolean;
   exercises: Exercise;
 }
 
@@ -271,7 +338,8 @@ export default function AdminUsers() {
   const [newDayName, setNewDayName] = useState('');
   const [isAddingDay, setIsAddingDay] = useState(false);
   const [addExerciseDayId, setAddExerciseDayId] = useState<string | null>(null);
-  const [newExForm, setNewExForm] = useState({ exerciseId: '', sets: '3', repsMin: '8', repsMax: '12', rest: '60' });
+  const [newExForm, setNewExForm] = useState({ exerciseId: '', sets: '3', repsMin: '8', repsMax: '12', rest: '60', useType: 'reps' as 'reps' | 'duration' });
+  const [editingExercise, setEditingExercise] = useState<PlanExercise | null>(null);
   const [exEquipFilter, setExEquipFilter] = useState<string | null>(null);
   const [exMuscleFilter, setExMuscleFilter] = useState<string | null>(null);
   const [isTogglingPlan, setIsTogglingPlan] = useState(false);
@@ -593,15 +661,18 @@ export default function AdminUsers() {
   const handleAddExercise = async (dayId: string) => {
     if (!newExForm.exerciseId) return;
     const existing = planExercisesMap[dayId] || [];
+    const isDuration = newExForm.useType === 'duration';
+    const durSec = parseInt(newExForm.repsMin) || 30;
     const { data, error } = await (supabase as any)
       .from('workout_plan_exercises')
       .insert({
         plan_day_id: dayId,
         exercise_id: newExForm.exerciseId,
         sets: parseInt(newExForm.sets) || 3,
-        reps_min: parseInt(newExForm.repsMin) || 8,
-        reps_max: parseInt(newExForm.repsMax) || 12,
+        reps_min: isDuration ? durSec : (parseInt(newExForm.repsMin) || 8),
+        reps_max: isDuration ? durSec : (parseInt(newExForm.repsMax) || 12),
         rest_seconds: parseInt(newExForm.rest) || 60,
+        is_duration: isDuration,
         sort_order: existing.length,
       })
       .select('*, exercises(id, name, muscle_groups)')
@@ -609,8 +680,22 @@ export default function AdminUsers() {
 
     if (error) { toast({ title: 'שגיאה', description: error.message, variant: 'destructive' }); return; }
     setPlanExercisesMap(prev => ({ ...prev, [dayId]: [...(prev[dayId] || []), data as PlanExercise] }));
-    setNewExForm({ exerciseId: '', sets: '3', repsMin: '8', repsMax: '12', rest: '60' });
+    setNewExForm({ exerciseId: '', sets: '3', repsMin: '8', repsMax: '12', rest: '60', useType: 'reps' });
     setAddExerciseDayId(null);
+  };
+
+  const handleUpdateExercise = async (pe: PlanExercise, updates: { sets: number; reps_min: number; reps_max: number; rest_seconds: number; is_duration: boolean }) => {
+    const { error } = await (supabase as any)
+      .from('workout_plan_exercises')
+      .update(updates)
+      .eq('id', pe.id);
+    if (error) { toast({ title: 'שגיאה', description: error.message, variant: 'destructive' }); return; }
+    setPlanExercisesMap(prev => ({
+      ...prev,
+      [pe.plan_day_id]: (prev[pe.plan_day_id] || []).map(e => e.id === pe.id ? { ...e, ...updates } : e),
+    }));
+    setEditingExercise(null);
+    toast({ title: 'עודכן', description: 'התרגיל עודכן בהצלחה' });
   };
 
   const handleDeleteExercise = async (dayId: string, exId: string) => {
@@ -1277,19 +1362,38 @@ export default function AdminUsers() {
                       {expandedDays.has(day.id) && (
                         <div className="px-4 pb-3 pt-1 space-y-2 border-t border-border">
                           {(planExercisesMap[day.id] || []).map(pe => (
-                            <div key={pe.id} className="flex items-center justify-between text-sm py-1.5 border-b border-border/50 last:border-0">
-                              <div>
-                                <span className="font-medium">{pe.exercises?.name}</span>
-                                <span className="text-muted-foreground text-xs mr-2">
-                                  {pe.sets}×{pe.reps_min}–{pe.reps_max} · {pe.rest_seconds}שנ'
-                                </span>
-                              </div>
-                              <button
-                                onClick={() => handleDeleteExercise(day.id, pe.id)}
-                                className="p-1 text-muted-foreground hover:text-destructive"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </button>
+                            <div key={pe.id} className="text-sm py-1.5 border-b border-border/50 last:border-0">
+                              {editingExercise?.id === pe.id ? (
+                                /* ── Inline edit ── */
+                                <ExerciseEditForm
+                                  pe={pe}
+                                  onSave={updates => handleUpdateExercise(pe, updates)}
+                                  onCancel={() => setEditingExercise(null)}
+                                />
+                              ) : (
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <span className="font-medium">{pe.exercises?.name}</span>
+                                    <span className="text-muted-foreground text-xs mr-2">
+                                      {pe.sets}×{pe.is_duration ? `${pe.reps_min}שנ'` : `${pe.reps_min}–${pe.reps_max}`} · מנוחה {pe.rest_seconds}שנ'
+                                    </span>
+                                  </div>
+                                  <div className="flex gap-1">
+                                    <button
+                                      onClick={() => setEditingExercise(pe)}
+                                      className="p-1 text-muted-foreground hover:text-foreground"
+                                    >
+                                      <Edit className="h-3 w-3" />
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteExercise(day.id, pe.id)}
+                                      className="p-1 text-muted-foreground hover:text-destructive"
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           ))}
 
@@ -1387,11 +1491,26 @@ export default function AdminUsers() {
                                   );
                                 })()
                               )}
-                              <div className="grid grid-cols-4 gap-1.5 text-xs">
+                              {/* Type toggle: reps / duration */}
+                              <div className="flex gap-1">
+                                <button type="button"
+                                  onClick={() => setNewExForm(p => ({ ...p, useType: 'reps' }))}
+                                  className={`flex-1 text-xs py-1 rounded-md transition-colors ${newExForm.useType === 'reps' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+                                  חזרות
+                                </button>
+                                <button type="button"
+                                  onClick={() => setNewExForm(p => ({ ...p, useType: 'duration' }))}
+                                  className={`flex-1 text-xs py-1 rounded-md transition-colors ${newExForm.useType === 'duration' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+                                  שניות
+                                </button>
+                              </div>
+                              <div className={`grid gap-1.5 text-xs ${newExForm.useType === 'duration' ? 'grid-cols-3' : 'grid-cols-4'}`}>
                                 {[
                                   { key: 'sets', label: 'סטים' },
-                                  { key: 'repsMin', label: 'חז׳ מינ' },
-                                  { key: 'repsMax', label: 'חז׳ מקס' },
+                                  ...(newExForm.useType === 'duration'
+                                    ? [{ key: 'repsMin', label: 'שנ׳' }]
+                                    : [{ key: 'repsMin', label: 'חז׳ מינ' }, { key: 'repsMax', label: 'חז׳ מקס' }]
+                                  ),
                                   { key: 'rest', label: 'מנוחה שנ׳' },
                                 ].map(f => (
                                   <div key={f.key} className="space-y-0.5">
@@ -1412,7 +1531,7 @@ export default function AdminUsers() {
                               size="sm"
                               variant="ghost"
                               className="w-full text-xs h-7 text-primary mt-1"
-                              onClick={() => { setAddExerciseDayId(day.id); setNewExForm({ exerciseId: '', sets: '3', repsMin: '8', repsMax: '12', rest: '60' }); setExEquipFilter(null); setExMuscleFilter(null); }}
+                              onClick={() => { setAddExerciseDayId(day.id); setNewExForm({ exerciseId: '', sets: '3', repsMin: '8', repsMax: '12', rest: '60', useType: 'reps' }); setExEquipFilter(null); setExMuscleFilter(null); setEditingExercise(null); }}
                             >
                               <Plus className="h-3 w-3 ml-1" />הוסף תרגיל
                             </Button>
