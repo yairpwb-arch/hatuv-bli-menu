@@ -4,10 +4,15 @@ import { Capacitor } from '@capacitor/core';
 
 const WHATSAPP_URL = 'https://wa.me/message/IZV5KBE6SSC7B';
 
-function openWhatsApp() {
+async function openWhatsApp() {
   if (Capacitor.isNativePlatform()) {
-    // '_system' tells Capacitor to hand the URL to the OS — opens WhatsApp directly
-    window.open(WHATSAPP_URL, '_system');
+    try {
+      // App.openUrl calls UIApplication.shared.open() on iOS — handles Universal Links correctly
+      const { App } = await import('@capacitor/app');
+      await App.openUrl({ url: WHATSAPP_URL });
+    } catch {
+      window.open(WHATSAPP_URL, '_system');
+    }
   } else {
     window.open(WHATSAPP_URL, '_blank', 'noopener,noreferrer');
   }
