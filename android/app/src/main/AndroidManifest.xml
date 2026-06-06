@@ -56,4 +56,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Camera only — photo picker handles gallery access without READ_MEDIA_IMAGES -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Explicitly remove READ_MEDIA_IMAGES/VIDEO even if a library adds them -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove" />
 </manifest>
