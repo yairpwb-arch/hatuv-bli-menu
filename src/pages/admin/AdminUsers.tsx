@@ -443,14 +443,14 @@ export default function AdminUsers() {
     setExpandedSessionId(null);
 
     // Walk history from activity_log
-    const { data: wh } = await (supabase as any)
+    const { data: walkData } = await (supabase as any)
       .from('activity_log')
       .select('id, completed_at')
       .eq('user_id', user.id)
       .eq('activity_type', 'walk')
       .order('completed_at', { ascending: false })
       .limit(30);
-    setWalkHistory((wh || []) as { id: string; completed_at: string }[]);
+    setWalkHistory((walkData || []) as { id: string; completed_at: string }[]);
 
     // Exercise library for plan builder
     const { data: exLib } = await (supabase as any)
