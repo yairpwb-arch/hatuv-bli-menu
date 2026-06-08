@@ -15,6 +15,7 @@ import { Capacitor } from '@capacitor/core';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { StepCounter } from '@/plugins/StepCounterPlugin';
+import { StepSync } from '@/plugins/StepSyncPlugin';
 
 export const STEP_GOAL = 10_000;
 
@@ -169,20 +170,22 @@ export function useStepCounter(userId?: string): UseStepCounterReturn {
     }, 3_000);
   }, [userId]);
 
-  // ── Save user config to native SharedPreferences for background sync ─────
+  // ── Save user config for background sync (Android: SharedPreferences, iOS: UserDefaults) ──
   const syncUserConfig = useCallback(async () => {
-    if (!userId || !isAndroid) return;
+    if (!userId) return;
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) return;
-      await StepCounter.setUserConfig({
+      const config = {
         userId,
-        supabaseUrl: import.meta.env.VITE_SUPABASE_URL,
-        anonKey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        supabaseUrl: import.meta.env.VITE_SUPABASE_URL as string,
+        anonKey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string,
         accessToken: session.access_token,
-      });
+      };
+      if (isAndroid) await StepCounter.setUserConfig(config);
+      if (isIOS)     await StepSync.setUserConfig(config);
     } catch {}
-  }, [userId, isAndroid]);
+  }, [userId, isAndroid, isIOS]);
 
   // ── Android: start Foreground Service ────────────────────────────────────
   const startAndroidTracking = useCallback(async () => {
@@ -199,14 +202,15 @@ export function useStepCounter(userId?: string): UseStepCounterReturn {
     listenerRef.current = handle;
   }, [userId, saveSteps]);
 
-  // ── iOS: refresh step count ───────────────────────────────────────────────
+  // ── iOS: refresh step count + sync credentials ───────────────────────────
   const refreshIOSSteps = useCallback(async () => {
+    await syncUserConfig();
     const today = format(new Date(), 'yyyy-MM-dd');
     const count = await queryIOSStepsToday(userId, today);
     setSteps(count);
     if (count > 0) saveSteps(count);
     return count;
-  }, [userId, saveSteps]);
+  }, [userId, saveSteps, syncUserConfig]);
 
   // ── appStateChange: re-check / refresh on every foreground ───────────────
   useEffect(() => {

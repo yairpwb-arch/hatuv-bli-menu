@@ -7,7 +7,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        // Re-register HealthKit background delivery on every launch (credentials
+        // are persisted in UserDefaults by StepSyncPlugin.setUserConfig).
+        StepSyncHelper.shared.setup()
         return true
     }
 
