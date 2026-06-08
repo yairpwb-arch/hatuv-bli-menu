@@ -73,7 +73,7 @@ class StepSyncHelper {
     private func postToSupabase(userId: String, supabaseUrl: String,
                                 anonKey: String, accessToken: String,
                                 date: String, steps: Int) {
-        guard let url = URL(string: "\(supabaseUrl)/rest/v1/steps_log") else { return }
+        guard let url = URL(string: "\(supabaseUrl)/rest/v1/steps_log?on_conflict=user_id,date") else { return }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue(anonKey,              forHTTPHeaderField: "apikey")

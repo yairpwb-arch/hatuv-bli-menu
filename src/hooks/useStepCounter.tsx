@@ -200,7 +200,7 @@ export function useStepCounter(userId?: string): UseStepCounterReturn {
       saveSteps(data.steps);
     });
     listenerRef.current = handle;
-  }, [userId, saveSteps]);
+  }, [userId, saveSteps, syncUserConfig]);
 
   // ── iOS: refresh step count + sync credentials ───────────────────────────
   const refreshIOSSteps = useCallback(async () => {

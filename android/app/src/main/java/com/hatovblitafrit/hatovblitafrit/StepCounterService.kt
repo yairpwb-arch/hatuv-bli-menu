@@ -174,7 +174,7 @@ class StepCounterService : Service(), SensorEventListener {
 
         Thread {
             try {
-                val url = URL("$supabaseUrl/rest/v1/steps_log")
+                val url = URL("$supabaseUrl/rest/v1/steps_log?on_conflict=user_id,date")
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "POST"
                 conn.setRequestProperty("apikey", anonKey)
