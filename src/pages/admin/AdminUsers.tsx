@@ -1150,10 +1150,20 @@ export default function AdminUsers() {
 
               {/* Steps section */}
               {(() => {
-                const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-                const last7 = stepsData.filter(s => s.date >= sevenDaysAgo);
-                const avg7 = last7.length ? Math.round(last7.reduce((a, b) => a + b.steps, 0) / last7.length) : null;
-                const avg30 = stepsData.length ? Math.round(stepsData.reduce((a, b) => a + b.steps, 0) / stepsData.length) : null;
+                // Build a full 30-day scaffold so missing days show as 0 (not skipped)
+                const today = new Date();
+                const stepsMap = new Map(stepsData.map(s => [s.date, s.steps]));
+                const last30 = Array.from({ length: 30 }, (_, i) => {
+                  const d = new Date(today);
+                  d.setDate(today.getDate() - (29 - i));
+                  const dateKey = d.toISOString().split('T')[0];
+                  return { date: format(d, 'dd/MM', { locale: he }), steps: stepsMap.get(dateKey) ?? 0 };
+                });
+                const last7 = last30.slice(-7);
+                const avg7Days = last7.filter(d => d.steps > 0);
+                const avg7 = avg7Days.length ? Math.round(avg7Days.reduce((a, b) => a + b.steps, 0) / avg7Days.length) : null;
+                const avg30Days = last30.filter(d => d.steps > 0);
+                const avg30 = avg30Days.length ? Math.round(avg30Days.reduce((a, b) => a + b.steps, 0) / avg30Days.length) : null;
                 return (
                   <div className="border-t border-border pt-4 space-y-3">
                     <p className="text-sm font-medium flex items-center gap-2">
@@ -1177,10 +1187,7 @@ export default function AdminUsers() {
                           </div>
                         </div>
                         <ResponsiveContainer width="100%" height={150}>
-                          <BarChart data={stepsData.map(s => ({
-                            date: format(new Date(s.date), 'dd/MM', { locale: he }),
-                            steps: s.steps,
-                          }))}>
+                          <BarChart data={last30}>
                             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                             <XAxis dataKey="date" tick={{ fontSize: 9 }} interval={4} />
                             <YAxis tick={{ fontSize: 9 }} />
