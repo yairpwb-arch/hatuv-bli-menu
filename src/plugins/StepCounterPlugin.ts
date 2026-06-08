@@ -15,10 +15,18 @@ export interface PermissionResult {
   activityRecognition: 'granted' | 'denied' | 'prompt';
 }
 
+export interface UserConfigOptions {
+  userId: string;
+  supabaseUrl: string;
+  anonKey: string;
+  accessToken: string;
+}
+
 export interface StepCounterPlugin {
   startService(): Promise<void>;
   stopService(): Promise<void>;
   getDailySteps(): Promise<DailyStepsResult>;
+  setUserConfig(options: UserConfigOptions): Promise<void>;
   checkPermission(): Promise<PermissionResult>;
   requestPermission(): Promise<PermissionResult>;
   addListener(

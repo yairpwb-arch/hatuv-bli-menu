@@ -169,9 +169,25 @@ export function useStepCounter(userId?: string): UseStepCounterReturn {
     }, 3_000);
   }, [userId]);
 
+  // ── Save user config to native SharedPreferences for background sync ─────
+  const syncUserConfig = useCallback(async () => {
+    if (!userId || !isAndroid) return;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) return;
+      await StepCounter.setUserConfig({
+        userId,
+        supabaseUrl: import.meta.env.VITE_SUPABASE_URL,
+        anonKey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        accessToken: session.access_token,
+      });
+    } catch {}
+  }, [userId, isAndroid]);
+
   // ── Android: start Foreground Service ────────────────────────────────────
   const startAndroidTracking = useCallback(async () => {
     await StepCounter.startService();
+    await syncUserConfig();
     const today = format(new Date(), 'yyyy-MM-dd');
     const initial = await resolveInitialStepsAndroid(userId, today);
     setSteps(initial);

@@ -15,6 +15,8 @@ import android.hardware.SensorManager
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import java.net.HttpURLConnection
+import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -56,7 +58,15 @@ class StepCounterService : Service(), SensorEventListener {
         const val ACTION_STEP_UPDATE  = "com.hatovblitafrit.hatovblitafrit.STEP_UPDATE"
         const val EXTRA_STEPS      = "steps"
         const val EXTRA_DATE       = "date"
+        // User config for background DB sync
+        const val KEY_USER_ID      = "user_id"
+        const val KEY_SUPABASE_URL = "supabase_url"
+        const val KEY_ANON_KEY     = "anon_key"
+        const val KEY_ACCESS_TOKEN = "access_token"
+        const val SYNC_INTERVAL_MS = 5 * 60 * 1000L // sync at most every 5 minutes
     }
+
+    private var lastSyncTime = 0L
 
     // ─── Lifecycle ────────────────────────────────────────────────────────────
 
@@ -138,6 +148,13 @@ class StepCounterService : Service(), SensorEventListener {
         saveState()
         updateNotification()
         broadcastUpdate()
+
+        // Background DB sync — throttled to once every 5 minutes
+        val now = System.currentTimeMillis()
+        if (now - lastSyncTime >= SYNC_INTERVAL_MS) {
+            lastSyncTime = now
+            syncToSupabase()
+        }
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
@@ -146,6 +163,37 @@ class StepCounterService : Service(), SensorEventListener {
 
     private fun getTodayDate(): String =
         SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+
+    private fun syncToSupabase() {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val userId      = prefs.getString(KEY_USER_ID, null)      ?: return
+        val supabaseUrl = prefs.getString(KEY_SUPABASE_URL, null) ?: return
+        val anonKey     = prefs.getString(KEY_ANON_KEY, null)     ?: return
+        val accessToken = prefs.getString(KEY_ACCESS_TOKEN, null) ?: return
+        if (dailySteps <= 0) return
+
+        Thread {
+            try {
+                val url = URL("$supabaseUrl/rest/v1/steps_log")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.requestMethod = "POST"
+                conn.setRequestProperty("apikey", anonKey)
+                conn.setRequestProperty("Authorization", "Bearer $accessToken")
+                conn.setRequestProperty("Content-Type", "application/json")
+                conn.setRequestProperty("Prefer", "resolution=merge-duplicates")
+                conn.connectTimeout = 10_000
+                conn.readTimeout    = 10_000
+                conn.doOutput       = true
+
+                val body = """{"user_id":"$userId","date":"$currentDate","steps":$dailySteps}"""
+                conn.outputStream.bufferedWriter().use { it.write(body) }
+                conn.responseCode   // execute the request
+                conn.disconnect()
+            } catch (_: Exception) {
+                // Silently ignore — will retry on next tick
+            }
+        }.start()
+    }
 
     private fun saveState() {
         getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().apply {

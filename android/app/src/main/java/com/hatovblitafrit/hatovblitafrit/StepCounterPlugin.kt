@@ -83,6 +83,22 @@ class StepCounterPlugin : Plugin() {
     }
 
     @PluginMethod
+    fun setUserConfig(call: PluginCall) {
+        val userId      = call.getString("userId")      ?: return call.reject("userId required")
+        val supabaseUrl = call.getString("supabaseUrl") ?: return call.reject("supabaseUrl required")
+        val anonKey     = call.getString("anonKey")     ?: return call.reject("anonKey required")
+        val accessToken = call.getString("accessToken") ?: return call.reject("accessToken required")
+        context.getSharedPreferences(StepCounterService.PREFS_NAME, Context.MODE_PRIVATE).edit().apply {
+            putString(StepCounterService.KEY_USER_ID, userId)
+            putString(StepCounterService.KEY_SUPABASE_URL, supabaseUrl)
+            putString(StepCounterService.KEY_ANON_KEY, anonKey)
+            putString(StepCounterService.KEY_ACCESS_TOKEN, accessToken)
+            apply()
+        }
+        call.resolve()
+    }
+
+    @PluginMethod
     fun checkPermission(call: PluginCall) {
         val state = getPermissionState("activityRecognition")
         call.resolve(JSObject().apply { put("activityRecognition", stateString(state)) })
