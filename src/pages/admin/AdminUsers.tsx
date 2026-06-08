@@ -1150,25 +1150,24 @@ export default function AdminUsers() {
 
               {/* Steps section */}
               {(() => {
-                // Build a full 30-day scaffold so missing days show as 0 (not skipped)
+                // Build a full 7-day scaffold so missing days show as 0 (not skipped)
                 const today = new Date();
                 const stepsMap = new Map(stepsData.map(s => [s.date, s.steps]));
-                const last30 = Array.from({ length: 30 }, (_, i) => {
+                const last7 = Array.from({ length: 7 }, (_, i) => {
                   const d = new Date(today);
-                  d.setDate(today.getDate() - (29 - i));
+                  d.setDate(today.getDate() - (6 - i));
                   const dateKey = d.toISOString().split('T')[0];
                   return { date: format(d, 'dd/MM', { locale: he }), steps: stepsMap.get(dateKey) ?? 0 };
                 });
-                const last7 = last30.slice(-7);
                 const avg7Days = last7.filter(d => d.steps > 0);
                 const avg7 = avg7Days.length ? Math.round(avg7Days.reduce((a, b) => a + b.steps, 0) / avg7Days.length) : null;
-                const avg30Days = last30.filter(d => d.steps > 0);
+                const avg30Days = stepsData.filter(s => s.steps > 0);
                 const avg30 = avg30Days.length ? Math.round(avg30Days.reduce((a, b) => a + b.steps, 0) / avg30Days.length) : null;
                 return (
                   <div className="border-t border-border pt-4 space-y-3">
                     <p className="text-sm font-medium flex items-center gap-2">
                       <Footprints className="h-4 w-4 text-primary" />
-                      נתוני צעדים (30 יום אחרונים)
+                      נתוני צעדים (7 ימים אחרונים)
                     </p>
                     {stepsData.length === 0 ? (
                       <p className="text-muted-foreground text-sm text-center py-3">אין נתוני צעדים עדיין</p>
@@ -1187,7 +1186,7 @@ export default function AdminUsers() {
                           </div>
                         </div>
                         <ResponsiveContainer width="100%" height={150}>
-                          <BarChart data={last30}>
+                          <BarChart data={last7}>
                             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                             <XAxis dataKey="date" tick={{ fontSize: 9 }} interval={4} />
                             <YAxis tick={{ fontSize: 9 }} />
