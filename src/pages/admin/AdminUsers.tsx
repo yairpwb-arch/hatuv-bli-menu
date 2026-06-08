@@ -1150,16 +1150,17 @@ export default function AdminUsers() {
 
               {/* Steps section */}
               {(() => {
-                // Build a full 7-day scaffold so missing days show as 0 (not skipped)
+                // Build a full 7-day scaffold — null for missing days (no bar drawn)
                 const today = new Date();
                 const stepsMap = new Map(stepsData.map(s => [s.date, s.steps]));
                 const last7 = Array.from({ length: 7 }, (_, i) => {
                   const d = new Date(today);
                   d.setDate(today.getDate() - (6 - i));
                   const dateKey = d.toISOString().split('T')[0];
-                  return { date: format(d, 'dd/MM', { locale: he }), steps: stepsMap.get(dateKey) ?? 0 };
+                  const val = stepsMap.get(dateKey);
+                  return { date: format(d, 'dd/MM', { locale: he }), steps: val ?? null };
                 });
-                const avg7Days = last7.filter(d => d.steps > 0);
+                const avg7Days = last7.filter(d => d.steps != null) as { date: string; steps: number }[];
                 const avg7 = avg7Days.length ? Math.round(avg7Days.reduce((a, b) => a + b.steps, 0) / avg7Days.length) : null;
                 const avg30Days = stepsData.filter(s => s.steps > 0);
                 const avg30 = avg30Days.length ? Math.round(avg30Days.reduce((a, b) => a + b.steps, 0) / avg30Days.length) : null;
