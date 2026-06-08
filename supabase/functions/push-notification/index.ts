@@ -230,15 +230,37 @@ function getUserLocalHour(timezone: string | null): number {
 
 // ── notification_logs helpers ─────────────────────────────────────────────────
 
+function getIsraelTodayRange(): { start: string; end: string } {
+  const tz = 'Asia/Jerusalem';
+  const now = new Date();
+  const today = now.toLocaleDateString('en-CA', { timeZone: tz }); // YYYY-MM-DD
+
+  // Detect actual Israel UTC offset (UTC+3 summer, UTC+2 winter)
+  const fmt = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'shortOffset' });
+  const tzPart = fmt.formatToParts(now).find(p => p.type === 'timeZoneName')?.value ?? 'GMT+3';
+  const match = tzPart.match(/GMT([+-]\d+(?::\d+)?)/);
+  let offsetStr = '+03:00';
+  if (match) {
+    const raw = match[1]; // e.g. "+3" or "+2"
+    const h = Math.abs(parseInt(raw));
+    offsetStr = `${raw.startsWith('-') ? '-' : '+'}${String(h).padStart(2, '0')}:00`;
+  }
+
+  return {
+    start: `${today}T00:00:00${offsetStr}`,
+    end:   `${today}T23:59:59.999${offsetStr}`,
+  };
+}
+
 async function alreadySentToday(userId: string, type: string): Promise<boolean> {
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
+  const { start, end } = getIsraelTodayRange();
   const { data } = await supabase
     .from('notification_logs')
     .select('id')
     .eq('user_id', userId)
     .eq('notification_type', type)
-    .gte('sent_at', `${today}T00:00:00+03:00`)
-    .lt('sent_at', `${today}T23:59:59+03:00`)
+    .gte('sent_at', start)
+    .lte('sent_at', end)
     .limit(1);
   return (data?.length ?? 0) > 0;
 }
