@@ -1,4 +1,4 @@
-import { Settings, User, SlidersHorizontal } from 'lucide-react';
+import { Settings, User, SlidersHorizontal, Gift } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -61,6 +61,10 @@ export function AppHeader() {
               <DropdownMenuItem onClick={() => navigate('/app/settings')}>
                 <SlidersHorizontal className="ml-2 h-4 w-4" />
                 הגדרות
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate('/app/referral')}>
+                <Gift className="ml-2 h-4 w-4" />
+                חבר מביא חבר
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleSignOut} className="text-destructive">

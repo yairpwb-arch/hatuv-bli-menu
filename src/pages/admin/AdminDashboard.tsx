@@ -5,9 +5,19 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
-import { Users, BookOpen, Quote, TrendingUp, UserPlus, Link, Pencil, Check, X, ExternalLink } from 'lucide-react';
+import { Users, BookOpen, Quote, TrendingUp, UserPlus, Link, Pencil, Check, X, ExternalLink, Gift, Phone, MessageSquare } from 'lucide-react';
 
 const ADMIN_EMAIL = 'yairpwb@gmail.com';
+
+interface Referral {
+  id: string;
+  friend_name: string;
+  friend_phone: string;
+  notes: string | null;
+  status: string;
+  created_at: string;
+  profiles: { full_name: string | null; email: string } | null;
+}
 
 interface Stats {
   totalUsers: number;
@@ -36,6 +46,8 @@ export default function AdminDashboard() {
   const [snacksDraft, setSnacksDraft] = useState('');
   const [weighingDraft, setWeighingDraft] = useState('');
   const [isSavingLinks, setIsSavingLinks] = useState(false);
+  const [referrals, setReferrals] = useState<Referral[]>([]);
+  const [isLoadingReferrals, setIsLoadingReferrals] = useState(true);
 
   const saveLink = async (key: string, value: string) => {
     setIsSavingLinks(true);
@@ -86,6 +98,17 @@ export default function AdminDashboard() {
     };
 
     fetchData();
+
+    // Load referrals
+    const loadReferrals = async () => {
+      const { data } = await (supabase as any)
+        .from('referrals')
+        .select('*, profiles(full_name, email)')
+        .order('created_at', { ascending: false });
+      setReferrals((data || []) as Referral[]);
+      setIsLoadingReferrals(false);
+    };
+    loadReferrals();
   }, []);
 
   const statCards = [
@@ -227,6 +250,73 @@ export default function AdminDashboard() {
               </div>
             )}
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Referrals */}
+      <Card className="card-elevated">
+        <CardContent className="pt-6 space-y-4">
+          <div className="flex items-center gap-2">
+            <Gift className="h-5 w-5 text-primary" />
+            <h3 className="text-lg font-semibold">חבר מביא חבר — לידים</h3>
+            <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+              {referrals.length}
+            </span>
+          </div>
+
+          {isLoadingReferrals ? (
+            <div className="space-y-2">
+              {[...Array(3)].map((_, i) => <div key={i} className="h-16 rounded-lg bg-muted animate-pulse" />)}
+            </div>
+          ) : referrals.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-6">עדיין לא נשלחו הפנייות</p>
+          ) : (
+            <div className="space-y-3">
+              {referrals.map(r => (
+                <div key={r.id} className="rounded-xl border border-border bg-muted/30 p-4 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="font-semibold text-sm">{r.friend_name}</p>
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
+                        <Phone className="h-3 w-3" />
+                        <span dir="ltr">{r.friend_phone}</span>
+                      </div>
+                    </div>
+                    <div className="text-left shrink-0">
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${
+                        r.status === 'converted'
+                          ? 'bg-green-500/15 text-green-500 border-green-500/30'
+                          : r.status === 'contacted'
+                          ? 'bg-yellow-500/15 text-yellow-500 border-yellow-500/30'
+                          : 'bg-muted text-muted-foreground border-border'
+                      }`}>
+                        {r.status === 'converted' ? 'הצטרף' : r.status === 'contacted' ? 'בטיפול' : 'חדש'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {r.notes && (
+                    <div className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                      <MessageSquare className="h-3 w-3 mt-0.5 shrink-0" />
+                      <span>{r.notes}</span>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between pt-1 border-t border-border/50">
+                    <p className="text-xs text-muted-foreground">
+                      נשלח ע"י{' '}
+                      <span className="text-foreground font-medium">
+                        {r.profiles?.full_name || r.profiles?.email || 'משתמש'}
+                      </span>
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(r.created_at).toLocaleDateString('he-IL')}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

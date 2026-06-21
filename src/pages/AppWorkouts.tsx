@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Dumbbell, CheckCircle, Clock, History, Play, ChevronDown, ChevronUp, Pencil, X, Footprints, Trash2, ChevronRight } from 'lucide-react';
+import { Dumbbell, CheckCircle, Clock, History, Play, ChevronDown, ChevronUp, Pencil, X, Footprints, Trash2, ChevronRight, Check } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
 import type { WorkoutPlanDay, WorkoutPlanExercise } from '@/hooks/useWorkoutPlan';
@@ -136,7 +136,6 @@ interface WorkoutDayCardProps {
   alreadyDoneToday: boolean;
   isExpanded: boolean;
   onToggleExpand: () => void;
-  onSaveSchedule: (weekday: number | null) => void;
   onStartSession: (exercises: WorkoutPlanExercise[]) => void;
 }
 
@@ -147,23 +146,9 @@ function WorkoutDayCard({
   alreadyDoneToday,
   isExpanded,
   onToggleExpand,
-  onSaveSchedule,
   onStartSession,
 }: WorkoutDayCardProps) {
   const isScheduledToday = scheduledWeekday === todayWeekday;
-  const [editOpen, setEditOpen] = useState(false);
-  const [pendingWeekday, setPendingWeekday] = useState<number | null>(null);
-
-  const startEditing = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setPendingWeekday(scheduledWeekday ?? null);
-    setEditOpen(true);
-  };
-
-  const saveEditing = () => {
-    onSaveSchedule(pendingWeekday);
-    setEditOpen(false);
-  };
 
   // Fetch exercises only when card is expanded
   const { data: exercises, isLoading: isLoadingExercises } = useQuery({
@@ -218,60 +203,13 @@ function WorkoutDayCard({
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-1 flex-shrink-0">
-            <button
-              onClick={startEditing}
-              className="p-1.5 rounded-lg text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
-              aria-label="ערוך יום אימון"
-            >
-              <Pencil className="h-3.5 w-3.5" />
-            </button>
-            <ChevronDown
-              className={cn(
-                'h-4 w-4 text-muted-foreground transition-transform',
-                isExpanded && 'rotate-180'
-              )}
-            />
-          </div>
+          <ChevronDown
+            className={cn(
+              'h-4 w-4 text-muted-foreground transition-transform flex-shrink-0',
+              isExpanded && 'rotate-180'
+            )}
+          />
         </div>
-
-        {/* ── Edit Day Dialog ── */}
-        <Dialog open={editOpen} onOpenChange={setEditOpen}>
-          <DialogContent dir="rtl" className="max-w-xs">
-            <DialogHeader>
-              <DialogTitle>בחר יום לאימון</DialogTitle>
-            </DialogHeader>
-            <div className="flex gap-1 pt-2">
-              {WEEKDAY_LABELS.map((label, wd) => (
-                <button
-                  key={wd}
-                  onClick={() => setPendingWeekday(pendingWeekday === wd ? null : wd)}
-                  className={cn(
-                    'flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all',
-                    pendingWeekday === wd
-                      ? 'bg-orange-500 text-white shadow-md'
-                      : wd === todayWeekday
-                      ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 border border-orange-300'
-                      : 'bg-muted text-muted-foreground hover:bg-muted/70'
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <div className="flex gap-2 pt-1">
-              <Button
-                className="flex-1 bg-orange-500 hover:bg-orange-600 text-white"
-                onClick={saveEditing}
-              >
-                שמור
-              </Button>
-              <Button variant="outline" size="icon" onClick={() => setEditOpen(false)}>
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
 
         {/* ── Expanded: exercise list + start button ── */}
         {isExpanded && (
@@ -346,33 +284,43 @@ interface WalkEntry {
   is_active: boolean;
 }
 
-function WalkCard({ walk, onDayChange }: { walk: WalkEntry; onDayChange: (walkId: string, day: number | null) => void }) {
+function WalkCard({
+  walk,
+  isCompletedToday,
+  onMarkComplete,
+}: {
+  walk: WalkEntry;
+  isCompletedToday: boolean;
+  onMarkComplete: () => void;
+}) {
   const todayWd = new Date().getDay();
   const isToday = walk.day_of_week === todayWd;
-  const [editOpen, setEditOpen] = useState(false);
-  const [pendingDay, setPendingDay] = useState<number | null>(null);
-
-  const saveDay = () => {
-    onDayChange(walk.id, pendingDay);
-    setEditOpen(false);
-  };
+  const [isExpanded, setIsExpanded] = useState(false);
 
   return (
     <Card className={cn('transition-all', isToday && 'border-2 border-orange-500')}>
       <CardContent className="p-4 space-y-3">
-        {/* Header */}
-        <div className="flex items-center justify-between">
+        {/* Header — click to expand */}
+        <div
+          className="flex items-center justify-between cursor-pointer"
+          onClick={() => setIsExpanded(p => !p)}
+        >
           <div className="flex items-center gap-3">
             <div className={cn('w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0',
-              isToday ? 'bg-orange-500 text-white' : 'bg-muted text-muted-foreground')}>
-              <Footprints className="h-4 w-4" />
+              isCompletedToday ? 'bg-green-500 text-white' : isToday ? 'bg-orange-500 text-white' : 'bg-muted text-muted-foreground')}>
+              {isCompletedToday ? <Check className="h-4 w-4" /> : <Footprints className="h-4 w-4" />}
             </div>
             <div>
               <div className="flex items-center gap-1.5 flex-wrap">
                 <h4 className="font-semibold text-foreground">
                   הליכה {walk.walk_number === 1 ? 'ראשונה' : 'שנייה'}
                 </h4>
-                {isToday && <Badge className="bg-orange-500 text-white text-xs px-2 py-0">היום</Badge>}
+                {isCompletedToday && (
+                  <Badge className="bg-green-500 text-white text-xs px-2 py-0">הושלם היום ✓</Badge>
+                )}
+                {isToday && !isCompletedToday && (
+                  <Badge className="bg-orange-500 text-white text-xs px-2 py-0">היום</Badge>
+                )}
               </div>
               <p className="text-xs text-muted-foreground mt-0.5">20-30 דקות • קצב רגיל</p>
               <p className="text-xs mt-0.5">
@@ -382,47 +330,28 @@ function WalkCard({ walk, onDayChange }: { walk: WalkEntry; onDayChange: (walkId
               </p>
             </div>
           </div>
-          <button
-            onClick={() => { setPendingDay(walk.day_of_week); setEditOpen(true); }}
-            className="p-1.5 rounded-lg text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
-            aria-label="ערוך יום הליכה"
-          >
-            <Pencil className="h-3.5 w-3.5" />
-          </button>
+          <ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform flex-shrink-0', isExpanded && 'rotate-180')} />
         </div>
 
-        {/* Edit Dialog */}
-        <Dialog open={editOpen} onOpenChange={setEditOpen}>
-          <DialogContent dir="rtl" className="max-w-xs">
-            <DialogHeader>
-              <DialogTitle>בחר יום להליכה</DialogTitle>
-            </DialogHeader>
-            <div className="flex gap-1 pt-2">
-              {WEEKDAY_LABELS.map((label, wd) => (
-                <button
-                  key={wd}
-                  onClick={() => setPendingDay(pendingDay === wd ? null : wd)}
-                  className={cn(
-                    'flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all',
-                    pendingDay === wd ? 'bg-orange-500 text-white shadow-md'
-                    : wd === todayWd ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 border border-orange-300'
-                    : 'bg-muted text-muted-foreground hover:bg-muted/70'
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <div className="flex gap-2 pt-1">
-              <Button className="flex-1 bg-orange-500 hover:bg-orange-600 text-white" onClick={saveDay}>
-                שמור
+        {/* Expanded: complete button */}
+        {isExpanded && (
+          <div className="border-t border-border pt-3">
+            {isCompletedToday ? (
+              <div className="flex items-center justify-center gap-1.5 text-green-500 text-sm font-medium py-1">
+                <Check className="h-4 w-4" />
+                ההליכה נרשמה להיום
+              </div>
+            ) : (
+              <Button
+                className="w-full h-10 bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold rounded-xl"
+                onClick={e => { e.stopPropagation(); onMarkComplete(); }}
+              >
+                <Footprints className="h-4 w-4 ml-2" />
+                סיימתי את ההליכה!
               </Button>
-              <Button variant="outline" size="icon" onClick={() => setEditOpen(false)}>
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -431,6 +360,9 @@ function WalkCard({ walk, onDayChange }: { walk: WalkEntry; onDayChange: (walkId
 function WalkingSection({ userId, currentWeek }: { userId: string; currentWeek: number }) {
   const [walks, setWalks] = useState<WalkEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [todayCompletedIds, setTodayCompletedIds] = useState<Set<string>>(new Set());
+
+  const todayStr = new Date().toISOString().split('T')[0];
 
   const load = async () => {
     const { data: existing } = await (supabase as any)
@@ -440,7 +372,6 @@ function WalkingSection({ userId, currentWeek }: { userId: string; currentWeek: 
       .order('walk_number');
     let list = (existing || []) as WalkEntry[];
 
-    // Auto-create walk 1 if not exists
     if (!list.find(w => w.walk_number === 1)) {
       const { data: w1 } = await (supabase as any)
         .from('user_walking_schedule')
@@ -449,7 +380,6 @@ function WalkingSection({ userId, currentWeek }: { userId: string; currentWeek: 
       if (w1) list = [...list, w1 as WalkEntry];
     }
 
-    // Auto-create walk 2 if week >= 4 and walk 1 is still active
     const walk1 = list.find(w => w.walk_number === 1);
     if (!list.find(w => w.walk_number === 2) && currentWeek >= 4 && walk1?.is_active) {
       const { data: w2 } = await (supabase as any)
@@ -460,34 +390,167 @@ function WalkingSection({ userId, currentWeek }: { userId: string; currentWeek: 
     }
 
     setWalks(list.filter(w => w.is_active).sort((a, b) => a.walk_number - b.walk_number));
+
+    // Check if already completed a walk today
+    const { data: todayLogs } = await supabase
+      .from('activity_log')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('activity_type', 'walk')
+      .eq('completed_at', todayStr);
+    if (todayLogs && todayLogs.length > 0) {
+      // Mark all walk cards as completed today (activity_log doesn't distinguish which walk)
+      setTodayCompletedIds(new Set(list.filter(w => w.is_active).map(w => w.id)));
+    }
+
     setIsLoading(false);
   };
 
   useEffect(() => { load(); }, [userId]);
 
+  const handleMarkComplete = async (walkId: string) => {
+    // Check if already logged today
+    const { data: existing } = await supabase
+      .from('activity_log')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('activity_type', 'walk')
+      .eq('completed_at', todayStr);
+
+    if (existing && existing.length > 0) {
+      toast({ title: 'כבר נרשמה היום!', description: 'הליכה כבר סומנה להיום' });
+      setTodayCompletedIds(prev => new Set([...prev, walkId]));
+      return;
+    }
+
+    await supabase.from('activity_log').insert({
+      user_id: userId,
+      activity_type: 'walk',
+      completed_at: todayStr,
+    });
+
+    // Enforce 10-walk limit
+    const { data: allWalks } = await supabase
+      .from('activity_log')
+      .select('id, completed_at')
+      .eq('user_id', userId)
+      .eq('activity_type', 'walk')
+      .order('completed_at', { ascending: true });
+    if (allWalks && allWalks.length > 10) {
+      const toDelete = allWalks.slice(0, allWalks.length - 10);
+      await supabase.from('activity_log').delete().in('id', toDelete.map((w: { id: string }) => w.id));
+    }
+
+    setTodayCompletedIds(prev => new Set([...prev, walkId]));
+    toast({ title: 'מעולה! 💪', description: 'ההליכה נרשמה בהצלחה' });
+  };
+
+  const [editWalksOpen, setEditWalksOpen] = useState(false);
+  const [draftWalkDays, setDraftWalkDays] = useState<Map<string, number | null>>(new Map());
+  const [isSavingWalks, setIsSavingWalks] = useState(false);
+  const todayWd = new Date().getDay();
+
+  const openEditWalks = () => {
+    const draft = new Map<string, number | null>();
+    for (const w of walks) draft.set(w.id, w.day_of_week);
+    setDraftWalkDays(draft);
+    setEditWalksOpen(true);
+  };
+
+  const saveWalkDays = async () => {
+    setIsSavingWalks(true);
+    await Promise.all(
+      Array.from(draftWalkDays.entries()).map(([id, day]) =>
+        (supabase as any).from('user_walking_schedule').update({ day_of_week: day }).eq('id', id)
+      )
+    );
+    setWalks(prev => prev.map(w => ({ ...w, day_of_week: draftWalkDays.get(w.id) ?? w.day_of_week })));
+    setIsSavingWalks(false);
+    setEditWalksOpen(false);
+    toast({ title: 'ימי ההליכה עודכנו' });
+  };
+
   if (isLoading) return (
     <div className="space-y-3 pt-4">
-      {[0,1].map(i => <Skeleton key={i} className="h-24 w-full rounded-2xl" />)}
+      {[0,1].map(i => <Skeleton key={i} className="h-28 w-full rounded-2xl" />)}
     </div>
   );
-  const handleDayChange = async (walkId: string, day: number | null) => {
-    await (supabase as any)
-      .from('user_walking_schedule')
-      .update({ day_of_week: day })
-      .eq('id', walkId);
-    setWalks(prev => prev.map(w => w.id === walkId ? { ...w, day_of_week: day } : w));
-    toast({ title: 'הליכה עודכנה' });
-  };
 
   if (walks.length === 0) return null;
 
   return (
     <div className="pt-3 space-y-3">
-      <div className="flex items-center gap-2 px-1">
-        <Footprints className="h-4 w-4 text-orange-500" />
-        <h3 className="text-sm font-semibold text-muted-foreground">הליכות שבועיות</h3>
+      <div className="flex items-center justify-between px-0.5">
+        <div className="flex items-center gap-2">
+          <Footprints className="h-4 w-4 text-orange-500" />
+          <h3 className="text-sm font-semibold text-muted-foreground">הליכות שבועיות</h3>
+        </div>
+        <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={openEditWalks}>
+          <Pencil className="h-3.5 w-3.5" />
+          ערוך הליכות
+        </Button>
       </div>
-      {walks.map(w => <WalkCard key={w.id} walk={w} onDayChange={handleDayChange} />)}
+
+      {/* Edit walks dialog */}
+      <Dialog open={editWalksOpen} onOpenChange={setEditWalksOpen}>
+        <DialogContent dir="rtl" className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>עריכת ימי הליכה</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-1">
+            {walks.map(w => {
+              const current = draftWalkDays.get(w.id) ?? null;
+              return (
+                <div key={w.id} className="space-y-2">
+                  <p className="text-sm font-semibold">הליכה {w.walk_number === 1 ? 'ראשונה' : 'שנייה'}</p>
+                  <div className="flex gap-1">
+                    {WEEKDAY_LABELS.map((label, wd) => (
+                      <button
+                        key={wd}
+                        type="button"
+                        onClick={() => setDraftWalkDays(prev => {
+                          const next = new Map(prev);
+                          next.set(w.id, current === wd ? null : wd);
+                          return next;
+                        })}
+                        className={cn(
+                          'flex-1 py-2 rounded-xl text-xs font-semibold transition-all',
+                          current === wd
+                            ? 'bg-orange-500 text-white shadow-md'
+                            : wd === todayWd
+                            ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 border border-orange-300'
+                            : 'bg-muted text-muted-foreground hover:bg-muted/70'
+                        )}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex gap-2 pt-2">
+            <Button
+              className="flex-1 bg-orange-500 hover:bg-orange-600 text-white"
+              onClick={saveWalkDays}
+              disabled={isSavingWalks}
+            >
+              שמור
+            </Button>
+            <Button variant="outline" onClick={() => setEditWalksOpen(false)}>ביטול</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {walks.map(w => (
+        <WalkCard
+          key={w.id}
+          walk={w}
+          isCompletedToday={todayCompletedIds.has(w.id)}
+          onMarkComplete={() => handleMarkComplete(w.id)}
+        />
+      ))}
     </div>
   );
 }
@@ -504,11 +567,13 @@ interface WorkoutsTabProps {
 function WorkoutsTab({ userId, planDays, sessions, onStartSession }: WorkoutsTabProps) {
   const queryClient = useQueryClient();
   const [expandedDayId, setExpandedDayId] = useState<string | null>(null);
+  const [editScheduleOpen, setEditScheduleOpen] = useState(false);
+  const [draftSchedule, setDraftSchedule] = useState<Map<string, number | null>>(new Map());
+  const [isSavingSchedule, setIsSavingSchedule] = useState(false);
 
   const today = new Date().toISOString().split('T')[0];
-  const todayWeekday = new Date().getDay(); // 0=Sun … 6=Sat
+  const todayWeekday = new Date().getDay();
 
-  // Fetch user's schedule (planDayId → weekday)
   const { data: scheduleRows } = useQuery({
     queryKey: ['workout-day-schedule', userId],
     queryFn: async () => {
@@ -522,24 +587,36 @@ function WorkoutsTab({ userId, planDays, sessions, onStartSession }: WorkoutsTab
 
   const scheduleMap = new Map((scheduleRows ?? []).map((r) => [r.plan_day_id, r.weekday]));
 
-  const handleSaveSchedule = async (planDayId: string, weekday: number | null) => {
-    if (weekday === null) {
-      await (supabase as any)
-        .from('workout_day_schedule')
-        .delete()
-        .eq('user_id', userId)
-        .eq('plan_day_id', planDayId);
-    } else {
-      await (supabase as any)
-        .from('workout_day_schedule')
-        .upsert(
-          { user_id: userId, plan_day_id: planDayId, weekday },
-          { onConflict: 'user_id,plan_day_id' }
-        );
+  const openEditSchedule = () => {
+    const draft = new Map<string, number | null>();
+    for (const day of planDays) {
+      const wd = scheduleMap.get(day.id);
+      draft.set(day.id, wd !== undefined ? wd : null);
     }
+    setDraftSchedule(draft);
+    setEditScheduleOpen(true);
+  };
+
+  const handleSaveSingleDay = async (planDayId: string, weekday: number | null) => {
+    if (weekday === null) {
+      await (supabase as any).from('workout_day_schedule').delete().eq('user_id', userId).eq('plan_day_id', planDayId);
+    } else {
+      await (supabase as any).from('workout_day_schedule').upsert(
+        { user_id: userId, plan_day_id: planDayId, weekday },
+        { onConflict: 'user_id,plan_day_id' }
+      );
+    }
+  };
+
+  const saveAllSchedule = async () => {
+    setIsSavingSchedule(true);
+    await Promise.all(Array.from(draftSchedule.entries()).map(([id, wd]) => handleSaveSingleDay(id, wd)));
     queryClient.invalidateQueries({ queryKey: ['workout-day-schedule', userId] });
     queryClient.invalidateQueries({ queryKey: ['unified-workout-days', userId] });
     queryClient.invalidateQueries({ queryKey: ['today-workout', userId] });
+    setIsSavingSchedule(false);
+    setEditScheduleOpen(false);
+    toast({ title: 'לוח האימונים עודכן' });
   };
 
   if (planDays.length === 0) {
@@ -554,6 +631,74 @@ function WorkoutsTab({ userId, planDays, sessions, onStartSession }: WorkoutsTab
 
   return (
     <div className="space-y-3 pt-2">
+      {/* Edit schedule button */}
+      <div className="flex items-center justify-between px-0.5">
+        <p className="text-sm font-semibold text-muted-foreground">ימי האימון</p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 text-xs gap-1.5"
+          onClick={openEditSchedule}
+        >
+          <Pencil className="h-3.5 w-3.5" />
+          ערוך לוח
+        </Button>
+      </div>
+
+      {/* Edit schedule dialog */}
+      <Dialog open={editScheduleOpen} onOpenChange={setEditScheduleOpen}>
+        <DialogContent dir="rtl" className="max-w-sm max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>עריכת לוח אימונים</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-1">
+            {planDays.map(day => {
+              const current = draftSchedule.get(day.id) ?? null;
+              return (
+                <div key={day.id} className="space-y-2">
+                  <p className="text-sm font-semibold">{day.name}</p>
+                  <div className="flex gap-1">
+                    {WEEKDAY_LABELS.map((label, wd) => (
+                      <button
+                        key={wd}
+                        type="button"
+                        onClick={() => setDraftSchedule(prev => {
+                          const next = new Map(prev);
+                          next.set(day.id, current === wd ? null : wd);
+                          return next;
+                        })}
+                        className={cn(
+                          'flex-1 py-2 rounded-xl text-xs font-semibold transition-all',
+                          current === wd
+                            ? 'bg-orange-500 text-white shadow-md'
+                            : wd === todayWeekday
+                            ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 border border-orange-300'
+                            : 'bg-muted text-muted-foreground hover:bg-muted/70'
+                        )}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex gap-2 pt-2">
+            <Button
+              className="flex-1 bg-orange-500 hover:bg-orange-600 text-white"
+              onClick={saveAllSchedule}
+              disabled={isSavingSchedule}
+            >
+              שמור
+            </Button>
+            <Button variant="outline" onClick={() => setEditScheduleOpen(false)}>
+              ביטול
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {planDays.map((day) => {
         const alreadyDoneToday = sessions.some(
           (s) => s.completed_at.split('T')[0] === today && s.plan_day_id === day.id
@@ -567,7 +712,6 @@ function WorkoutsTab({ userId, planDays, sessions, onStartSession }: WorkoutsTab
             alreadyDoneToday={alreadyDoneToday}
             isExpanded={expandedDayId === day.id}
             onToggleExpand={() => setExpandedDayId(expandedDayId === day.id ? null : day.id)}
-            onSaveSchedule={(wd) => handleSaveSchedule(day.id, wd)}
             onStartSession={(exs) => onStartSession(day, exs)}
           />
         );

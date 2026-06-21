@@ -127,6 +127,7 @@ const AppTracker = lazy(() => import("./pages/AppTracker"));
 const AppProgress = lazy(() => import("./pages/AppProgress"));
 const AppWorkouts = lazy(() => import("./pages/AppWorkouts"));
 const AppSettings = lazy(() => import("./pages/AppSettings"));
+const AppReferral = lazy(() => import("./pages/AppReferral"));
 const AdminLayout = lazy(() => import("./pages/admin/AdminLayout"));
 const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
 const AdminUsers = lazy(() => import("./pages/admin/AdminUsers"));
@@ -283,6 +284,7 @@ const App = () => (
               <Route path="workouts" element={<AppWorkouts />} />
               <Route path="profile" element={<AppProfile />} />
               <Route path="settings" element={<AppSettings />} />
+              <Route path="referral" element={<AppReferral />} />
             </Route>
             <Route path="/admin" element={<AdminLayout />}>
               <Route index element={<AdminDashboard />} />

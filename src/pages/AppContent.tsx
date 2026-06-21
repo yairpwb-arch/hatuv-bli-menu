@@ -45,7 +45,7 @@ export default function AppContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedContent, setSelectedContent] = useState<ContentItem | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('all');
-  const [expandedParts, setExpandedParts] = useState<Set<number>>(new Set([1]));
+  const [expandedParts, setExpandedParts] = useState<Set<number>>(new Set());
   const [snacksBookLink, setSnacksBookLink] = useState('');
   const [surveyOpen, setSurveyOpen] = useState(false);
 
@@ -84,6 +84,11 @@ export default function AppContent() {
       }));
 
       setAllContent(processedContent);
+
+      // Open the highest unlocked part by default
+      const unlockedParts = [...new Set(processedContent.filter(i => i.isUnlocked).map(i => i.part_number))];
+      const activePart = unlockedParts.length > 0 ? Math.max(...unlockedParts) : 1;
+      setExpandedParts(new Set([activePart]));
 
       // Parse settings
       if (settingsResult.data) {

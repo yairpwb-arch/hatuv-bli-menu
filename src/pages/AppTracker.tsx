@@ -270,6 +270,20 @@ export default function AppTracker() {
           activity_type: todayActivity.activity_type,
           completed_at: dateString,
         });
+
+      if (todayActivity.activity_type === 'walk') {
+        const { data: allWalks } = await supabase
+          .from('activity_log')
+          .select('id, completed_at')
+          .eq('user_id', user.id)
+          .eq('activity_type', 'walk')
+          .order('completed_at', { ascending: true });
+        if (allWalks && allWalks.length > 10) {
+          const toDelete = allWalks.slice(0, allWalks.length - 10);
+          await supabase.from('activity_log').delete().in('id', toDelete.map((w: { id: string }) => w.id));
+        }
+      }
+
       setActivityCompleted(true);
       toast({ title: 'מעולה! 💪', description: `ה${todayActivity.activity_type === 'walk' ? 'הליכה' : 'אימון'} הושלם/ה` });
     }

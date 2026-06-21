@@ -118,6 +118,20 @@ export function useWorkoutSession() {
         }
       }
 
+      // Enforce 10-session limit: delete oldest exercise logs + sessions if over limit
+      const { data: allSessions } = await supabase
+        .from('workout_session_logs')
+        .select('id, completed_at')
+        .eq('user_id', user.id)
+        .order('completed_at', { ascending: true });
+
+      if (allSessions && allSessions.length > 10) {
+        const toDelete = allSessions.slice(0, allSessions.length - 10);
+        const idsToDelete = toDelete.map((s: { id: string }) => s.id);
+        await supabase.from('workout_exercise_logs').delete().in('session_id', idsToDelete);
+        await supabase.from('workout_session_logs').delete().in('id', idsToDelete);
+      }
+
       toast({
         title: 'כל הכבוד!',
         description: 'האימון נרשם בהצלחה',

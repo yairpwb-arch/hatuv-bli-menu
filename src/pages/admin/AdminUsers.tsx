@@ -31,8 +31,16 @@ import { toast } from '@/hooks/use-toast';
 import {
   Plus, Edit, Loader2, RefreshCw, Trash2, ChevronDown, ChevronUp, Dumbbell,
   User as UserIcon, Scale, Repeat2, ClipboardList, X, Sparkles, Footprints,
-  History, Clock,
+  History, Clock, Check, Copy, GripVertical,
 } from 'lucide-react';
+import {
+  DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove, SortableContext, useSortable, verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { format, differenceInDays, startOfWeek, addDays } from 'date-fns';
 import { he } from 'date-fns/locale';
 
@@ -149,6 +157,52 @@ function ExerciseEditForm({ pe, onSave, onCancel }: {
           ביטול
         </button>
       </div>
+    </div>
+  );
+}
+
+// ── Sortable exercise row ─────────────────────────────────────────────────────
+
+function SortableExerciseRow({ pe, editingExercise, setEditingExercise, onSave, onDelete }: {
+  pe: PlanExercise;
+  editingExercise: PlanExercise | null;
+  setEditingExercise: (pe: PlanExercise | null) => void;
+  onSave: (u: { sets: number; reps_min: number; reps_max: number; rest_seconds: number; is_duration: boolean }) => void;
+  onDelete: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: pe.id });
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 };
+  return (
+    <div ref={setNodeRef} style={style} className="text-sm py-1.5 border-b border-border/50 last:border-0">
+      {editingExercise?.id === pe.id ? (
+        <ExerciseEditForm pe={pe} onSave={onSave} onCancel={() => setEditingExercise(null)} />
+      ) : (
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1 flex-1 min-w-0">
+            <button
+              {...attributes} {...listeners}
+              style={{ touchAction: 'none' }}
+              className="p-1 text-muted-foreground/40 hover:text-muted-foreground cursor-grab active:cursor-grabbing flex-shrink-0"
+            >
+              <GripVertical className="h-3.5 w-3.5" />
+            </button>
+            <div className="min-w-0">
+              <span className="font-medium">{pe.exercises?.name}</span>
+              <span className="text-muted-foreground text-xs mr-2">
+                {pe.sets}×{pe.is_duration ? `${pe.reps_min}שנ'` : `${pe.reps_min}–${pe.reps_max}`} · מנוחה {pe.rest_seconds}שנ'
+              </span>
+            </div>
+          </div>
+          <div className="flex gap-1">
+            <button onClick={() => setEditingExercise(pe)} className="p-1 text-muted-foreground hover:text-foreground">
+              <Edit className="h-3 w-3" />
+            </button>
+            <button onClick={onDelete} className="p-1 text-muted-foreground hover:text-destructive">
+              <Trash2 className="h-3 w-3" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -357,6 +411,7 @@ export default function AdminUsers() {
   const [sessionLogsMap, setSessionLogsMap] = useState<Record<string, AdminExerciseLog[]>>({});
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
 
+
   // ── Fetch all users ──────────────────────────────────────────────────────────
 
   const fetchAdminUsers = useCallback(async () => {
@@ -552,18 +607,22 @@ export default function AdminUsers() {
   };
 
   const loadWorkoutPlan = async (userId: string) => {
-    const { data: assignment } = await (supabase as any)
+    // Load any assignment (active or inactive) so we can reactivate without creating a new plan
+    const { data: assignments } = await (supabase as any)
       .from('user_workout_assignments')
       .select('id, plan_id, is_active')
       .eq('user_id', userId)
-      .eq('is_active', true)
-      .maybeSingle();
+      .order('created_at', { ascending: false });
 
-    if (assignment) {
-      setCurrentAssignmentId(assignment.id);
-      setCurrentPlanId(assignment.plan_id);
-      setPlanActive(true);
-      await loadPlanDays(assignment.plan_id);
+    const active = (assignments || []).find((a: any) => a.is_active);
+    const any = active || (assignments || [])[0] || null;
+
+    if (any) {
+      setCurrentAssignmentId(any.id);
+      setCurrentPlanId(any.plan_id);
+      setPlanActive(!!active);
+      if (active) await loadPlanDays(any.plan_id);
+      else { setPlanDays([]); setPlanExercisesMap({}); }
     } else {
       setCurrentAssignmentId(null);
       setCurrentPlanId(null);
@@ -601,46 +660,61 @@ export default function AdminUsers() {
     setIsTogglingPlan(true);
 
     if (active) {
-      // Create a new personal plan for this user
-      const planName = `תוכנית של ${editingUser.full_name || editingUser.email}`;
-      const { data: newPlan, error: planError } = await (supabase as any)
-        .from('workout_plans')
-        .insert({ name: planName, user_id: editingUser.id, duration_weeks: 12, is_active: true })
-        .select()
-        .single();
+      if (currentAssignmentId) {
+        // Reactivate the existing assignment — never create a new plan
+        const { error } = await (supabase as any)
+          .from('user_workout_assignments')
+          .update({ is_active: true })
+          .eq('id', currentAssignmentId);
 
-      if (planError) {
-        toast({ title: 'שגיאה', description: 'לא ניתן ליצור תוכנית', variant: 'destructive' });
-        setIsTogglingPlan(false);
-        return;
-      }
-
-      const { data: assign, error: assignError } = await (supabase as any)
-        .from('user_workout_assignments')
-        .insert({ user_id: editingUser.id, plan_id: newPlan.id, is_active: true, start_date: new Date().toISOString().split('T')[0] })
-        .select()
-        .single();
-
-      if (assignError) {
-        toast({ title: 'שגיאה', description: 'לא ניתן לשייך תוכנית', variant: 'destructive' });
-      } else {
-        setCurrentPlanId(newPlan.id);
-        setCurrentAssignmentId(assign.id);
+        if (error) {
+          toast({ title: 'שגיאה', description: 'לא ניתן להפעיל תוכנית', variant: 'destructive' });
+          setIsTogglingPlan(false);
+          return;
+        }
         setPlanActive(true);
-        setPlanDays([]);
-        setPlanExercisesMap({});
-        toast({ title: 'הצלחה', description: 'תוכנית אימון נפתחה' });
+        if (currentPlanId) await loadPlanDays(currentPlanId);
+        toast({ title: 'הצלחה', description: 'תוכנית האימון הופעלה מחדש' });
+      } else {
+        // No existing plan at all — create one for the first time
+        const planName = `תוכנית של ${editingUser.full_name || editingUser.email}`;
+        const { data: newPlan, error: planError } = await (supabase as any)
+          .from('workout_plans')
+          .insert({ name: planName, user_id: editingUser.id, duration_weeks: 12, is_active: true })
+          .select()
+          .single();
+
+        if (planError) {
+          toast({ title: 'שגיאה', description: 'לא ניתן ליצור תוכנית', variant: 'destructive' });
+          setIsTogglingPlan(false);
+          return;
+        }
+
+        const { data: assign, error: assignError } = await (supabase as any)
+          .from('user_workout_assignments')
+          .insert({ user_id: editingUser.id, plan_id: newPlan.id, is_active: true, start_date: new Date().toISOString().split('T')[0] })
+          .select()
+          .single();
+
+        if (assignError) {
+          toast({ title: 'שגיאה', description: 'לא ניתן לשייך תוכנית', variant: 'destructive' });
+        } else {
+          setCurrentPlanId(newPlan.id);
+          setCurrentAssignmentId(assign.id);
+          setPlanActive(true);
+          setPlanDays([]);
+          setPlanExercisesMap({});
+          toast({ title: 'הצלחה', description: 'תוכנית אימון נפתחה' });
+        }
       }
     } else {
-      // Deactivate
+      // Deactivate — keep IDs so toggling back on reactivates without creating a new plan
       if (currentAssignmentId) {
         await (supabase as any)
           .from('user_workout_assignments')
           .update({ is_active: false })
           .eq('id', currentAssignmentId);
       }
-      setCurrentAssignmentId(null);
-      setCurrentPlanId(null);
       setPlanActive(false);
       setPlanDays([]);
       setPlanExercisesMap({});
@@ -668,6 +742,34 @@ export default function AdminUsers() {
     await (supabase as any).from('workout_plan_days').delete().eq('id', dayId);
     setPlanDays(prev => prev.filter(d => d.id !== dayId));
     setPlanExercisesMap(prev => { const next = { ...prev }; delete next[dayId]; return next; });
+  };
+
+  const handleCloneDay = async (dayId: string) => {
+    const sourceDay = planDays.find(d => d.id === dayId);
+    if (!sourceDay || !currentPlanId) return;
+    const nextNumber = planDays.length > 0 ? Math.max(...planDays.map(d => d.day_number)) + 1 : 1;
+    const { data: newDay, error: dayError } = await (supabase as any)
+      .from('workout_plan_days')
+      .insert({ plan_id: currentPlanId, day_number: nextNumber, name: `${sourceDay.name} (עותק)`, notes: sourceDay.notes })
+      .select().single();
+    if (dayError) { toast({ title: 'שגיאה', description: dayError.message, variant: 'destructive' }); return; }
+    const sourceExercises = planExercisesMap[dayId] || [];
+    let clonedExercises: PlanExercise[] = [];
+    if (sourceExercises.length > 0) {
+      const { data: newExs } = await (supabase as any)
+        .from('workout_plan_exercises')
+        .insert(sourceExercises.map((pe, idx) => ({
+          plan_day_id: newDay.id,
+          exercise_id: pe.exercise_id,
+          sets: pe.sets, reps_min: pe.reps_min, reps_max: pe.reps_max,
+          rest_seconds: pe.rest_seconds, is_duration: pe.is_duration, sort_order: idx,
+        })))
+        .select('*, exercises(id, name, muscle_groups)');
+      clonedExercises = (newExs || []) as PlanExercise[];
+    }
+    setPlanDays(prev => [...prev, newDay as WorkoutPlanDay]);
+    setPlanExercisesMap(prev => ({ ...prev, [newDay.id]: clonedExercises }));
+    toast({ title: 'יום אימון שוכפל' });
   };
 
   const handleAddExercise = async (dayId: string) => {
@@ -713,6 +815,26 @@ export default function AdminUsers() {
   const handleDeleteExercise = async (dayId: string, exId: string) => {
     await (supabase as any).from('workout_plan_exercises').delete().eq('id', exId);
     setPlanExercisesMap(prev => ({ ...prev, [dayId]: (prev[dayId] || []).filter(e => e.id !== exId) }));
+  };
+
+  const dndSensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
+  );
+
+  const handleReorderExercises = async (dayId: string, event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const exercises = planExercisesMap[dayId] || [];
+    const oldIndex = exercises.findIndex(e => e.id === active.id);
+    const newIndex = exercises.findIndex(e => e.id === over.id);
+    const reordered = arrayMove(exercises, oldIndex, newIndex);
+    setPlanExercisesMap(prev => ({ ...prev, [dayId]: reordered }));
+    await Promise.all(
+      reordered.map((e, idx) =>
+        (supabase as any).from('workout_plan_exercises').update({ sort_order: idx }).eq('id', e.id)
+      )
+    );
   };
 
   // ── Workout session logs ──────────────────────────────────────────────────────
@@ -1368,6 +1490,13 @@ export default function AdminUsers() {
                         </div>
                         <div className="flex items-center gap-1">
                           <button
+                            onClick={e => { e.stopPropagation(); handleCloneDay(day.id); }}
+                            className="p-1 text-muted-foreground hover:text-primary transition-colors"
+                            title="שכפל יום אימון"
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </button>
+                          <button
                             onClick={e => { e.stopPropagation(); handleDeleteDay(day.id); }}
                             className="p-1 text-muted-foreground hover:text-destructive transition-colors"
                           >
@@ -1380,41 +1509,27 @@ export default function AdminUsers() {
                       {/* Day exercises */}
                       {expandedDays.has(day.id) && (
                         <div className="px-4 pb-3 pt-1 space-y-2 border-t border-border">
-                          {(planExercisesMap[day.id] || []).map(pe => (
-                            <div key={pe.id} className="text-sm py-1.5 border-b border-border/50 last:border-0">
-                              {editingExercise?.id === pe.id ? (
-                                /* ── Inline edit ── */
-                                <ExerciseEditForm
+                          <DndContext
+                            sensors={dndSensors}
+                            collisionDetection={closestCenter}
+                            onDragEnd={e => handleReorderExercises(day.id, e)}
+                          >
+                            <SortableContext
+                              items={(planExercisesMap[day.id] || []).map(e => e.id)}
+                              strategy={verticalListSortingStrategy}
+                            >
+                              {(planExercisesMap[day.id] || []).map(pe => (
+                                <SortableExerciseRow
+                                  key={pe.id}
                                   pe={pe}
+                                  editingExercise={editingExercise}
+                                  setEditingExercise={setEditingExercise}
                                   onSave={updates => handleUpdateExercise(pe, updates)}
-                                  onCancel={() => setEditingExercise(null)}
+                                  onDelete={() => handleDeleteExercise(day.id, pe.id)}
                                 />
-                              ) : (
-                                <div className="flex items-center justify-between">
-                                  <div>
-                                    <span className="font-medium">{pe.exercises?.name}</span>
-                                    <span className="text-muted-foreground text-xs mr-2">
-                                      {pe.sets}×{pe.is_duration ? `${pe.reps_min}שנ'` : `${pe.reps_min}–${pe.reps_max}`} · מנוחה {pe.rest_seconds}שנ'
-                                    </span>
-                                  </div>
-                                  <div className="flex gap-1">
-                                    <button
-                                      onClick={() => setEditingExercise(pe)}
-                                      className="p-1 text-muted-foreground hover:text-foreground"
-                                    >
-                                      <Edit className="h-3 w-3" />
-                                    </button>
-                                    <button
-                                      onClick={() => handleDeleteExercise(day.id, pe.id)}
-                                      className="p-1 text-muted-foreground hover:text-destructive"
-                                    >
-                                      <Trash2 className="h-3 w-3" />
-                                    </button>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          ))}
+                              ))}
+                            </SortableContext>
+                          </DndContext>
 
                           {/* Add exercise form */}
                           {addExerciseDayId === day.id ? (
@@ -1656,6 +1771,43 @@ export default function AdminUsers() {
                             ))}
                           </div>
                         )}
+                        {walk.is_active && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="w-full text-xs h-7 gap-1 text-green-600 border-green-500/40 hover:bg-green-500/10"
+                            onClick={async () => {
+                              const today = new Date().toISOString().split('T')[0];
+                              const { data: existing } = await (supabase as any)
+                                .from('activity_log')
+                                .select('id')
+                                .eq('user_id', editingUser!.id)
+                                .eq('activity_type', 'walk')
+                                .eq('completed_at', today);
+                              if (existing && existing.length > 0) {
+                                toast({ title: 'כבר סומן', description: 'הליכה כבר נרשמה היום' });
+                                return;
+                              }
+                              await (supabase as any).from('activity_log').insert({
+                                user_id: editingUser!.id,
+                                activity_type: 'walk',
+                                completed_at: today,
+                              });
+                              const { data: walkData } = await (supabase as any)
+                                .from('activity_log')
+                                .select('id, completed_at')
+                                .eq('user_id', editingUser!.id)
+                                .eq('activity_type', 'walk')
+                                .order('completed_at', { ascending: false })
+                                .limit(30);
+                              setWalkHistory((walkData || []) as { id: string; completed_at: string }[]);
+                              toast({ title: 'הליכה נרשמה ✓', description: `נרשמה עבור ${editingUser!.full_name || editingUser!.email}` });
+                            }}
+                          >
+                            <Check className="h-3 w-3" />
+                            סמן כהושלמה היום
+                          </Button>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -1672,26 +1824,28 @@ export default function AdminUsers() {
                   </span>
                 </p>
 
-                {/* Walk history */}
-                {walkHistory.length > 0 && (
-                  <div className="mb-3 space-y-1.5">
-                    <p className="text-xs text-muted-foreground font-medium mb-1.5 flex items-center gap-1">
-                      <Footprints className="h-3 w-3" /> הליכות שהושלמו
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {walkHistory.map(w => (
-                        <span key={w.id} className="text-xs bg-green-500/10 text-green-600 border border-green-500/20 rounded-lg px-2 py-1">
-                          {format(new Date(w.completed_at), 'dd/MM/yy', { locale: he })}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
                 {workoutSessions.length === 0 && walkHistory.length === 0 ? (
                   <p className="text-muted-foreground text-sm text-center py-4">לא בוצעו אימונים או הליכות עדיין</p>
-                ) : workoutSessions.length === 0 ? null : (
+                ) : (
                   <div className="space-y-2">
+                    {/* Walks */}
+                    {walkHistory.map(w => (
+                      <div key={w.id} className="border border-green-500/25 rounded-xl">
+                        <div className="flex items-center gap-2.5 px-3 py-2.5 bg-green-500/5">
+                          <div className="w-7 h-7 rounded-lg bg-green-500/20 flex items-center justify-center flex-shrink-0">
+                            <Footprints className="h-3.5 w-3.5 text-green-500" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium">הליכה</p>
+                            <p className="text-xs text-muted-foreground">
+                              {format(new Date(w.completed_at), 'EEEE, d בMMMM yyyy', { locale: he })}
+                            </p>
+                          </div>
+                          <Badge className="mr-auto bg-green-500/15 text-green-600 border-0 text-xs">הושלם ✓</Badge>
+                        </div>
+                      </div>
+                    ))}
+                    {/* Workouts */}
                     {workoutSessions.map(ws => {
                       const isExpanded = expandedSessionId === ws.id;
                       const logs = sessionLogsMap[ws.id];

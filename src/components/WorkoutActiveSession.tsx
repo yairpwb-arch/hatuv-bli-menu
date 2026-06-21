@@ -56,8 +56,8 @@ function RestTimer({
   }, [remaining, onDone, paused]);
 
   return (
-    <div className="flex flex-col items-center gap-4 py-6">
-      <div className="relative w-32 h-32">
+    <div className="flex flex-col items-center gap-6 py-6">
+      <div className="relative w-56 h-56">
         <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
           <circle cx="50" cy="50" r="44" fill="none" stroke="hsl(var(--border))" strokeWidth="8" />
           <circle
@@ -72,8 +72,8 @@ function RestTimer({
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <Timer className="h-5 w-5 text-primary mb-1" />
-          <span className="text-2xl font-bold tabular-nums">{formatTime(remaining)}</span>
+          <Timer className="h-7 w-7 text-primary mb-2" />
+          <span className="text-4xl font-bold tabular-nums">{formatTime(remaining)}</span>
         </div>
       </div>
       <p className="text-muted-foreground font-medium">זמן מנוחה</p>
@@ -338,10 +338,12 @@ export default function WorkoutActiveSession({
         </div>
 
         {/* Progress bar */}
-        <Progress value={progress} className="h-1 rounded-none shrink-0" />
+        <div className="px-4 pt-3 pb-1 shrink-0">
+          <Progress value={progress} className="h-2 rounded-full" />
+        </div>
 
         {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto pb-4">
+        <div className={resting ? "flex-1 flex flex-col items-center justify-center" : "flex-1 overflow-y-auto pb-4"}>
           {resting ? (
             <RestTimer
               seconds={currentEx.rest_seconds ?? 60}
