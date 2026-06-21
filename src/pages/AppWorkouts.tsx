@@ -487,7 +487,7 @@ function WalkingSection({ userId, currentWeek }: { userId: string; currentWeek: 
         </div>
         <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={openEditWalks}>
           <Pencil className="h-3.5 w-3.5" />
-          ערוך הליכות
+          ערוך ימי הליכות
         </Button>
       </div>
 
@@ -641,7 +641,7 @@ function WorkoutsTab({ userId, planDays, sessions, onStartSession }: WorkoutsTab
           onClick={openEditSchedule}
         >
           <Pencil className="h-3.5 w-3.5" />
-          ערוך לוח
+          ערוך ימי אימון
         </Button>
       </div>
 
