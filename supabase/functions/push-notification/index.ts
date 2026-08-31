@@ -208,15 +208,17 @@ async function sendPush(
 
 // ── User week helpers ─────────────────────────────────────────────────────────
 
-function getWeekNumber(startDate: string): number {
-  const diffMs = Date.now() - new Date(startDate).getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  return Math.ceil((diffDays + 1) / 7);
-}
-
 function getDayInProgram(startDate: string): number {
   const diffMs = Date.now() - new Date(startDate).getTime();
   return Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1;
+}
+
+// Must match dayToWeek() in src/pages/admin/AdminHabits.tsx exactly, since both
+// resolve the same habit_definitions.week_start values. Day 1 = program start
+// (Saturday), habits unlock day 2 (Sunday of week 1), day 9 (Sunday of week 2), etc.
+function getWeekNumber(startDate: string): number {
+  const day = getDayInProgram(startDate);
+  return Math.max(1, Math.floor((day - 2) / 7) + 1);
 }
 
 // ── Timezone helpers ──────────────────────────────────────────────────────────

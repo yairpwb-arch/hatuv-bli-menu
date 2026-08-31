@@ -11,7 +11,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import {
   Scale, TrendingDown, ArrowDown, ArrowUp, Plus, Calendar as CalendarIcon,
-  Footprints, Dumbbell, Sparkles, ExternalLink, BookOpen, AlertCircle, BarChart2
+  Footprints, Dumbbell, Sparkles, ExternalLink, BookOpen, AlertCircle, BarChart2, Trash2, Loader2
 } from 'lucide-react';
 import { format, subDays } from 'date-fns';
 import { he } from 'date-fns/locale';
@@ -59,6 +59,7 @@ export default function AppProgress() {
   const [isWeightModalOpen, setIsWeightModalOpen] = useState(false);
   const [newWeight, setNewWeight] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [deletingWeightId, setDeletingWeightId] = useState<string | null>(null);
 
   // Steps state — DB logs for history, live counter for today's display
   const { logs: stepLogs, todaySteps, weeklyAverage, isLoading: stepsLoading } = useStepLogs();
@@ -233,6 +234,27 @@ export default function AppProgress() {
 
   const handleWeightButtonClick = () => {
     setIsWeightModalOpen(true);
+  };
+
+  const handleDeleteWeight = async (entryId: string) => {
+    if (!user) return;
+    setDeletingWeightId(entryId);
+    const { error } = await supabase.from('weight_log').delete().eq('id', entryId);
+    if (error) {
+      toast.error('שגיאה במחיקת השקילה');
+    } else {
+      const remaining = weightHistory.filter(w => w.id !== entryId);
+      setWeightHistory(remaining);
+      const latest = remaining[remaining.length - 1];
+      const newCurrentWeight = latest ? latest.weight : null;
+      await supabase
+        .from('profiles')
+        .update({ current_weight: newCurrentWeight })
+        .eq('id', user.id);
+      setProfileData(p => p ? { ...p, current_weight: newCurrentWeight } : p);
+      toast.success('השקילה נמחקה');
+    }
+    setDeletingWeightId(null);
   };
 
   if (isLoading) {
@@ -555,6 +577,47 @@ export default function AppProgress() {
             )}
           </CardContent>
         </Card>
+
+        {/* Weigh-in history — manage / delete individual entries */}
+        {weightHistory.length > 0 && (
+          <Card className="glass-card">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Scale className="h-4 w-4 text-primary" />
+                כל השקילות
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="max-h-56 overflow-y-auto space-y-1.5">
+                {[...weightHistory].reverse().map((w) => (
+                  <div
+                    key={w.id}
+                    className="flex items-center justify-between rounded-lg bg-muted/40 px-3 py-2 text-sm"
+                  >
+                    <span className="text-muted-foreground">
+                      {format(new Date(w.recorded_at), 'dd/MM/yyyy', { locale: he })}
+                    </span>
+                    <div className="flex items-center gap-3">
+                      <span className="font-medium">{w.weight} ק"ג</span>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteWeight(w.id)}
+                        disabled={deletingWeightId === w.id}
+                        className="text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
+                      >
+                        {deletingWeightId === w.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Weight Entry Modal */}

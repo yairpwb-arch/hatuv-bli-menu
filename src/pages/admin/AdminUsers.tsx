@@ -63,6 +63,7 @@ interface User {
 }
 
 interface WeightEntry {
+  id: string;
   recorded_at: string;
   weight: number;
 }
@@ -250,7 +251,7 @@ const MUSCLE_GROUPS = [
   { id: 'chest',     label: 'חזה',         match: ['chest', 'חזה', 'pec'] },
   { id: 'back',      label: 'גב',           match: ['back', 'גב', 'lat'] },
   { id: 'shoulders', label: 'כתפיים',       match: ['shoulder', 'כתפיים', 'כתף', 'delt'] },
-  { id: 'triceps',   label: 'יד אחורית',    match: ['tricep', 'יד אחורית', 'טרייספס'] },
+  { id: 'triceps',   label: 'יד אחורית',    match: ['tricep', 'יד אחורית', 'טרייספס', 'טריצפס'] },
   { id: 'biceps',    label: 'יד קדמית',     match: ['bicep', 'יד קדמית', 'ביספס', 'ביצפס'] },
   { id: 'legs',      label: 'רגליים',        match: ['leg', 'quad', 'hamstring', 'glute', 'calf', 'רגליים', 'רגל', 'ירכיים', 'שוק', 'גלוטאוס'] },
   { id: 'abs',       label: 'בטן',           match: ['ab', 'core', 'בטן', 'ליבה', 'אגפיים'] },
@@ -368,6 +369,7 @@ export default function AdminUsers() {
 
   // Tab-specific data
   const [weightHistory, setWeightHistory] = useState<WeightEntry[]>([]);
+  const [deletingWeightId, setDeletingWeightId] = useState<string | null>(null);
   const [stepsData, setStepsData] = useState<StepsEntry[]>([]);
   const [editPersonal, setEditPersonal] = useState<Partial<User>>({});
   const [isSavingPersonal, setIsSavingPersonal] = useState(false);
@@ -450,7 +452,7 @@ export default function AdminUsers() {
     // Weight history
     const { data: wh } = await (supabase as any)
       .from('weight_log')
-      .select('weight, recorded_at')
+      .select('id, weight, recorded_at')
       .eq('user_id', user.id)
       .order('recorded_at', { ascending: true })
       .limit(30);
@@ -888,6 +890,18 @@ export default function AdminUsers() {
     fetchUsers();
   };
 
+  const handleDeleteWeightEntry = async (entryId: string) => {
+    setDeletingWeightId(entryId);
+    const { error } = await (supabase as any).from('weight_log').delete().eq('id', entryId);
+    if (error) {
+      toast({ title: 'שגיאה', description: error.message, variant: 'destructive' });
+    } else {
+      setWeightHistory(prev => prev.filter(w => w.id !== entryId));
+      toast({ title: 'הצלחה', description: 'השקילה נמחקה' });
+    }
+    setDeletingWeightId(null);
+  };
+
   // ── Personal Habits ───────────────────────────────────────────────────────────
 
   const handleAddPersonalHabit = async () => {
@@ -1050,8 +1064,8 @@ export default function AdminUsers() {
               </div>
               <div className="space-y-1">
                 <Label>תוכנית</Label>
-                <div className="grid grid-cols-2 gap-2">
-                  {[{ label: '4 חודשים (120 ימים)', value: '120' }, { label: '6 חודשים (168 ימים)', value: '168' }].map(opt => (
+                <div className="grid grid-cols-3 gap-2">
+                  {[{ label: '4 חודשים (120 ימים)', value: '120' }, { label: '6 חודשים (168 ימים)', value: '168' }, { label: '10 חודשים (300 ימים)', value: '300' }].map(opt => (
                     <button
                       key={opt.value}
                       type="button"
@@ -1268,6 +1282,40 @@ export default function AdminUsers() {
                 </div>
               ) : (
                 <p className="text-muted-foreground text-sm text-center py-4">אין היסטוריית משקל עדיין</p>
+              )}
+
+              {/* Weight entries list — manage/delete individual weigh-ins */}
+              {weightHistory.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-sm font-medium">כל השקילות</p>
+                  <div className="max-h-56 overflow-y-auto space-y-1 rounded-lg border border-border p-1.5">
+                    {[...weightHistory].reverse().map(w => (
+                      <div
+                        key={w.id}
+                        className="flex items-center justify-between rounded-md bg-muted/40 px-2.5 py-1.5 text-sm"
+                      >
+                        <span className="text-muted-foreground">
+                          {format(new Date(w.recorded_at), 'dd/MM/yyyy', { locale: he })}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{w.weight} ק"ג</span>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteWeightEntry(w.id)}
+                            disabled={deletingWeightId === w.id}
+                            className="text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
+                          >
+                            {deletingWeightId === w.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
 
               {/* Steps section */}
