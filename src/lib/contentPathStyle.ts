@@ -4,52 +4,48 @@ export type ContentKind = 'video' | 'content' | 'guide';
 
 export interface NodeVisual {
   Icon: LucideIcon;
-  fillClass: string;
-  ringClass: string;
 }
 
-const PART_THEME: Record<number, Pick<NodeVisual, 'fillClass' | 'ringClass'>> = {
-  1: { fillClass: 'gradient-primary', ringClass: 'border-primary/40' },
-  2: { fillClass: 'gradient-success', ringClass: 'border-success/40' },
-  3: { fillClass: 'bg-gradient-to-br from-warning to-destructive', ringClass: 'border-warning/40' },
-};
-
-export function getNodeVisual(contentType: ContentKind, partNumber: number): NodeVisual {
-  const theme = PART_THEME[partNumber] ?? PART_THEME[1];
+export function getNodeVisual(contentType: ContentKind): NodeVisual {
   const Icon = contentType === 'video' ? Play : contentType === 'guide' ? FileText : Lightbulb;
-  return { Icon, ...theme };
+  return { Icon };
 }
 
 export function getMilestoneVisual(): NodeVisual {
-  return {
-    Icon: Trophy,
-    fillClass: 'gradient-gold',
-    ringClass: 'border-yellow-500/50',
-  };
+  return { Icon: Trophy };
 }
 
 export const MILESTONE_ID = '__milestone_168__';
 export const MILESTONE_DAY = 168;
 
-// ── River background tiles ──────────────────────────────────────────────────
-// Source art is 1536×2752 (one tile design — river-1 only was supplied).
-export const RIVER_TILE_ASPECT = 2752 / 1536; // height / width
-export const RIVER_TILE_SRC_1X = '/river-1@1x.webp';
-export const RIVER_TILE_SRC_2X = '/river-1.webp';
+// ── Track background tiles ───────────────────────────────────────────────────
+// Source art is 1536×2752 and designed to self-connect: the track enters dead
+// center-top and exits dead center-bottom, so tiles stack with no flip and no
+// horizontal shift between them.
+export const TRACK_TILE_SRC_1X = '/track-tile@1x.webp';
+export const TRACK_TILE_SRC_2X = '/track-tile.webp';
 
-// ── Sine center-line ─────────────────────────────────────────────────────────
-// x(y) = width/2 + AMPLITUDE_FRACTION*width * sin(y * 2π / period), period = one
-// tile's rendered height, so the line is periodic with the art and always stays
-// inside the painted water regardless of how many tiles are stacked.
-export const SINE_AMPLITUDE_FRACTION = 0.16; // fraction of container width
+// ── Layout ───────────────────────────────────────────────────────────────────
+// Every "slot" (a station, a part-divider label, or the final milestone) takes
+// one evenly-arc-length-spaced position along the track, 5 slots per tile —
+// matching "5 stations per tile" from the brief, just generalized to any slot
+// kind so labels land ON the track too instead of in fixed pixel gaps.
+export const SLOTS_PER_TILE = 5;
+export const TILE_SAMPLE_STEPS = 400; // fine sampling of one tile for arc-length accuracy
 
-// ── Stations ─────────────────────────────────────────────────────────────────
-export const STATION_SPACING_PX = 150;
-export const BANK_OFFSET_PX = 64; // how far a station sits off the river center, onto the bank
-export const LABEL_HEIGHT_PX = 56; // "חלק X" wooden signpost slot
-export const MILESTONE_GAP_PX = 170;
-export const TOP_PADDING_PX = 40; // breathing room between the sticky header and the first label
+// ── Marker (replaces the boat) ───────────────────────────────────────────────
+export const MARKER_DIAMETER_PX = 18;
+export const MARKER_COLOR = '#F5B041';
+// The dot itself (and its trailing wake) is white, not orange, so it stays
+// clearly visible against the orange glow line and orange track art.
+export const MARKER_DOT_COLOR = '#FFFFFF';
 
-// ── Boat ─────────────────────────────────────────────────────────────────────
-export const BOAT_WIDTH_FRACTION = 0.13; // of container width
-export const BOAT_SAIL_DURATION_MS = 1500;
+// ── Palette (dark track theme) ──────────────────────────────────────────────
+export const TRACK_COLORS = {
+  accent: '#F5B041',
+  lockedBg: '#1C1C22',
+  lockedBorder: '#3A3A45',
+  labelBg: 'rgba(20,20,26,0.9)',
+  labelBorder: '#2A2A33',
+  weekBadgeBg: 'rgba(245,176,65,0.15)',
+} as const;

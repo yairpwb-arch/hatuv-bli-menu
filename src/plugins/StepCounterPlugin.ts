@@ -19,7 +19,7 @@ export interface UserConfigOptions {
   userId: string;
   supabaseUrl: string;
   anonKey: string;
-  accessToken: string;
+  syncToken: string;
 }
 
 export interface StepCounterPlugin {

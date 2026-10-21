@@ -2,13 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion';
+import { TRACK_COLORS } from '@/lib/contentPathStyle';
 import type { CardPhase } from '@/hooks/useContentCelebration';
 
 interface StageUnlockSplashProps {
   title: string;
   stageLabel: string;
   Icon: LucideIcon;
-  fillClass: string;
   phase: CardPhase;
   onSkip: () => void;
 }
@@ -37,7 +37,7 @@ function useCountUp(target: string, active: boolean, reduced: boolean): string {
   return Number.isFinite(targetNum) ? String(n) : target;
 }
 
-export default function StageUnlockSplash({ title, stageLabel, Icon, fillClass, phase, onSkip }: StageUnlockSplashProps) {
+export default function StageUnlockSplash({ title, stageLabel, Icon, phase, onSkip }: StageUnlockSplashProps) {
   const reduced = usePrefersReducedMotion();
   const [shake, setShake] = useState(false);
   const displayLabel = useCountUp(stageLabel, phase === 'hold', reduced);
@@ -103,8 +103,11 @@ export default function StageUnlockSplash({ title, stageLabel, Icon, fillClass, 
               ))}
             </div>
           )}
-          <div className={cn('w-32 h-32 rounded-full flex items-center justify-center shadow-glow-lg', fillClass)}>
-            <Icon className="h-16 w-16 text-white" />
+          <div
+            className="w-32 h-32 rounded-full flex items-center justify-center shadow-glow-lg"
+            style={{ backgroundColor: TRACK_COLORS.accent }}
+          >
+            <Icon className="h-16 w-16" style={{ color: '#1C1C22' }} />
           </div>
         </div>
         <p className="text-sm font-semibold text-primary tracking-wide">שלב חדש נפתח!</p>

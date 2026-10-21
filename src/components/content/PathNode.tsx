@@ -1,122 +1,130 @@
-import { CSSProperties, forwardRef } from 'react';
-import { Lock, Check, Star } from 'lucide-react';
+import { Lock, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { getNodeVisual, type ContentKind } from '@/lib/contentPathStyle';
+import { getNodeVisual, TRACK_COLORS, type ContentKind } from '@/lib/contentPathStyle';
 
 interface PathNodeProps {
   title: string;
-  weekRange: string;
+  tag: string;
   contentType: ContentKind;
-  partNumber: number;
   isUnlocked: boolean;
   isCompleted: boolean;
   isBonus: boolean;
   isFrontier: boolean;
   isCelebrating: boolean;
   daysUntilUnlock: number;
-  style: CSSProperties;
-  /** seconds; when set, the node fades in with this delay (first-visit stagger) */
-  fadeInDelay?: number;
+  /** px to shift ONLY the label horizontally so it stays on-screen — the
+   * circle itself never moves off the track point for this. */
+  labelShiftX: number;
+  circleRef: (el: HTMLDivElement | null) => void;
+  labelRef: (el: HTMLDivElement | null) => void;
   onClick: () => void;
 }
 
-// Two layers on purpose: the outer div only ever carries the (optional)
-// fade-in entrance animation (opacity + its own translateY keyframe); the
-// inner div owns the absolute position + horizontal centering transform.
-// Keeping them separate avoids the fade-in keyframe's `transform` end-state
-// from clobbering the inner translateX(-50%) centering. `ref` points at the
-// inner element so scroll-into-view and any geometry reads reflect the
-// node's real on-screen position regardless of the outer wrapper.
-const PathNode = forwardRef<HTMLDivElement, PathNodeProps>(function PathNode(
-  {
-    title,
-    weekRange,
-    contentType,
-    partNumber,
-    isUnlocked,
-    isCompleted,
-    isBonus,
-    isFrontier,
-    isCelebrating,
-    daysUntilUnlock,
-    style,
-    fadeInDelay,
-    onClick,
-  },
-  ref
-) {
-  const { Icon, fillClass, ringClass } = getNodeVisual(contentType, partNumber);
-
-  const node = (
-    <div ref={ref} className="absolute flex flex-col items-center" style={{ ...style, transform: 'translateX(-50%)' }}>
-      {weekRange && (
-        <span
-          className={cn(
-            'mb-1 text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap shadow',
-            isUnlocked ? 'bg-primary text-primary-foreground' : 'bg-black/80 text-white/80'
-          )}
-        >
-          {weekRange}
-        </span>
-      )}
-
-      <button
-        type="button"
-        onClick={onClick}
-        disabled={!isUnlocked}
-        className={cn(
-          'relative w-16 h-16 rounded-full border-2 flex items-center justify-center transition-transform',
-          'ring-[3px] ring-black ring-offset-0 shadow-[0_3px_10px_rgba(0,0,0,0.6)]',
-          !isUnlocked && 'bg-muted border-border opacity-70 cursor-not-allowed',
-          isUnlocked && !isCompleted && cn(ringClass, fillClass),
-          isUnlocked && isCompleted && cn('opacity-90 border-success/50', fillClass),
-          isFrontier && 'animate-pulse-glow',
-          isCelebrating && 'animate-scale-in animate-bounce-in'
-        )}
-      >
-        {!isUnlocked ? (
-          <Lock className="h-5 w-5 text-muted-foreground" />
-        ) : (
-          <Icon className="h-6 w-6 text-white" />
-        )}
-
-        {isUnlocked && isCompleted && (
-          <span className="absolute -top-1 -left-1 w-6 h-6 rounded-full bg-success text-success-foreground border-2 border-background flex items-center justify-center">
-            <Check className="h-3.5 w-3.5" />
-          </span>
-        )}
-
-        {isUnlocked && isBonus && (
-          <span className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-gradient-to-br from-warning to-destructive border-2 border-background flex items-center justify-center">
-            <Star className="h-3.5 w-3.5 text-white" />
-          </span>
-        )}
-      </button>
-
-      <p
-        className={cn(
-          'w-28 mt-1.5 text-center text-[11px] leading-tight line-clamp-2 bg-black/75 text-white rounded-lg px-1.5 py-1 shadow',
-          isUnlocked && isCompleted && 'line-through text-white/70',
-          isFrontier && 'font-semibold'
-        )}
-      >
-        {isUnlocked ? title : 'תוכן נעול'}
-      </p>
-      {!isUnlocked && (
-        <p className="w-28 mt-1 text-center text-[10px] text-white/80 bg-black/75 rounded-lg px-1.5 py-0.5">
-          {daysUntilUnlock > 0 ? `נפתח בעוד ${daysUntilUnlock} ימים` : 'נפתח בקרוב'}
-        </p>
-      )}
-    </div>
-  );
-
-  if (fadeInDelay === undefined) return node;
+// One station = one vertical stack: circle on top, label directly beneath it
+// (never beside, never on top of it). The circle always paints above the
+// label (z-index), so nothing can ever visually cover its icon.
+export default function PathNode({
+  title,
+  tag,
+  contentType,
+  isUnlocked,
+  isCompleted,
+  isBonus,
+  isFrontier,
+  isCelebrating,
+  daysUntilUnlock,
+  labelShiftX,
+  circleRef,
+  labelRef,
+  onClick,
+}: PathNodeProps) {
+  const { Icon } = getNodeVisual(contentType);
+  const handleClick = () => isUnlocked && onClick();
 
   return (
-    <div className="animate-fade-in" style={{ animationDelay: `${fadeInDelay}s` }}>
-      {node}
+    <div className="flex flex-col items-center" style={{ width: 180 }}>
+      <div ref={circleRef} className="relative" style={{ zIndex: 4 }}>
+        <button
+          type="button"
+          onClick={handleClick}
+          disabled={!isUnlocked}
+          className={cn(
+            'relative rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all',
+            isFrontier ? 'w-16 h-16 animate-pulse-glow' : 'w-14 h-14',
+            isCelebrating && 'animate-scale-in animate-bounce-in'
+          )}
+          style={
+            !isUnlocked
+              ? { backgroundColor: TRACK_COLORS.lockedBg, borderColor: TRACK_COLORS.lockedBorder }
+              : isCompleted
+              ? { backgroundColor: TRACK_COLORS.accent, borderColor: TRACK_COLORS.accent }
+              : { backgroundColor: TRACK_COLORS.lockedBg, borderColor: TRACK_COLORS.accent, borderWidth: 3 }
+          }
+        >
+          {!isUnlocked ? (
+            <Lock className="h-5 w-5 text-muted-foreground" />
+          ) : (
+            <Icon className={cn(isFrontier ? 'h-7 w-7' : 'h-6 w-6')} style={{ color: isCompleted ? '#1C1C22' : TRACK_COLORS.accent }} />
+          )}
+
+          {isUnlocked && isCompleted && (
+            <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-[#1C1C22] border-2 border-background flex items-center justify-center">
+              <Check className="h-3 w-3" style={{ color: TRACK_COLORS.accent }} />
+            </span>
+          )}
+
+          {isUnlocked && isBonus && (
+            <span
+              className="absolute -top-1 -left-1 w-5 h-5 rounded-full border-2 border-background flex items-center justify-center text-[10px] font-bold"
+              style={{ backgroundColor: TRACK_COLORS.accent, color: '#1C1C22' }}
+            >
+              ★
+            </span>
+          )}
+        </button>
+      </div>
+
+      <div
+        ref={labelRef}
+        role="button"
+        tabIndex={isUnlocked ? 0 : -1}
+        onClick={handleClick}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') handleClick();
+        }}
+        className={cn('mt-2 rounded-xl px-3 py-1.5 text-center', isUnlocked && 'cursor-pointer')}
+        style={{
+          zIndex: 3,
+          maxWidth: 170,
+          transform: labelShiftX ? `translateX(${labelShiftX}px)` : undefined,
+          backgroundColor: '#141418',
+          border: '1px solid #2A2A33',
+          borderRadius: 12,
+        }}
+      >
+        {tag && (
+          <div
+            className="text-[10px] font-bold uppercase tracking-wide"
+            style={{ color: !isUnlocked ? 'rgba(255,255,255,0.45)' : TRACK_COLORS.accent }}
+          >
+            {tag}
+          </div>
+        )}
+        <div
+          className="text-[12px] leading-tight font-medium line-clamp-2"
+          style={{
+            color: isUnlocked && isCompleted ? 'rgba(255,255,255,0.6)' : '#fff',
+            textDecoration: isUnlocked && isCompleted ? 'line-through' : undefined,
+          }}
+        >
+          {isUnlocked ? title : 'תוכן נעול'}
+        </div>
+        {!isUnlocked && (
+          <div className="text-[10px] mt-0.5" style={{ color: 'rgba(255,255,255,0.55)' }}>
+            {daysUntilUnlock > 0 ? `נפתח בעוד ${daysUntilUnlock} ימים` : 'נפתח בקרוב'}
+          </div>
+        )}
+      </div>
     </div>
   );
-});
-
-export default PathNode;
+}

@@ -14,9 +14,6 @@ import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
 import com.getcapacitor.annotation.Permission
 import com.getcapacitor.annotation.PermissionCallback
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
  * StepCounterPlugin — Capacitor bridge between JavaScript and StepCounterService.
@@ -69,7 +66,7 @@ class StepCounterPlugin : Plugin() {
     @PluginMethod
     fun getDailySteps(call: PluginCall) {
         val prefs = context.getSharedPreferences(StepCounterService.PREFS_NAME, Context.MODE_PRIVATE)
-        val today = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+        val today = StepCounterService.todayString()
         val savedDate = prefs.getString(StepCounterService.KEY_DATE, "")
         val steps = if (savedDate == today) {
             prefs.getInt(StepCounterService.KEY_DAILY_STEPS, 0)
@@ -87,12 +84,20 @@ class StepCounterPlugin : Plugin() {
         val userId      = call.getString("userId")      ?: return call.reject("userId required")
         val supabaseUrl = call.getString("supabaseUrl") ?: return call.reject("supabaseUrl required")
         val anonKey     = call.getString("anonKey")     ?: return call.reject("anonKey required")
-        val accessToken = call.getString("accessToken") ?: return call.reject("accessToken required")
-        context.getSharedPreferences(StepCounterService.PREFS_NAME, Context.MODE_PRIVATE).edit().apply {
+        val syncToken   = call.getString("syncToken")   ?: return call.reject("syncToken required")
+        val prefs = context.getSharedPreferences(StepCounterService.PREFS_NAME, Context.MODE_PRIVATE)
+        val previousUser = prefs.getString(StepCounterService.KEY_USER_ID, null)
+        prefs.edit().apply {
             putString(StepCounterService.KEY_USER_ID, userId)
             putString(StepCounterService.KEY_SUPABASE_URL, supabaseUrl)
             putString(StepCounterService.KEY_ANON_KEY, anonKey)
-            putString(StepCounterService.KEY_ACCESS_TOKEN, accessToken)
+            putString(StepCounterService.KEY_SYNC_TOKEN, syncToken)
+            remove(StepCounterService.KEY_ACCESS_TOKEN_LEGACY)
+            // A different account on this phone: don't hand it the previous
+            // account's local history — only changes from now on get uploaded.
+            if (previousUser != null && previousUser != userId) {
+                putString(StepCounterService.KEY_SYNCED, prefs.getString(StepCounterService.KEY_HISTORY, "{}"))
+            }
             apply()
         }
         call.resolve()

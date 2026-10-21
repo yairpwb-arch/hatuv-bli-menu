@@ -15,7 +15,7 @@ public class StepSyncPlugin: CAPPlugin, CAPBridgedPlugin {
         guard let userId      = call.getString("userId"),
               let supabaseUrl = call.getString("supabaseUrl"),
               let anonKey     = call.getString("anonKey"),
-              let accessToken = call.getString("accessToken") else {
+              let syncToken   = call.getString("syncToken") else {
             call.reject("Missing required parameters")
             return
         }
@@ -24,7 +24,8 @@ public class StepSyncPlugin: CAPPlugin, CAPBridgedPlugin {
         d.set(userId,      forKey: StepSyncHelper.kUserId)
         d.set(supabaseUrl, forKey: StepSyncHelper.kSupabaseUrl)
         d.set(anonKey,     forKey: StepSyncHelper.kAnonKey)
-        d.set(accessToken, forKey: StepSyncHelper.kAccessToken)
+        d.set(syncToken,   forKey: StepSyncHelper.kSyncToken)
+        d.removeObject(forKey: StepSyncHelper.kAccessTokenLegacy)
 
         // Re-register background delivery with fresh credentials
         StepSyncHelper.shared.setup()

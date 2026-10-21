@@ -41,6 +41,16 @@
             android:name=".StepCounterService"
             android:foregroundServiceType="health"
             android:exported="false" />
+
+        <!-- Restarts step counting after a reboot / app update -->
+        <receiver
+            android:name=".StepBootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
     </application>
 
     <!-- Permissions -->
@@ -50,6 +60,8 @@
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
     <!-- Foreground service for continuous step counting -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- Restart the step counter service after the phone reboots -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Health foreground service type (Android 14+) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
     <!-- Push notifications (Android 13+) -->

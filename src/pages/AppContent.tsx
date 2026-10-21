@@ -149,14 +149,20 @@ export default function AppContent() {
   const lastContentCompleted = allContent.length === 0 || allContent[allContent.length - 1].isCompleted;
   const milestoneUnlocked = currentDay >= MILESTONE_DAY && lastContentCompleted;
 
-  // The boat's destination: the next stage that isn't completed yet — even if
-  // it's still locked (so the boat waits at the next upcoming stage instead of
-  // skipping straight to the final milestone just because nothing is currently
-  // unlocked-and-incomplete). Only the milestone once every real stage is done.
+  // The boat's destination: the next stage that's actually unlocked and not
+  // yet completed. It never advances onto a still-locked stage — if nothing
+  // unlocked is left to do, it waits at the last unlocked stage instead of
+  // jumping ahead (so the "completed" glow on the path never reaches past
+  // what's really been unlocked). Only the milestone once everything is done
+  // AND the milestone itself has unlocked.
   const currentFrontierId = useMemo(() => {
-    const next = allContent.find((i) => !i.isCompleted);
-    return next ? next.id : MILESTONE_ID;
-  }, [allContent]);
+    const nextUnlocked = allContent.find((i) => i.isUnlocked && !i.isCompleted);
+    if (nextUnlocked) return nextUnlocked.id;
+    if (milestoneUnlocked) return MILESTONE_ID;
+    const unlockedItems = allContent.filter((i) => i.isUnlocked);
+    if (unlockedItems.length > 0) return unlockedItems[unlockedItems.length - 1].id;
+    return MILESTONE_ID;
+  }, [allContent, milestoneUnlocked]);
 
   const celebrationItems = useMemo(
     () => [...allContent.map((i) => ({ id: i.id })), { id: MILESTONE_ID }],
@@ -168,14 +174,14 @@ export default function AppContent() {
   const splashInfo = useMemo(() => {
     if (!celebration.cardTargetId) return null;
     if (celebration.cardTargetId === MILESTONE_ID) {
-      const { Icon, fillClass } = getMilestoneVisual();
-      return { title: 'כל הכבוד על סיום התוכנית!', stageLabel: 'סיכום', Icon, fillClass };
+      const { Icon } = getMilestoneVisual();
+      return { title: 'כל הכבוד על סיום התוכנית!', stageLabel: 'סיכום', Icon };
     }
     const index = allContent.findIndex((i) => i.id === celebration.cardTargetId);
     if (index === -1) return null;
     const item = allContent[index];
-    const { Icon, fillClass } = getNodeVisual(item.content_type ?? (item.video_url ? 'video' : 'content'), item.part_number);
-    return { title: item.title, stageLabel: String(index + 1), Icon, fillClass };
+    const { Icon } = getNodeVisual(item.content_type ?? (item.video_url ? 'video' : 'content'));
+    return { title: item.title, stageLabel: String(index + 1), Icon };
   }, [celebration.cardTargetId, allContent]);
 
   const toggleCompletion = async (contentId: string, isCurrentlyCompleted: boolean) => {
@@ -397,7 +403,6 @@ export default function AppContent() {
           title={splashInfo.title}
           stageLabel={splashInfo.stageLabel}
           Icon={splashInfo.Icon}
-          fillClass={splashInfo.fillClass}
           phase={celebration.cardPhase}
           onSkip={celebration.skip}
         />

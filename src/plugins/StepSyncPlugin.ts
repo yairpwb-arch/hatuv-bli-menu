@@ -5,7 +5,7 @@ export interface StepSyncPlugin {
     userId: string;
     supabaseUrl: string;
     anonKey: string;
-    accessToken: string;
+    syncToken: string;
   }): Promise<void>;
 }
 

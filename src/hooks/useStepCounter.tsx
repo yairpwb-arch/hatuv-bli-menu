@@ -1,23 +1,31 @@
 /**
  * useStepCounter — Daily step counter
  *
- * iOS:     CMPedometer (M-chip, direct hardware) as primary.
- *          HealthKit as fallback (includes Apple Watch + other sources).
- *          CMPedometer.getMeasurement() auto-prompts for Motion & Fitness
- *          permission on first call — no need for explicit checkPermissions.
+ * iOS:     CMPedometer (M-chip) + HealthKit (includes Apple Watch). The phone
+ *          records steps on its own all day, so every time the app opens we
+ *          backfill the last 7 days — a day the app wasn't opened is still
+ *          recorded. In the background, HealthKit wakes the app (up to hourly)
+ *          and StepSyncHelper uploads the same 7-day window natively.
  *
  * Android: Native StepCounterService (Foreground Service) with TYPE_STEP_COUNTER.
- *          Runs 24/7 with persistent notification. Steps survive app kills via SharedPreferences.
+ *          Runs 24/7, keeps a 14-day history, uploads hourly + while walking,
+ *          and restarts itself after a reboot or app update.
+ *
+ * Background uploads authenticate with a per-device sync token (see
+ * lib/stepSync.ts) instead of the login session, which expires after ~1 hour.
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { supabase } from '@/integrations/supabase/client';
-import { format } from 'date-fns';
+import { format, subDays, startOfDay, endOfDay } from 'date-fns';
 import { StepCounter } from '@/plugins/StepCounterPlugin';
 import { StepSync } from '@/plugins/StepSyncPlugin';
+import { getOrCreateStepSyncToken, syncStepEntries, type StepEntry } from '@/lib/stepSync';
 
 export const STEP_GOAL = 10_000;
+
+const IOS_HISTORY_DAYS = 7; // CMPedometer keeps 7 days of history
 
 export interface StepData {
   steps: number;
@@ -34,6 +42,8 @@ interface UseStepCounterReturn {
   requestPermission: () => Promise<void>;
 }
 
+const dayKey = (d: Date) => format(d, 'yyyy-MM-dd');
+
 // ─── Local cache ──────────────────────────────────────────────────────────────
 
 function localCacheKey(date: string) { return `steps_cache_${date}`; }
@@ -45,19 +55,25 @@ function writeLocalCache(date: string, count: number) {
   try { localStorage.setItem(localCacheKey(date), String(count)); } catch {}
 }
 
-// ─── iOS: query steps via CMPedometer (primary) ───────────────────────────────
-// getMeasurement() auto-requests Motion & Fitness permission on first call.
-// No need for checkPermissions/requestPermissions — just call it directly.
+async function readTodayFromDb(userId: string | undefined, today: string): Promise<number> {
+  if (!userId) return 0;
+  try {
+    const { data } = await (supabase as any)
+      .from('steps_log').select('steps')
+      .eq('user_id', userId).eq('date', today).maybeSingle();
+    return data?.steps > 0 ? data.steps : 0;
+  } catch {
+    return 0;
+  }
+}
 
-async function queryCMPedometerToday(): Promise<number> {
+// ─── iOS: step history ────────────────────────────────────────────────────────
+// getMeasurement() auto-requests Motion & Fitness permission on first call.
+
+async function queryCMPedometerRange(start: Date, end: Date): Promise<number> {
   try {
     const { CapacitorPedometer } = await import('@capgo/capacitor-pedometer');
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    const result = await CapacitorPedometer.getMeasurement({
-      start: startOfDay.getTime(),
-      end: Date.now(),
-    });
+    const result = await CapacitorPedometer.getMeasurement({ start: start.getTime(), end: end.getTime() });
     return result.numberOfSteps ?? 0;
   } catch (e) {
     console.warn('[Steps/CMPedometer]', e);
@@ -65,59 +81,51 @@ async function queryCMPedometerToday(): Promise<number> {
   }
 }
 
-// ─── iOS: query steps via HealthKit (fallback, includes Apple Watch) ──────────
-
-async function queryHealthKitToday(): Promise<number> {
+async function queryHealthKitDaily(days: number): Promise<Map<string, number>> {
+  const byDay = new Map<string, number>();
   try {
-    const mod = await import('capacitor-health');
-    const health = mod.Health;
-    const available = await health.isHealthAvailable();
-    if (!available.available) return 0;
+    const { Health } = await import('capacitor-health');
+    const available = await Health.isHealthAvailable();
+    if (!available.available) return byDay;
 
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    const result = await health.queryAggregated({
-      startDate: startOfDay.toISOString(),
-      endDate:   new Date().toISOString(),
-      dataType:  'steps',
-      bucket:    'day',
+    const result = await Health.queryAggregated({
+      startDate: startOfDay(subDays(new Date(), days - 1)).toISOString(),
+      endDate: new Date().toISOString(),
+      dataType: 'steps',
+      bucket: 'day',
     });
-    if (!result?.aggregatedData?.length) return 0;
-    return Math.round(result.aggregatedData.reduce((s, r) => s + (r.value > 0 ? r.value : 0), 0));
+    for (const sample of result?.aggregatedData ?? []) {
+      if (!(sample.value > 0)) continue;
+      const key = dayKey(new Date(sample.startDate));
+      byDay.set(key, (byDay.get(key) ?? 0) + Math.round(sample.value));
+    }
   } catch (e) {
     console.warn('[Steps/HealthKit]', e);
-    return 0;
   }
+  return byDay;
 }
 
-// ─── iOS: combined query — CMPedometer first, HealthKit fallback ─────────────
-
-async function queryIOSStepsToday(userId?: string, today?: string): Promise<number> {
-  // 1. CMPedometer (direct M-chip)
-  const fromPedometer = await queryCMPedometerToday();
-  if (fromPedometer > 0) return fromPedometer;
-
-  // 2. HealthKit (Apple Watch + other sources)
-  const fromHealthKit = await queryHealthKitToday();
-  if (fromHealthKit > 0) return fromHealthKit;
-
-  // 3. localStorage cache
-  if (today) {
-    const cached = readLocalCache(today);
-    if (cached > 0) return cached;
+/** Last N days, newest first. Per day, the larger of CMPedometer (phone only)
+ *  and HealthKit (phone + Apple Watch, de-duplicated by iOS). */
+async function queryIOSStepsHistory(days: number): Promise<StepEntry[]> {
+  const healthKit = await queryHealthKitDaily(days);
+  const now = new Date();
+  const entries: StepEntry[] = [];
+  for (let i = 0; i < days; i++) {
+    const day = subDays(now, i);
+    const end = i === 0 ? now : endOfDay(day);
+    const fromPedometer = await queryCMPedometerRange(startOfDay(day), end);
+    const date = dayKey(day);
+    entries.push({ date, steps: Math.max(fromPedometer, healthKit.get(date) ?? 0) });
   }
+  return entries;
+}
 
-  // 4. Supabase DB
-  if (userId && today) {
-    try {
-      const { data } = await (supabase as any)
-        .from('steps_log').select('steps')
-        .eq('user_id', userId).eq('date', today).maybeSingle();
-      if (data?.steps > 0) return data.steps;
-    } catch {}
-  }
-
-  return 0;
+async function requestHealthKitStepsPermission() {
+  try {
+    const { Health } = await import('capacitor-health');
+    await Health.requestHealthPermissions({ permissions: ['READ_STEPS'] });
+  } catch {}
 }
 
 // ─── Android: resolve initial steps ──────────────────────────────────────────
@@ -126,15 +134,7 @@ async function resolveInitialStepsAndroid(userId: string | undefined, today: str
   try { const { steps } = await StepCounter.getDailySteps(); if (steps > 0) return steps; } catch {}
   const cached = readLocalCache(today);
   if (cached > 0) return cached;
-  if (userId) {
-    try {
-      const { data } = await (supabase as any)
-        .from('steps_log').select('steps')
-        .eq('user_id', userId).eq('date', today).maybeSingle();
-      if (data?.steps > 0) return data.steps;
-    } catch {}
-  }
-  return 0;
+  return readTodayFromDb(userId, today);
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -152,35 +152,30 @@ export function useStepCounter(userId?: string): UseStepCounterReturn {
   const isAndroid = Capacitor.getPlatform() === 'android';
   const isIOS     = Capacitor.getPlatform() === 'ios';
 
-  // ── Debounced save ────────────────────────────────────────────────────────
+  // ── Debounced save of today's live count ─────────────────────────────────
   const saveSteps = useCallback((count: number) => {
     if (!userId) return;
-    const today = format(new Date(), 'yyyy-MM-dd');
+    const today = dayKey(new Date());
     writeLocalCache(today, count);
     if (count === lastSavedRef.current) return;
     lastSavedRef.current = count;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(async () => {
-      try {
-        await (supabase as any).from('steps_log').upsert(
-          { user_id: userId, date: today, steps: count, updated_at: new Date().toISOString() },
-          { onConflict: 'user_id,date' },
-        );
-      } catch {}
+    saveTimerRef.current = setTimeout(() => {
+      syncStepEntries(userId, [{ date: today, steps: count }]).catch(() => {});
     }, 3_000);
   }, [userId]);
 
-  // ── Save user config for background sync (Android: SharedPreferences, iOS: UserDefaults) ──
+  // ── Hand the native background code what it needs to upload on its own ──
   const syncUserConfig = useCallback(async () => {
     if (!userId) return;
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) return;
+      const syncToken = await getOrCreateStepSyncToken(userId);
+      if (!syncToken) return;
       const config = {
         userId,
         supabaseUrl: import.meta.env.VITE_SUPABASE_URL as string,
         anonKey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string,
-        accessToken: session.access_token,
+        syncToken,
       };
       if (isAndroid) await StepCounter.setUserConfig(config);
       if (isIOS)     await StepSync.setUserConfig(config);
@@ -189,28 +184,32 @@ export function useStepCounter(userId?: string): UseStepCounterReturn {
 
   // ── Android: start Foreground Service ────────────────────────────────────
   const startAndroidTracking = useCallback(async () => {
-    await StepCounter.startService();
+    // Config first, so the service's on-start upload already has credentials.
     await syncUserConfig();
-    const today = format(new Date(), 'yyyy-MM-dd');
+    await StepCounter.startService();
+    const today = dayKey(new Date());
     const initial = await resolveInitialStepsAndroid(userId, today);
     setSteps(initial);
     if (initial > 0) saveSteps(initial);
-    const handle = await StepCounter.addListener('stepUpdate', (data) => {
+    listenerRef.current?.remove();
+    listenerRef.current = await StepCounter.addListener('stepUpdate', (data) => {
       setSteps(data.steps);
       saveSteps(data.steps);
     });
-    listenerRef.current = handle;
   }, [userId, saveSteps, syncUserConfig]);
 
-  // ── iOS: refresh step count + sync credentials ───────────────────────────
+  // ── iOS: refresh today + backfill recent days the app wasn't opened ──────
   const refreshIOSSteps = useCallback(async () => {
     await syncUserConfig();
-    const today = format(new Date(), 'yyyy-MM-dd');
-    const count = await queryIOSStepsToday(userId, today);
+    const today = dayKey(new Date());
+    const history = await queryIOSStepsHistory(IOS_HISTORY_DAYS);
+    let count = history.find((e) => e.date === today)?.steps ?? 0;
+    if (count === 0) count = readLocalCache(today) || (await readTodayFromDb(userId, today));
     setSteps(count);
-    if (count > 0) saveSteps(count);
+    if (count > 0) writeLocalCache(today, count);
+    if (userId) syncStepEntries(userId, history).catch(() => {});
     return count;
-  }, [userId, saveSteps, syncUserConfig]);
+  }, [userId, syncUserConfig]);
 
   // ── appStateChange: re-check / refresh on every foreground ───────────────
   useEffect(() => {
@@ -234,7 +233,6 @@ export function useStepCounter(userId?: string): UseStepCounterReturn {
         }
 
         if (isIOS) {
-          // Refresh step count whenever app comes to foreground
           const count = await refreshIOSSteps();
           if (count > 0) setHasPermission(true);
         }
@@ -262,14 +260,13 @@ export function useStepCounter(userId?: string): UseStepCounterReturn {
       if (isIOS) {
         setIsAvailable(true);
         if (cancelled) return;
-        // queryCMPedometerToday() will show the Motion & Fitness dialog if needed
-        const count = await queryIOSStepsToday(userId, format(new Date(), 'yyyy-MM-dd'));
+        // HealthKit access is what lets iOS wake the app in the background
+        // (hourly at most) to upload steps — ask before configuring it.
+        // No-op once the user has already answered.
+        await requestHealthKitStepsPermission();
         if (cancelled) return;
-        setSteps(count);
-        if (count >= 0) {
-          setHasPermission(true); // CMPedometer either worked or silently failed — treat as available
-          if (count > 0) saveSteps(count);
-        }
+        await refreshIOSSteps();
+        if (!cancelled) setHasPermission(true); // CMPedometer either worked or silently failed — treat as available
       }
     };
 
@@ -279,7 +276,7 @@ export function useStepCounter(userId?: string): UseStepCounterReturn {
       listenerRef.current?.remove();
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
-  }, [startAndroidTracking, refreshIOSSteps, saveSteps, userId, isAndroid, isIOS]);
+  }, [startAndroidTracking, refreshIOSSteps, userId, isAndroid, isIOS]);
 
   // ── Manual "Allow" button ─────────────────────────────────────────────────
   const requestPermission = async () => {
@@ -294,17 +291,9 @@ export function useStepCounter(userId?: string): UseStepCounterReturn {
     }
 
     if (isIOS) {
-      // CMPedometer: getMeasurement auto-requests Motion & Fitness permission
-      const count = await queryIOSStepsToday(userId, format(new Date(), 'yyyy-MM-dd'));
-      setSteps(count);
+      await requestHealthKitStepsPermission();
+      await refreshIOSSteps();
       setHasPermission(true);
-      if (count > 0) saveSteps(count);
-
-      // Also request HealthKit permission for Apple Watch users
-      try {
-        const mod = await import('capacitor-health');
-        await mod.Health.requestHealthPermissions({ permissions: ['READ_STEPS'] });
-      } catch {}
     }
   };
 

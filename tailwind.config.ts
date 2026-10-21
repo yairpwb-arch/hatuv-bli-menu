@@ -140,6 +140,18 @@ export default {
           "0%, 100%": { transform: "rotate(-3deg)" },
           "50%": { transform: "rotate(3deg)" },
         },
+        "marker-pulse": {
+          "0%, 100%": { boxShadow: "0 0 0 0 rgba(255,255,255,0.55)" },
+          "50%": { boxShadow: "0 0 0 8px rgba(255,255,255,0)" },
+        },
+        "wake-fade": {
+          "0%": { opacity: "0.7", transform: "scale(1)" },
+          "100%": { opacity: "0", transform: "scale(0.4)" },
+        },
+        "part-reveal": {
+          "0%": { opacity: "0", transform: "translateY(20px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
         sparkle: {
           "0%": { transform: "scale(0) translate(0, 0)", opacity: "0" },
           "40%": { opacity: "1" },
@@ -159,6 +171,9 @@ export default {
         "splash-out": "splash-out 0.6s ease-in forwards",
         "screen-shake": "screen-shake 0.15s ease-in-out 2",
         "boat-rock": "boat-rock 2.4s ease-in-out infinite",
+        "marker-pulse": "marker-pulse 1.8s ease-out infinite",
+        "wake-fade": "wake-fade 0.6s ease-out forwards",
+        "part-reveal": "part-reveal 0.6s ease-out forwards",
         sparkle: "sparkle 0.9s ease-out forwards",
       },
     },
