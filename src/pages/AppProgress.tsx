@@ -11,7 +11,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import {
   Scale, TrendingDown, ArrowDown, ArrowUp, Plus, Calendar as CalendarIcon,
-  Footprints, Dumbbell, Sparkles, ExternalLink, BookOpen, AlertCircle, BarChart2, Trash2, Loader2
+  Footprints, Dumbbell, ExternalLink, BookOpen, AlertCircle, BarChart2, Trash2, Loader2
 } from 'lucide-react';
 import { format, subDays } from 'date-fns';
 import { he } from 'date-fns/locale';
@@ -35,12 +35,6 @@ interface ProfileData {
   height: number | null;
 }
 
-interface Habit {
-  id: string;
-  name: string;
-  completed: boolean;
-}
-
 
 const CIRCLE_RADIUS = 40;
 const CIRCLE_CIRCUMFERENCE = 2 * Math.PI * CIRCLE_RADIUS; // ~251.3
@@ -50,7 +44,6 @@ export default function AppProgress() {
   const navigate = useNavigate();
   const [weightHistory, setWeightHistory] = useState<WeightEntry[]>([]);
   const [profileData, setProfileData] = useState<ProfileData | null>(null);
-  const [habits, setHabits] = useState<Habit[]>([]);
 
   const [isLoading, setIsLoading] = useState(true);
   const [weighingGuideLink, setWeighingGuideLink] = useState('');
@@ -131,7 +124,7 @@ export default function AppProgress() {
     if (!user) return;
     setIsLoading(true);
 
-    const [profileRes, weightRes, habitsRes, habitLogsRes, settingsRes] = await Promise.all([
+    const [profileRes, weightRes, settingsRes] = await Promise.all([
       supabase
         .from('profiles')
         .select('start_date, current_weight, initial_weight, height')
@@ -143,17 +136,6 @@ export default function AppProgress() {
         .eq('user_id', user.id)
         .order('recorded_at', { ascending: true }),
       (supabase as any)
-        .from('habit_definitions')
-        .select('id, name')
-        .lte('day_start', currentDay)
-        .or(`day_end.gte.${currentDay},day_end.is.null`)
-        .or(`user_id.is.null,user_id.eq.${user.id}`),
-      supabase
-        .from('daily_habits_log')
-        .select('habit_id')
-        .eq('user_id', user.id)
-        .eq('completed_at', dateString),
-      (supabase as any)
         .from('app_settings')
         .select('key, value')
         .in('key', ['weighing_guide_link']),
@@ -163,14 +145,6 @@ export default function AppProgress() {
     setWeightHistory(weightRes.data || []);
     const link = (settingsRes.data || []).find((s: any) => s.key === 'weighing_guide_link')?.value || '';
     setWeighingGuideLink(link);
-
-    const completedHabitIds = new Set(habitLogsRes.data?.map((h) => h.habit_id) || []);
-    const processedHabits = (habitsRes.data || []).map((h) => ({
-      id: h.id,
-      name: h.name,
-      completed: completedHabitIds.has(h.id),
-    }));
-    setHabits(processedHabits);
 
     setIsLoading(false);
   };
@@ -187,9 +161,6 @@ export default function AppProgress() {
     date: format(new Date(entry.recorded_at), 'dd/MM', { locale: he }),
     weight: entry.weight,
   }));
-
-  const completedHabits = habits.filter(h => h.completed).length;
-  const habitCompletionPercentage = habits.length > 0 ? Math.round((completedHabits / habits.length) * 100) : 0;
 
   const handleAddWeight = async () => {
     if (!user || !newWeight) return;
@@ -213,13 +184,7 @@ export default function AppProgress() {
 
       if (logError) throw logError;
 
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .update({ current_weight: weightValue })
-        .eq('id', user.id);
-
-      if (profileError) throw profileError;
-
+      // profiles.current_weight is kept in sync by the weight_log trigger
       toast.success('השקילה נוספה בהצלחה');
       setNewWeight('');
       setIsWeightModalOpen(false);
@@ -239,19 +204,22 @@ export default function AppProgress() {
   const handleDeleteWeight = async (entryId: string) => {
     if (!user) return;
     setDeletingWeightId(entryId);
-    const { error } = await supabase.from('weight_log').delete().eq('id', entryId);
-    if (error) {
+    // .select() so a silent RLS no-op (0 rows affected, no error) is
+    // distinguishable from an actual delete.
+    const { data, error } = await supabase.from('weight_log').delete().eq('id', entryId).select('id');
+    if (error || !data || data.length === 0) {
       toast.error('שגיאה במחיקת השקילה');
     } else {
-      const remaining = weightHistory.filter(w => w.id !== entryId);
-      setWeightHistory(remaining);
-      const latest = remaining[remaining.length - 1];
-      const newCurrentWeight = latest ? latest.weight : null;
-      await supabase
+      setWeightHistory(prev => prev.filter(w => w.id !== entryId));
+      // profiles.current_weight is recomputed by the weight_log trigger
+      const { data: refreshed } = await supabase
         .from('profiles')
-        .update({ current_weight: newCurrentWeight })
-        .eq('id', user.id);
-      setProfileData(p => p ? { ...p, current_weight: newCurrentWeight } : p);
+        .select('current_weight')
+        .eq('id', user.id)
+        .single();
+      if (refreshed) {
+        setProfileData(p => p ? { ...p, current_weight: refreshed.current_weight } : p);
+      }
       toast.success('השקילה נמחקה');
     }
     setDeletingWeightId(null);
@@ -276,41 +244,6 @@ export default function AppProgress() {
       <div className="animate-fade-in">
         <h2 className="text-2xl font-bold text-foreground">ההתקדמות שלי</h2>
         <p className="text-muted-foreground">מעקב אחר המסע שלך</p>
-      </div>
-
-      {/* Today's Status Section */}
-      <div className="space-y-3">
-
-        {/* Habit Completion Snapshot */}
-        <Card className="glass-card animate-fade-in" style={{ animationDelay: '0.1s' }}>
-          <CardContent className="pt-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <Sparkles className="h-5 w-5 text-primary" />
-                <span className="font-medium">ההרגלים של היום</span>
-              </div>
-              <span className={cn(
-                'text-sm font-bold',
-                habitCompletionPercentage === 100 ? 'text-success' : 'text-primary'
-              )}>
-                {completedHabits}/{habits.length}
-              </span>
-            </div>
-            <div className="relative">
-              <Progress
-                value={habitCompletionPercentage}
-                className={cn('h-3', habitCompletionPercentage === 100 && '[&>div]:bg-success')}
-              />
-            </div>
-            {habitCompletionPercentage === 100 ? (
-              <p className="text-xs text-success mt-2">כל ההרגלים הושלמו היום! 🎉</p>
-            ) : (
-              <p className="text-xs text-muted-foreground mt-2">
-                עוד {habits.length - completedHabits} הרגלים להשלמה
-              </p>
-            )}
-          </CardContent>
-        </Card>
       </div>
 
       {/* Steps Section */}
@@ -511,10 +444,19 @@ export default function AppProgress() {
             variant="outline"
             className="w-full border-primary/30 text-primary hover:bg-primary/5"
             onClick={() => {
-              const url = /^https?:\/\//i.test(weighingGuideLink) ? weighingGuideLink : `https://${weighingGuideLink}`;
-              Capacitor.isNativePlatform()
-                ? window.open(url, '_system')
-                : window.open(url, '_blank');
+              const trimmed = weighingGuideLink.trim();
+              // Bare email → mailto:, otherwise assume it needs https:// (and
+              // leave anything that already has a scheme, e.g. mailto:/tel:, as-is).
+              const url = /^[a-z][a-z0-9+.-]*:/i.test(trimmed)
+                ? trimmed
+                : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)
+                ? `mailto:${trimmed}`
+                : `https://${trimmed}`;
+              if (Capacitor.isNativePlatform()) {
+                window.open(url, '_system');
+              } else {
+                window.open(url, '_blank');
+              }
             }}
           >
             <BookOpen className="h-4 w-4 ml-2" />

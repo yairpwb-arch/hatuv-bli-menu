@@ -37,9 +37,24 @@ export interface ButtonProps
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
+  ({ className, variant, size, asChild = false, onPointerUp, ...props }, ref) => {
     const Comp = asChild ? Slot : "button";
-    return <Comp className={cn(buttonVariants({ variant, size, className }))} ref={ref} {...props} />;
+    return (
+      <Comp
+        className={cn(buttonVariants({ variant, size, className }))}
+        ref={ref}
+        onPointerUp={(e) => {
+          onPointerUp?.(e);
+          // Only fires for mouse/touch/pen, never keyboard activation — so
+          // this clears the focus ring right after a tap/click (instead of it
+          // staying lit until something else is tapped) without affecting
+          // keyboard users, who still see and keep the ring as expected.
+          const target = e.currentTarget as HTMLElement;
+          requestAnimationFrame(() => target.blur());
+        }}
+        {...props}
+      />
+    );
   },
 );
 Button.displayName = "Button";

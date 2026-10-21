@@ -30,7 +30,7 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import {
   Plus, Edit, Loader2, RefreshCw, Trash2, ChevronDown, ChevronUp, Dumbbell,
-  User as UserIcon, Scale, Repeat2, ClipboardList, X, Sparkles, Footprints,
+  User as UserIcon, Scale, Repeat2, ClipboardList, Sparkles, Footprints,
   History, Clock, Check, Copy, GripVertical,
 } from 'lucide-react';
 import {
@@ -891,13 +891,35 @@ export default function AdminUsers() {
   };
 
   const handleDeleteWeightEntry = async (entryId: string) => {
+    if (!editingUser) return;
     setDeletingWeightId(entryId);
-    const { error } = await (supabase as any).from('weight_log').delete().eq('id', entryId);
-    if (error) {
-      toast({ title: 'שגיאה', description: error.message, variant: 'destructive' });
+    // .select() so a silent RLS no-op (0 rows affected, no error — e.g. the
+    // admin DELETE policy on weight_log isn't applied yet) is distinguishable
+    // from an actual delete.
+    const { data, error } = await (supabase as any)
+      .from('weight_log')
+      .delete()
+      .eq('id', entryId)
+      .select('id');
+    if (error || !data || data.length === 0) {
+      toast({
+        title: 'שגיאה',
+        description: error?.message || 'המחיקה לא בוצעה (ייתכן שחסרה הרשאה במסד הנתונים)',
+        variant: 'destructive',
+      });
     } else {
       setWeightHistory(prev => prev.filter(w => w.id !== entryId));
+      // profiles.current_weight is recomputed by the weight_log trigger
+      const { data: refreshed } = await supabase
+        .from('profiles')
+        .select('current_weight')
+        .eq('id', editingUser.id)
+        .single();
+      if (refreshed) {
+        setEditPersonal(p => ({ ...p, current_weight: refreshed.current_weight ?? undefined }));
+      }
       toast({ title: 'הצלחה', description: 'השקילה נמחקה' });
+      fetchUsers();
     }
     setDeletingWeightId(null);
   };
@@ -1143,12 +1165,7 @@ export default function AdminUsers() {
       <Dialog open={!!editingUser} onOpenChange={(o) => { if (!o) closeEdit(); }}>
         <DialogContent dir="rtl" className="max-w-2xl max-h-[92vh] overflow-y-auto p-0">
           <DialogHeader className="px-6 pt-5 pb-0">
-            <div className="flex items-center justify-between">
-              <DialogTitle className="text-lg">{editingUser?.full_name || editingUser?.email}</DialogTitle>
-              <button onClick={closeEdit} className="p-1.5 rounded-full hover:bg-muted transition-colors">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
+            <DialogTitle className="text-lg pr-8">{editingUser?.full_name || editingUser?.email}</DialogTitle>
           </DialogHeader>
 
           <Tabs defaultValue="personal" dir="rtl" className="w-full">
@@ -1166,6 +1183,10 @@ export default function AdminUsers() {
                 <div className="space-y-1 col-span-2">
                   <Label>שם מלא</Label>
                   <Input value={editPersonal.full_name || ''} onChange={e => setEditPersonal(p => ({ ...p, full_name: e.target.value }))} />
+                </div>
+                <div className="space-y-1 col-span-2">
+                  <Label>אימייל</Label>
+                  <Input value={editingUser?.email || ''} readOnly dir="ltr" className="text-left bg-muted/40 cursor-default" />
                 </div>
                 <div className="space-y-1">
                   <Label>גיל</Label>

@@ -2,6 +2,12 @@ import type { Config } from "tailwindcss";
 
 export default {
   darkMode: ["class"],
+  // On touch devices there's no real mouse, so a tap can trigger :hover and
+  // then leave it visually "stuck" (darkened/tinted) until the next tap
+  // elsewhere moves it. Scoping every hover: utility to devices that
+  // genuinely support hover (`@media (hover: hover)`) fixes this app-wide,
+  // instead of having to special-case it on individual buttons.
+  future: { hoverOnlyWhenSupported: true },
   content: ["./pages/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./app/**/*.{ts,tsx}", "./src/**/*.{ts,tsx}"],
   prefix: "",
   theme: {
@@ -111,6 +117,34 @@ export default {
           "70%": { transform: "scale(1.05)" },
           "100%": { transform: "scale(1)", opacity: "1" },
         },
+        "pulse-glow": {
+          "0%, 100%": { boxShadow: "0 0 0 0 hsl(var(--primary) / 0.45)" },
+          "50%": { boxShadow: "0 0 0 10px hsl(var(--primary) / 0)" },
+        },
+        "splash-in": {
+          "0%": { transform: "translateY(-160%) scale(0.4) rotate(-8deg)", opacity: "0" },
+          "70%": { transform: "translateY(0) scale(1.15) rotate(0deg)", opacity: "1" },
+          "100%": { transform: "translateY(0) scale(1) rotate(0deg)", opacity: "1" },
+        },
+        "splash-out": {
+          "0%": { transform: "perspective(800px) scale(1) rotateX(0deg)", opacity: "1" },
+          "100%": { transform: "perspective(800px) scale(0.2) rotateX(60deg)", opacity: "0" },
+        },
+        "screen-shake": {
+          "0%, 100%": { transform: "translate(0, 0)" },
+          "25%": { transform: "translate(3px, -2px)" },
+          "50%": { transform: "translate(-3px, 2px)" },
+          "75%": { transform: "translate(2px, 2px)" },
+        },
+        "boat-rock": {
+          "0%, 100%": { transform: "rotate(-3deg)" },
+          "50%": { transform: "rotate(3deg)" },
+        },
+        sparkle: {
+          "0%": { transform: "scale(0) translate(0, 0)", opacity: "0" },
+          "40%": { opacity: "1" },
+          "100%": { transform: "scale(1) translate(var(--sx), var(--sy))", opacity: "0" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -120,6 +154,12 @@ export default {
         "scale-in": "scale-in 0.3s ease-out forwards",
         "pulse-soft": "pulse-soft 2s ease-in-out infinite",
         "bounce-in": "bounce-in 0.4s ease-out forwards",
+        "pulse-glow": "pulse-glow 2s ease-out infinite",
+        "splash-in": "splash-in 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) forwards",
+        "splash-out": "splash-out 0.6s ease-in forwards",
+        "screen-shake": "screen-shake 0.15s ease-in-out 2",
+        "boat-rock": "boat-rock 2.4s ease-in-out infinite",
+        sparkle: "sparkle 0.9s ease-out forwards",
       },
     },
   },

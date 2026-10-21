@@ -9,13 +9,11 @@ import { Label } from '@/components/ui/label';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
-import { Dumbbell, Footprints, Quote, Scale, Sparkles, Star, Target } from 'lucide-react';
+import { Dumbbell, Footprints, Quote, Scale, Sparkles, Star, Target, ClipboardList, CheckCircle2, Calendar } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { TodayActivityTask } from '@/components/TodayActivityTask';
-import { StreakCard } from '@/components/StreakCard';
-import { MorningStreakPopup } from '@/components/MorningStreakPopup';
-import { useStreak } from '@/hooks/useStreak';
+import WeeklySurveyModal from '@/components/WeeklySurveyModal';
 import { useHabits, iconMap } from '@/hooks/useHabits';
 import { useStepCounter } from '@/hooks/useStepCounter';
 import { useStepLogs } from '@/hooks/useStepLogs';
@@ -49,8 +47,28 @@ export default function AppHome() {
 
   const { habits, isLoading: isLoadingHabits, toggleHabit: baseToggleHabit } = useHabits(user?.id, currentDay, today, planDays);
 
-  // Get streak data
-  const { currentStreak, isLoading: isStreakLoading } = useStreak(user?.id, currentWeek);
+  // Weekly survey: whether this week's check-in was already submitted, and
+  // (if so) how many days until it opens again next Friday.
+  const [isSurveyOpen, setIsSurveyOpen] = useState(false);
+  const [surveyAnsweredThisWeek, setSurveyAnsweredThisWeek] = useState<boolean | null>(null);
+  const daysUntilNextFriday = (() => {
+    const day = new Date().getDay(); // 0=Sun … 5=Fri … 6=Sat
+    return day === 5 ? 7 : (5 - day + 7) % 7;
+  })();
+
+  useEffect(() => {
+    const checkSurvey = async () => {
+      if (!user) return;
+      const { data } = await (supabase as any)
+        .from('weekly_checkin')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('week_number', currentWeek)
+        .maybeSingle();
+      setSurveyAnsweredThisWeek(!!data);
+    };
+    checkSurvey();
+  }, [user, currentWeek]);
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -163,12 +181,7 @@ export default function AppHome() {
       return;
     }
 
-    // Update profile current weight
-    await supabase
-      .from('profiles')
-      .update({ current_weight: weightNum })
-      .eq('id', user.id);
-
+    // profiles.current_weight is kept in sync by the weight_log trigger
     await refreshProfile();
     
     toast({
@@ -181,9 +194,6 @@ export default function AppHome() {
 
   return (
     <div className="min-h-screen pb-20 pt-4 px-4 space-y-4">
-      {/* Morning Streak Popup */}
-      <MorningStreakPopup streak={currentStreak} isLoading={isStreakLoading} />
-
       {/* Header Greeting */}
       <div className="animate-slide-up">
         <h2 className="text-2xl font-bold text-foreground">
@@ -192,8 +202,64 @@ export default function AppHome() {
         <p className="text-muted-foreground">יום {currentDay} במסע שלך</p>
       </div>
 
-      {/* Streak Card */}
-      <StreakCard streak={currentStreak} isLoading={isStreakLoading} />
+      {/* Weekly Survey */}
+      {surveyAnsweredThisWeek === null ? (
+        <Skeleton className="h-24 w-full rounded-2xl" />
+      ) : surveyAnsweredThisWeek ? (
+        <Card
+          className="glass-card animate-slide-up cursor-pointer"
+          style={{ animationDelay: '0.1s' }}
+          onClick={() => setIsSurveyOpen(true)}
+        >
+          <CardContent className="pt-4 pb-4 flex items-center gap-3">
+            <div className="w-11 h-11 rounded-xl bg-success/15 flex items-center justify-center flex-shrink-0">
+              <CheckCircle2 className="h-5 w-5 text-success" />
+            </div>
+            <div className="flex-1">
+              <p className="font-bold text-sm">ענית על השאלון השבועי ✓</p>
+              <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                <Calendar className="h-3 w-3" />
+                {daysUntilNextFriday === 0 ? 'ייפתח שוב ביום שישי' : `ייפתח שוב בעוד ${daysUntilNextFriday} ימים`}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="glass-card animate-slide-up border-2 border-primary/30" style={{ animationDelay: '0.1s' }}>
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-xl gradient-primary flex items-center justify-center flex-shrink-0">
+                <ClipboardList className="h-5 w-5 text-primary-foreground" />
+              </div>
+              <div className="flex-1">
+                <p className="font-bold text-sm">שאלון מעקב שבועי</p>
+                <p className="text-xs text-muted-foreground">כמה דקות כדי לעדכן אותנו איך הולך</p>
+              </div>
+            </div>
+            <Button className="w-full mt-3 gradient-primary" onClick={() => setIsSurveyOpen(true)}>
+              למלא שאלון שבועי
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      <WeeklySurveyModal
+        open={isSurveyOpen}
+        onClose={() => {
+          setIsSurveyOpen(false);
+          // Refresh the card's state in case a submission just happened.
+          if (user) {
+            (supabase as any)
+              .from('weekly_checkin')
+              .select('id')
+              .eq('user_id', user.id)
+              .eq('week_number', currentWeek)
+              .maybeSingle()
+              .then(({ data }: { data: unknown }) => setSurveyAnsweredThisWeek(!!data));
+          }
+        }}
+        currentWeek={currentWeek}
+      />
 
       {/* Daily Steps */}
       <Card className="glass-card animate-slide-up" style={{ animationDelay: '0.15s' }}>

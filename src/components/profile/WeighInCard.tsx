@@ -53,13 +53,7 @@ export function WeighInCard({ userId, currentWeight, onWeightAdded }: WeighInCar
 
       if (logError) throw logError;
 
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .update({ current_weight: weightValue })
-        .eq('id', userId);
-
-      if (profileError) throw profileError;
-
+      // profiles.current_weight is kept in sync by the weight_log trigger
       toast.success('השקילה נוספה בהצלחה');
       setNewWeight('');
       setIsModalOpen(false);

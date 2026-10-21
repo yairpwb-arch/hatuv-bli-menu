@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import WeeklySurveyModal from '@/components/WeeklySurveyModal';
 import { Badge } from '@/components/ui/badge';
@@ -9,11 +9,18 @@ import { Progress } from '@/components/ui/progress';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
-import {
-  Lock, Play, Check, Star, FileText, BookOpen, Trophy,
-  ChevronDown, ChevronUp, ExternalLink, ClipboardList, BookText
-} from 'lucide-react';
+import { Check, Star, ExternalLink, ClipboardList, BookText, FileText, Lock, Map } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import ContentPath from '@/components/content/ContentPath';
+import StageUnlockSplash from '@/components/content/StageUnlockSplash';
+import { useContentCelebration } from '@/hooks/useContentCelebration';
+import {
+  MILESTONE_ID,
+  MILESTONE_DAY,
+  getNodeVisual,
+  getMilestoneVisual,
+  type ContentKind,
+} from '@/lib/contentPathStyle';
 
 interface ContentItem {
   id: string;
@@ -25,29 +32,64 @@ interface ContentItem {
   video_url: string | null;
   resource_link: string | null;
   is_bonus: boolean;
+  content_type?: ContentKind | null;
+  /** date gate only — currentDay has reached unlock_day */
+  dateUnlocked: boolean;
+  /** final gate: dateUnlocked AND the previous stage in the path was completed */
   isUnlocked: boolean;
   isCompleted: boolean;
   daysUntilUnlock: number;
 }
 
-type TabType = 'all' | 'videos' | 'guides' | 'knowledge' | 'bonus';
-
-const PART_NAMES: Record<number, { title: string; subtitle: string }> = {
-  1: { title: 'חלק 1', subtitle: 'בניית היסודות' },
-  2: { title: 'חלק 2', subtitle: 'אדפטציה ושדרוג תזונתי' },
-  3: { title: 'חלק 3', subtitle: 'הטמעה ושיפור ביצועים' },
-  5: { title: 'הבסיס לשינוי הרגלים', subtitle: '' },
+const PART_NAMES: Record<number, string> = {
+  1: 'חלק 1',
+  2: 'חלק 2',
+  3: 'חלק 3',
+  5: 'הבסיס לשינוי הרגלים',
 };
+
+// Stages unlock a WEEK at a time, not one-by-one: everything sharing the same
+// week_range opens together once its date has come, as long as the previous
+// week's stages are all completed — items within the same week never gate
+// each other (no waiting for a sibling video to be marked watched before the
+// next one in that same week opens). Re-run this any time completion state
+// changes, not just once at fetch time — otherwise finishing a week never
+// actually reveals the next one until the page is reloaded.
+function applySequentialGate<T extends { week_range: string; dateUnlocked: boolean; isCompleted: boolean }>(
+  items: T[]
+): (T & { isUnlocked: boolean })[] {
+  const result: (T & { isUnlocked: boolean })[] = [];
+  let previousWeekCompleted = true;
+  let i = 0;
+  while (i < items.length) {
+    let j = i;
+    while (j < items.length && items[j].week_range === items[i].week_range) j++;
+    const weekItems = items.slice(i, j);
+    for (const item of weekItems) {
+      result.push({ ...item, isUnlocked: item.dateUnlocked && previousWeekCompleted });
+    }
+    previousWeekCompleted = weekItems.every((it) => it.isCompleted);
+    i = j;
+  }
+  return result;
+}
 
 export default function AppContent() {
   const { currentDay, currentWeek, user } = useAuth();
   const [allContent, setAllContent] = useState<ContentItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedContent, setSelectedContent] = useState<ContentItem | null>(null);
-  const [activeTab, setActiveTab] = useState<TabType>('all');
-  const [expandedParts, setExpandedParts] = useState<Set<number>>(new Set());
   const [snacksBookLink, setSnacksBookLink] = useState('');
   const [surveyOpen, setSurveyOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<'path' | 'guides'>('path');
+
+  // Switching views lands on a page that's much shorter than the river path
+  // (which can be scrolled far down, e.g. after the boat auto-scrolls to the
+  // current stage) — without resetting scroll, the guides grid opens already
+  // scrolled near its own bottom instead of starting at its top.
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [viewMode]);
 
   useEffect(() => {
     const fetchContent = async () => {
@@ -76,19 +118,15 @@ export default function AppContent() {
 
       const completedIds = new Set(progressResult.data?.map((p) => p.content_id) || []);
 
-      const processedContent = (contentResult.data || []).map((item) => ({
+      // Pass 1: date-based gate + completion, in fetched (sort_order) order.
+      const withDateGate = (contentResult.data || []).map((item) => ({
         ...item,
-        isUnlocked: currentDay >= item.unlock_day,
+        dateUnlocked: currentDay >= item.unlock_day,
         isCompleted: completedIds.has(item.id),
         daysUntilUnlock: Math.max(0, item.unlock_day - currentDay),
       }));
 
-      setAllContent(processedContent);
-
-      // Open the highest unlocked part by default
-      const unlockedParts = [...new Set(processedContent.filter(i => i.isUnlocked).map(i => i.part_number))];
-      const activePart = unlockedParts.length > 0 ? Math.max(...unlockedParts) : 1;
-      setExpandedParts(new Set([activePart]));
+      setAllContent(applySequentialGate(withDateGate) as ContentItem[]);
 
       // Parse settings
       if (settingsResult.data) {
@@ -103,46 +141,42 @@ export default function AppContent() {
     fetchContent();
   }, [user, currentDay]);
 
-  // Filter content by type
-  const filteredContent = allContent.filter((item) => {
-    if (activeTab === 'videos') return !!item.video_url;
-    if (activeTab === 'guides') return !!item.resource_link && !item.video_url;
-    if (activeTab === 'knowledge') return item.content_type === 'content';
-    if (activeTab === 'bonus') return item.is_bonus === true;
-    return true;
-  });
-
   // Calculate progress
   const totalContent = allContent.length;
   const completedContent = allContent.filter((item) => item.isCompleted).length;
   const progressPercentage = totalContent > 0 ? Math.round((completedContent / totalContent) * 100) : 0;
 
-  // Check if a part is unlocked based on content unlock days
-  const isPartUnlocked = (partNumber: number): boolean => {
-    if (partNumber === 1) return true;
-    // A part is unlocked if any content in it is unlocked
-    const partContent = allContent.filter((item) => item.part_number === partNumber);
-    return partContent.some((item) => item.isUnlocked);
-  };
+  const lastContentCompleted = allContent.length === 0 || allContent[allContent.length - 1].isCompleted;
+  const milestoneUnlocked = currentDay >= MILESTONE_DAY && lastContentCompleted;
 
-  // Get earliest unlock day for a part
-  const getPartUnlockDay = (partNumber: number): number => {
-    const partContent = allContent.filter((item) => item.part_number === partNumber);
-    if (partContent.length === 0) return 0;
-    return Math.min(...partContent.map((item) => item.unlock_day));
-  };
+  // The boat's destination: the next stage that isn't completed yet — even if
+  // it's still locked (so the boat waits at the next upcoming stage instead of
+  // skipping straight to the final milestone just because nothing is currently
+  // unlocked-and-incomplete). Only the milestone once every real stage is done.
+  const currentFrontierId = useMemo(() => {
+    const next = allContent.find((i) => !i.isCompleted);
+    return next ? next.id : MILESTONE_ID;
+  }, [allContent]);
 
-  // Group content by part and week
-  const groupedContent = filteredContent.reduce((acc, item) => {
-    if (!acc[item.part_number]) {
-      acc[item.part_number] = {};
+  const celebrationItems = useMemo(
+    () => [...allContent.map((i) => ({ id: i.id })), { id: MILESTONE_ID }],
+    [allContent]
+  );
+  const celebration = useContentCelebration(celebrationItems, user?.id, allContent.length > 0 ? currentFrontierId : null);
+
+  // What the full-screen splash should show for the celebrated id.
+  const splashInfo = useMemo(() => {
+    if (!celebration.cardTargetId) return null;
+    if (celebration.cardTargetId === MILESTONE_ID) {
+      const { Icon, fillClass } = getMilestoneVisual();
+      return { title: 'כל הכבוד על סיום התוכנית!', stageLabel: 'סיכום', Icon, fillClass };
     }
-    if (!acc[item.part_number][item.week_range]) {
-      acc[item.part_number][item.week_range] = [];
-    }
-    acc[item.part_number][item.week_range].push(item);
-    return acc;
-  }, {} as Record<number, Record<string, ContentItem[]>>);
+    const index = allContent.findIndex((i) => i.id === celebration.cardTargetId);
+    if (index === -1) return null;
+    const item = allContent[index];
+    const { Icon, fillClass } = getNodeVisual(item.content_type ?? (item.video_url ? 'video' : 'content'), item.part_number);
+    return { title: item.title, stageLabel: String(index + 1), Icon, fillClass };
+  }, [celebration.cardTargetId, allContent]);
 
   const toggleCompletion = async (contentId: string, isCurrentlyCompleted: boolean) => {
     if (!user) return;
@@ -161,7 +195,7 @@ export default function AppContent() {
       }
 
       setAllContent((prev) =>
-        prev.map((item) => (item.id === contentId ? { ...item, isCompleted: false } : item))
+        applySequentialGate(prev.map((item) => (item.id === contentId ? { ...item, isCompleted: false } : item)))
       );
       toast({ title: 'בוטל', description: 'הסימון בוטל' });
     } else {
@@ -176,26 +210,16 @@ export default function AppContent() {
       }
 
       setAllContent((prev) =>
-        prev.map((item) => (item.id === contentId ? { ...item, isCompleted: true } : item))
+        applySequentialGate(prev.map((item) => (item.id === contentId ? { ...item, isCompleted: true } : item)))
       );
       toast({ title: 'מעולה!', description: 'התוכן סומן כהושלם' });
     }
 
+    // Close the detail dialog on any toggle (mark done or undo) so the boat's
+    // sail to its new destination is visible instead of hidden behind it.
     if (selectedContent?.id === contentId) {
-      setSelectedContent((prev) => prev ? { ...prev, isCompleted: !isCurrentlyCompleted } : null);
+      setSelectedContent(null);
     }
-  };
-
-  const togglePart = (part: number) => {
-    setExpandedParts((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(part)) {
-        newSet.delete(part);
-      } else {
-        newSet.add(part);
-      }
-      return newSet;
-    });
   };
 
   const handleWeeklySurveyClick = () => {
@@ -204,8 +228,22 @@ export default function AppContent() {
 
   const handleSnacksBookClick = () => {
     if (snacksBookLink) {
-      const url = /^https?:\/\//i.test(snacksBookLink) ? snacksBookLink : `https://${snacksBookLink}`;
-      Capacitor.isNativePlatform() ? window.open(url, '_system') : window.open(url, '_blank');
+      const trimmed = snacksBookLink.trim();
+      // Already has a scheme (https:, mailto:, tel:...) — use as-is. A bare
+      // email address becomes mailto: instead of being treated as a domain
+      // (e.g. "someone@gmail.com" naively prefixed with "https://" resolves
+      // to just gmail.com, landing the trainee on a Gmail login page instead
+      // of wherever the admin actually meant to send them).
+      const url = /^[a-z][a-z0-9+.-]*:/i.test(trimmed)
+        ? trimmed
+        : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)
+        ? `mailto:${trimmed}`
+        : `https://${trimmed}`;
+      if (Capacitor.isNativePlatform()) {
+        window.open(url, '_system');
+      } else {
+        window.open(url, '_blank');
+      }
     } else {
       toast({
         title: 'ספר נשנושים',
@@ -213,20 +251,6 @@ export default function AppContent() {
       });
     }
   };
-
-  const TabButton = ({ value, label }: { value: TabType; label: string }) => (
-    <button
-      onClick={() => setActiveTab(value)}
-      className={cn(
-        'px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 whitespace-nowrap flex-shrink-0',
-        activeTab === value
-          ? 'gradient-primary text-primary-foreground shadow-glow'
-          : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
-      )}
-    >
-      {label}
-    </button>
-  );
 
   if (isLoading) {
     return (
@@ -250,274 +274,139 @@ export default function AppContent() {
   }
 
   return (
-    <div className="min-h-screen pb-32 pt-4 px-4 space-y-5">
-      {/* Header */}
-      <div className="animate-fade-in">
-        <h2 className="text-2xl font-bold text-foreground">חטוב בלי תפריט</h2>
-        <p className="text-muted-foreground text-sm">מפת הדרכים שלך להצלחה</p>
-      </div>
-
-      {/* Progress Bar */}
-      <div className="glass-card p-4 animate-fade-in" style={{ animationDelay: '0.1s' }}>
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-medium">ההתקדמות שלך</span>
-          <span className="text-sm font-bold text-primary">{progressPercentage}%</span>
+    <div className="min-h-screen pb-32">
+      {/* Sticky header block — header, progress bar, snacks button stay put;
+          only the river path underneath actually scrolls. */}
+      {/* top offset matches the global AppHeader's real height (56px + its own
+          safe-area inset) exactly, so this doesn't slide up underneath it —
+          env() keeps it correct on every phone, notched or not. */}
+      <div
+        className="sticky z-30 bg-background pt-4 px-4 pb-3 space-y-3 border-b border-border/50"
+        style={{ top: 'calc(3.5rem + env(safe-area-inset-top, 0px))' }}
+      >
+        <div className="glass-card p-4 animate-fade-in">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium">ההתקדמות שלך</span>
+            <span className="text-sm font-bold text-primary">{progressPercentage}%</span>
+          </div>
+          <Progress value={progressPercentage} className="h-2" />
+          <p className="text-xs text-muted-foreground mt-2">
+            {completedContent} מתוך {totalContent} תכנים הושלמו
+          </p>
         </div>
-        <Progress value={progressPercentage} className="h-2" />
-        <p className="text-xs text-muted-foreground mt-2">
-          {completedContent} מתוך {totalContent} תכנים הושלמו
-        </p>
+
+        <div className="flex gap-2 animate-fade-in" style={{ animationDelay: '0.12s' }}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleSnacksBookClick}
+            className="flex-1 border-accent/30 text-accent hover:bg-accent/10"
+          >
+            <BookText className="h-4 w-4 ml-2" />
+            ספר נשנושים
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setViewMode((m) => (m === 'path' ? 'guides' : 'path'))}
+            className="flex-1 border-white/30 text-white hover:bg-white/10"
+          >
+            {viewMode === 'path' ? (
+              <>
+                <FileText className="h-4 w-4 ml-2" />
+                מדריכים
+              </>
+            ) : (
+              <>
+                <Map className="h-4 w-4 ml-2" />
+                מפת דרכים
+              </>
+            )}
+          </Button>
+        </div>
       </div>
 
-      {/* Quick Action Buttons */}
-      <div className="flex gap-2 animate-fade-in" style={{ animationDelay: '0.12s' }}>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleSnacksBookClick}
-          className="flex-1 border-accent/30 text-accent hover:bg-accent/10"
-        >
-          <BookText className="h-4 w-4 ml-2" />
-          ספר נשנושים
-        </Button>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex gap-2 overflow-x-auto pb-1 animate-fade-in scrollbar-hide" style={{ animationDelay: '0.15s' }}>
-        <TabButton value="all" label="הכל" />
-        <TabButton value="videos" label="סרטונים" />
-        <TabButton value="guides" label="מדריכים" />
-        <TabButton value="knowledge" label="ידע" />
-        <TabButton value="bonus" label="הרגלי בונוס" />
-      </div>
-
-      {/* Content Roadmap */}
-      <div className="space-y-4">
-        {[1, 2, 3].map((partNumber, partIndex) => {
-          const partContent = groupedContent[partNumber];
-          if (!partContent) return null;
-
-          const isExpanded = expandedParts.has(partNumber);
-          const partInfo = PART_NAMES[partNumber];
-          const partUnlocked = isPartUnlocked(partNumber);
-          const partUnlockDay = getPartUnlockDay(partNumber);
-          const daysUntilPartUnlock = Math.max(0, partUnlockDay - currentDay);
-
-          return (
-            <div
-              key={partNumber}
-              className="animate-fade-in"
-              style={{ animationDelay: `${0.2 + partIndex * 0.1}s` }}
-            >
-              {/* Part Header */}
-              <button
-                onClick={() => partUnlocked && togglePart(partNumber)}
-                disabled={!partUnlocked}
-                className={cn(
-                  'w-full glass-card p-4 flex items-center justify-between transition-colors',
-                  partUnlocked 
-                    ? 'hover:border-primary/30 cursor-pointer' 
-                    : 'opacity-60 cursor-not-allowed'
-                )}
-              >
-                <div className="flex items-center gap-3">
-                  <div className={cn(
-                    'w-10 h-10 rounded-xl flex items-center justify-center',
-                    partUnlocked
-                      ? partNumber === 4 ? 'bg-yellow-500' : 'gradient-primary'
-                      : 'bg-muted'
-                  )}>
-                    {partUnlocked ? (
-                      partNumber === 4
-                        ? <Trophy className="h-5 w-5 text-white" />
-                        : <BookOpen className="h-5 w-5 text-primary-foreground" />
+      {viewMode === 'path' ? (
+        /* Content Path — bleeds to the screen edges, scrolls underneath the sticky header above */
+        allContent.length > 0 &&
+        celebration.boatStationId && (
+          <ContentPath
+            allContent={allContent}
+            currentDay={currentDay}
+            milestoneUnlocked={milestoneUnlocked}
+            partNames={PART_NAMES}
+            boatStationId={celebration.boatStationId}
+            onSelect={setSelectedContent}
+          />
+        )
+      ) : (
+        /* Guides grid */
+        <div className="px-4 pt-4 grid grid-cols-2 gap-3 animate-fade-in">
+          {allContent.filter((item) => item.content_type === 'guide').length === 0 ? (
+            <p className="col-span-2 text-center text-muted-foreground py-8">אין מדריכים עדיין</p>
+          ) : (
+            allContent
+              .filter((item) => item.content_type === 'guide')
+              .map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  disabled={!item.isUnlocked}
+                  onClick={() => item.isUnlocked && setSelectedContent(item)}
+                  className={cn(
+                    'glass-card aspect-square p-3 flex flex-col items-center justify-center gap-2 text-center transition-all',
+                    item.isUnlocked ? 'hover:border-primary/40 hover:shadow-md' : 'opacity-70 cursor-not-allowed',
+                    item.isUnlocked && item.isCompleted && 'bg-success/5 border-success/20'
+                  )}
+                >
+                  <div
+                    className={cn(
+                      'w-14 h-14 rounded-xl flex items-center justify-center flex-shrink-0',
+                      item.isUnlocked ? 'gradient-primary' : 'bg-muted'
+                    )}
+                  >
+                    {item.isUnlocked ? (
+                      <FileText className="h-7 w-7 text-primary-foreground" />
                     ) : (
-                      <Lock className="h-5 w-5 text-muted-foreground" />
+                      <Lock className="h-7 w-7 text-muted-foreground" />
                     )}
                   </div>
-                  <div className="text-right">
-                    <h3 className="font-bold text-foreground">{partInfo.title}</h3>
-                    <p className="text-sm text-muted-foreground">
-                      {partUnlocked 
-                        ? partInfo.subtitle 
-                        : `ייפתח בעוד ${daysUntilPartUnlock} ימים`}
+                  <p
+                    className={cn(
+                      'text-sm font-semibold leading-snug line-clamp-2',
+                      !item.isUnlocked && 'text-muted-foreground'
+                    )}
+                  >
+                    {item.isUnlocked ? item.title : 'תוכן נעול'}
+                  </p>
+                  {item.isUnlocked && item.isCompleted && <Check className="h-4 w-4 text-success" />}
+                  {!item.isUnlocked && (
+                    <p className="text-xs text-muted-foreground">
+                      {item.daysUntilUnlock > 0 ? `נפתח בעוד ${item.daysUntilUnlock} ימים` : 'נפתח בקרוב'}
                     </p>
-                  </div>
-                </div>
-                {partUnlocked ? (
-                  isExpanded ? (
-                    <ChevronUp className="h-5 w-5 text-muted-foreground" />
-                  ) : (
-                    <ChevronDown className="h-5 w-5 text-muted-foreground" />
-                  )
-                ) : (
-                  <Lock className="h-5 w-5 text-muted-foreground" />
-                )}
-              </button>
-
-              {/* Part Content */}
-              {isExpanded && partUnlocked && (
-                <div className="mt-3 space-y-4 pr-2 border-r-2 border-primary/20 mr-5">
-                  {Object.entries(partContent).map(([weekRange, items]) => (
-                    <div key={weekRange} className="space-y-2">
-                      {/* Week Label */}
-                      <div className="flex items-center gap-2 pr-4">
-                        <div className="w-3 h-3 rounded-full bg-primary/30 -mr-[7px]" />
-                        <span className="text-sm font-medium text-muted-foreground">
-                          {weekRange}
-                        </span>
-                      </div>
-
-                      {/* Content Cards */}
-                      <div className="space-y-2 pr-4">
-                        {items.map((item) => (
-                          <div
-                            key={item.id}
-                            className={cn(
-                              'glass-card p-3 flex items-center gap-3 transition-all duration-200',
-                              item.isUnlocked
-                                ? 'cursor-pointer hover:border-primary/40 hover:shadow-md'
-                                : 'opacity-60',
-                              item.isCompleted && 'bg-success/5 border-success/20'
-                            )}
-                            onClick={() => item.isUnlocked && setSelectedContent(item)}
-                          >
-                            {/* Completion Toggle */}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (item.isUnlocked) {
-                                  toggleCompletion(item.id, item.isCompleted);
-                                }
-                              }}
-                              disabled={!item.isUnlocked}
-                              className={cn(
-                                'w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 border-2 transition-all',
-                                item.isCompleted
-                                  ? 'bg-success border-success text-success-foreground'
-                                  : item.isUnlocked
-                                  ? 'border-border hover:border-primary bg-background'
-                                  : 'border-muted bg-muted'
-                              )}
-                            >
-                              {item.isCompleted ? (
-                                <Check className="h-4 w-4" />
-                              ) : !item.isUnlocked ? (
-                                <Lock className="h-3 w-3 text-muted-foreground" />
-                              ) : null}
-                            </button>
-
-                            {/* Type Icon */}
-                            <div
-                              className={cn(
-                                'w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0',
-                                item.video_url
-                                  ? 'bg-primary/10 text-primary'
-                                  : 'bg-accent/10 text-accent'
-                              )}
-                            >
-                              {item.video_url ? (
-                                <Play className="h-4 w-4" />
-                              ) : (
-                                <FileText className="h-4 w-4" />
-                              )}
-                            </div>
-
-                            {/* Content Info */}
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <h4
-                                  className={cn(
-                                    'font-medium text-sm truncate',
-                                    item.isCompleted && 'text-muted-foreground line-through'
-                                  )}
-                                >
-                                  {item.isUnlocked ? item.title : 'תוכן נעול'}
-                                </h4>
-                                {item.is_bonus && item.isUnlocked && (
-                                  <Badge
-                                    variant="outline"
-                                    className="flex-shrink-0 bg-warning/10 text-warning border-warning/30 text-xs"
-                                  >
-                                    <Star className="h-3 w-3 ml-1" />
-                                    בונוס
-                                  </Badge>
-                                )}
-                              </div>
-                              {!item.isUnlocked && (
-                                <p className="text-xs text-muted-foreground">
-                                  ייחשף בעוד {item.daysUntilUnlock} ימים
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
-
-        {/* Part 4 — static milestone, no content items */}
-        {(() => {
-          const unlocked = currentDay >= 168;
-          const daysLeft = Math.max(0, 168 - currentDay);
-          return (
-            <div className="animate-fade-in" style={{ animationDelay: '0.5s' }}>
-              <div className={cn(
-                'w-full glass-card p-4 flex items-center justify-between',
-                unlocked ? 'border-yellow-500/40' : 'opacity-60'
-              )}>
-                <div className="flex items-center gap-3">
-                  <div className={cn(
-                    'w-10 h-10 rounded-xl flex items-center justify-center',
-                    unlocked ? 'bg-yellow-500' : 'bg-muted'
-                  )}>
-                    {unlocked
-                      ? <Trophy className="h-5 w-5 text-white" />
-                      : <Lock className="h-5 w-5 text-muted-foreground" />
-                    }
-                  </div>
-                  <div className="text-right">
-                    <h3 className="font-bold text-foreground">שלב סיכום</h3>
-                    <p className="text-sm text-muted-foreground">
-                      {unlocked
-                        ? 'יום 168 — סוף התוכנית'
-                        : `ייפתח בעוד ${daysLeft} ימים`}
-                    </p>
-                  </div>
-                </div>
-                {unlocked && (
-                  <span className="text-yellow-500 text-xs font-semibold">🎉 הושלמה</span>
-                )}
-              </div>
-              {unlocked && (
-                <div className="mt-3 pr-2 border-r-2 border-yellow-500/30 mr-5">
-                  <div className="glass-card p-4 text-center space-y-2">
-                    <Trophy className="h-10 w-10 text-yellow-500 mx-auto" />
-                    <p className="font-bold text-foreground">כל הכבוד! סיימת את 168 ימי התוכנית</p>
-                    <p className="text-sm text-muted-foreground">לא ניתן להוסיף תכנים לשלב זה — הוא ציון דרך</p>
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })()}
-      </div>
-
-      {Object.keys(groupedContent).length === 0 && (
-        <div className="text-center py-12 text-muted-foreground">
-          <p>אין תכנים להצגה בקטגוריה זו</p>
+                  )}
+                </button>
+              ))
+          )}
         </div>
+      )}
+
+      {/* Full-screen "stage unlocked" splash */}
+      {splashInfo && celebration.cardPhase !== 'idle' && (
+        <StageUnlockSplash
+          title={splashInfo.title}
+          stageLabel={splashInfo.stageLabel}
+          Icon={splashInfo.Icon}
+          fillClass={splashInfo.fillClass}
+          phase={celebration.cardPhase}
+          onSkip={celebration.skip}
+        />
       )}
 
       {/* Sticky Weekly Survey Button */}
       <div className="fixed left-4 right-4 z-40" style={{ bottom: 'calc(4.5rem + env(safe-area-inset-bottom, 0px))' }}>
         <Button
-          className="w-full gradient-primary shadow-glow text-primary-foreground font-medium"
+          className="w-full gradient-primary shadow-glow text-primary-foreground font-bold ring-2 ring-primary/40 animate-pulse-glow"
           size="lg"
           onClick={handleWeeklySurveyClick}
         >

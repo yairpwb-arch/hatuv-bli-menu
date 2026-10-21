@@ -183,6 +183,10 @@
     background: var(--gradient-primary);
   }
 
+  .gradient-success {
+    background: var(--gradient-success);
+  }
+
   .gradient-hero {
     background: var(--gradient-hero);
   }
