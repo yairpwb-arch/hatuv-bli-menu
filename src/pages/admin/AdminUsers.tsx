@@ -454,8 +454,7 @@ export default function AdminUsers() {
       .from('weight_log')
       .select('id, weight, recorded_at')
       .eq('user_id', user.id)
-      .order('recorded_at', { ascending: true })
-      .limit(30);
+      .order('recorded_at', { ascending: true });
     setWeightHistory((wh || []) as WeightEntry[]);
 
     // Steps data (last 30 days)
