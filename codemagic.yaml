@@ -9,6 +9,10 @@ workflows:
       app_store_connect: Codemagic HatovBliTafrit
 
     environment:
+      # VITE_MAPTILER_KEY (the walk map) — set in Codemagic: App settings →
+      # Environment variables, group "app_keys". It isn't in git.
+      groups:
+        - app_keys
       xcode: latest
       node: 22
       ios_signing:
