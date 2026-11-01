@@ -58,6 +58,10 @@ export function ActivitySheet({
   const [note, setNote] = useState('');
   const [replaces, setReplaces] = useState<'workout' | 'walk' | null>(null);
   const [strengthMode, setStrengthMode] = useState<'log' | 'build'>('log');
+  // A planned activity on fixed weekdays (0 = Sunday), for some weeks or with no end.
+  const [repeat, setRepeat] = useState(false);
+  const [repeatDays, setRepeatDays] = useState<number[]>([]);
+  const [repeatWeeks, setRepeatWeeks] = useState<number | null>(8);
   const [busy, setBusy] = useState(false);
 
   const today = format(new Date(), 'yyyy-MM-dd');
@@ -81,6 +85,9 @@ export function ActivitySheet({
     setNote(existing?.note ?? '');
     setReplaces(existing?.replaces ?? null);
     setStrengthMode('log');
+    setRepeat(false);
+    setRepeatDays([]);
+    setRepeatWeeks(8);
   }, [open, existing, defaultDate, initialKind, today]);
 
   const info = kindInfo(kind);
@@ -92,7 +99,8 @@ export function ActivitySheet({
   };
   const minDate = format(addDays(new Date(), -7), 'yyyy-MM-dd');
   const dateOk = when !== 'date' || (date >= minDate && date <= today);
-  const plannedOk = when !== 'planned' || date > today;
+  // A one-off plan is from tomorrow; a recurring one may start today.
+  const plannedOk = when !== 'planned' || (repeat ? date >= today && repeatDays.length > 0 : date > today);
   const valid = (kind !== 'other' || customName.trim().length > 1) && dateOk && plannedOk;
   const title = kind === 'other' ? customName.trim() : info.label;
   const offerReplace = !existing && (when === 'now' || when === 'earlier') && replaceable;
@@ -101,10 +109,11 @@ export function ActivitySheet({
     if (!valid || !user) return;
     setBusy(true);
     if (when === 'planned') {
-      const ok = await plan(kind, title, startedAt(), duration);
+      const until = repeat && repeatWeeks ? format(addDays(new Date(`${date}T12:00`), repeatWeeks * 7 - 1), 'yyyy-MM-dd') : null;
+      const ok = await plan(kind, title, startedAt(), duration, repeat ? { days: repeatDays, until } : null);
       setBusy(false);
       if (!ok) return toast.error('לא נשמר, נסו שוב');
-      toast('נכנס ליומן');
+      toast(repeat ? 'נכנס ליומן כפעילות קבועה' : 'נכנס ליומן');
       return onOpenChange(false);
     }
     const km = Number(distance.replace(',', '.'));
@@ -240,7 +249,7 @@ export function ActivitySheet({
                   <Input
                     type="date"
                     value={date}
-                    min={when === 'date' ? minDate : format(addDays(new Date(), 1), 'yyyy-MM-dd')}
+                    min={when === 'date' ? minDate : repeat ? today : format(addDays(new Date(), 1), 'yyyy-MM-dd')}
                     max={when === 'date' ? today : undefined}
                     onChange={(e) => setDate(e.target.value)}
                     className="h-12"
@@ -253,6 +262,66 @@ export function ActivitySheet({
             {when === 'date' && !dateOk && <p className="text-label text-muted-foreground">אפשר לרשום עד 7 ימים אחורה</p>}
             {when === 'planned' && <p className="text-label text-muted-foreground">פעילות מתוכננת נכנסת ליומן</p>}
           </fieldset>
+
+          {/* Once, or on fixed weekdays for some weeks */}
+          {when === 'planned' && !existing && (
+            <fieldset className="space-y-2">
+              <legend className="text-label font-semibold">חוזר</legend>
+              <div role="radiogroup" aria-label="חוזר" className="flex flex-wrap gap-2">
+                {([
+                  { v: false, label: 'פעם אחת' },
+                  { v: true, label: 'קבוע' },
+                ] as const).map((o) => (
+                  <button
+                    key={o.label}
+                    type="button"
+                    role="radio"
+                    aria-checked={repeat === o.v}
+                    onClick={() => {
+                      setRepeat(o.v);
+                      // Start from the chosen day's weekday.
+                      if (o.v && repeatDays.length === 0) setRepeatDays([new Date(`${date || today}T12:00`).getDay()]);
+                    }}
+                    className={chip(repeat === o.v)}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+              {repeat && (
+                <>
+                  <p className="text-label text-muted-foreground">באילו ימים</p>
+                  <div className="flex flex-wrap gap-2">
+                    {['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳'].map((d, i) => {
+                      const on = repeatDays.includes(i);
+                      return (
+                        <button
+                          key={d}
+                          type="button"
+                          role="checkbox"
+                          aria-checked={on}
+                          aria-label={['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'][i]}
+                          onClick={() => setRepeatDays((list) => (on ? list.filter((x) => x !== i) : [...list, i]))}
+                          className={cn(chip(on), 'h-11 w-11 min-w-0 px-0')}
+                        >
+                          {d}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-label text-muted-foreground">למשך</p>
+                  <div className="flex flex-wrap gap-2">
+                    {([4, 8, 12, null] as const).map((w) => (
+                      <button key={w ?? 'open'} type="button" onClick={() => setRepeatWeeks(w)} className={chip(repeatWeeks === w)}>
+                        {w ? `${w} שבועות` : 'בלי סוף'}
+                      </button>
+                    ))}
+                  </div>
+                  {repeatDays.length === 0 && <p className="text-label text-muted-foreground">בחרו לפחות יום אחד</p>}
+                </>
+              )}
+            </fieldset>
+          )}
 
           {/* Duration */}
           <fieldset className="space-y-2">

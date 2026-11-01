@@ -116,8 +116,17 @@ export function useActivities(userId: string | undefined) {
     return true;
   };
 
-  /** A future activity goes into the calendar as an event. */
-  const plan = async (kind: ActivityKind, title: string, startsAt: Date, minutes: number | null) => {
+  /**
+   * A future activity goes into the calendar as an event — once, or on fixed
+   * weekdays (0 = Sunday) from its first day, until a day or with no end.
+   */
+  const plan = async (
+    kind: ActivityKind,
+    title: string,
+    startsAt: Date,
+    minutes: number | null,
+    repeat?: { days: number[]; until: string | null } | null,
+  ) => {
     const type = kind === 'walk' || kind === 'hike' ? 'walk' : kind === 'other' ? 'other' : 'workout';
     const { error } = await db.from('calendar_events').insert({
       user_id: userId,
@@ -125,6 +134,9 @@ export function useActivities(userId: string | undefined) {
       title,
       starts_at: startsAt.toISOString(),
       ends_at: minutes ? new Date(startsAt.getTime() + minutes * 60_000).toISOString() : null,
+      ...(repeat && repeat.days.length > 0
+        ? { repeat_rule: 'weekly', repeat_days: [...repeat.days].sort(), repeat_until: repeat.until }
+        : {}),
     });
     return !error;
   };
