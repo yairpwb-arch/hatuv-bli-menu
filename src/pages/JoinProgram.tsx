@@ -30,7 +30,7 @@ export default function JoinProgram() {
           <div className="relative">
             <div className="absolute inset-0 rounded-full bg-primary/20 blur-2xl scale-125" />
             <img
-              src="/logo.jpg"
+              src="/logo.png"
               alt="חטוב בלי תפריט"
               className="relative w-28 h-28 rounded-full object-cover shadow-glow ring-4 ring-primary/30"
             />

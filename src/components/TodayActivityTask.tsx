@@ -16,9 +16,9 @@ interface ScheduledActivity {
   day_of_week: number;
 }
 
-const ACTIVITY_LABELS: Record<string, { action: string; emoji: string }> = {
-  walk: { action: 'צא להליכה היומית שלך!', emoji: '🚶' },
-  workout: { action: 'הגיע הזמן לאימון!', emoji: '💪' },
+const ACTIVITY_LABELS: Record<string, { action: string }> = {
+  walk: { action: 'צא להליכה היומית שלך!' },
+  workout: { action: 'הגיע הזמן לאימון!' },
 };
 
 export function TodayActivityTask({ userId, currentWeek }: TodayActivityTaskProps) {
@@ -91,7 +91,7 @@ export function TodayActivityTask({ userId, currentWeek }: TodayActivityTaskProp
       setIsCompleted(true);
       setShowConfetti(true);
       setTimeout(() => setShowConfetti(false), 600);
-      toast({ title: 'כל הכבוד! 🎉', description: 'סימנת את הפעילות כהושלמה' });
+      toast({ title: 'כל הכבוד!', description: 'סימנת את הפעילות כהושלמה' });
     }
   };
 
@@ -146,11 +146,13 @@ export function TodayActivityTask({ userId, currentWeek }: TodayActivityTaskProp
               'text-sm',
               isCompleted ? 'text-success' : 'text-muted-foreground'
             )}>
-              {isCompleted ? `ביצעת ${todayActivity.activity_type === 'walk' ? 'הליכה' : 'אימון'} ✓` : activityInfo.action}
+              {isCompleted ? `ביצעת ${todayActivity.activity_type === 'walk' ? 'הליכה' : 'אימון'}` : activityInfo.action}
             </p>
           </div>
           {isCompleted && (
-            <span className="text-2xl">{activityInfo.emoji}</span>
+            todayActivity.activity_type === 'walk'
+              ? <Footprints className="h-6 w-6 text-success" strokeWidth={2} aria-hidden />
+              : <Dumbbell className="h-6 w-6 text-success" strokeWidth={2} aria-hidden />
           )}
         </div>
       </CardContent>

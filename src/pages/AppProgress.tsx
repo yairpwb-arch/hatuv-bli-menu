@@ -1,170 +1,175 @@
-import { useEffect, useState, useCallback } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import {
-  Scale, TrendingDown, ArrowDown, ArrowUp, Plus, Calendar as CalendarIcon,
-  Footprints, Dumbbell, ExternalLink, BookOpen, AlertCircle, BarChart2, Trash2, Loader2
-} from 'lucide-react';
-import { format, subDays } from 'date-fns';
-import { he } from 'date-fns/locale';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
-import { cn } from '@/lib/utils';
+import { Flame, CalendarCheck, BookOpen, Dumbbell, Trash2, Loader2 } from 'lucide-react';
+import { format, startOfMonth } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { Capacitor } from '@capacitor/core';
 import { useStepLogs } from '@/hooks/useStepLogs';
 import { useStepCounter } from '@/hooks/useStepCounter';
-
-interface WeightEntry {
-  id: string;
-  recorded_at: string;
-  weight: number;
-}
+import { useStreak } from '@/hooks/useStreak';
+import { successHaptic } from '@/lib/native';
+import { DEFAULT_STEP_GOAL } from '@/lib/stepGoal';
+import { Pill, StatTile } from '@/components/ds';
+import { WeightHeroCard } from '@/components/progress/WeightHeroCard';
+import { WeightTrendCard } from '@/components/progress/WeightTrendCard';
+import { StepsCard } from '@/components/progress/StepsCard';
+import { BeforeNowCard, ProgressPhoto } from '@/components/progress/BeforeNowCard';
+import { withSignedUrls } from '@/lib/bodyPhotos';
+import { guideBody } from '@/lib/guideBlocks';
+import {
+  WeightEntry, formatKg, formatNumber, parseDay, sortWeights, weightOnOrBefore,
+} from '@/components/progress/format';
 
 interface ProfileData {
   start_date: string | null;
-  current_weight: number | null;
   initial_weight: number | null;
-  height: number | null;
+  target_weight: number | null;
 }
 
-
-const CIRCLE_RADIUS = 40;
-const CIRCLE_CIRCUMFERENCE = 2 * Math.PI * CIRCLE_RADIUS; // ~251.3
+function openExternalLink(raw: string) {
+  const trimmed = raw.trim();
+  // Bare email → mailto:, otherwise assume it needs https:// (and leave
+  // anything that already has a scheme, e.g. mailto:/tel:, as-is).
+  const url = /^[a-z][a-z0-9+.-]*:/i.test(trimmed)
+    ? trimmed
+    : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)
+    ? `mailto:${trimmed}`
+    : `https://${trimmed}`;
+  window.open(url, Capacitor.isNativePlatform() ? '_system' : '_blank');
+}
 
 export default function AppProgress() {
   const { user, currentDay, currentWeek } = useAuth();
   const navigate = useNavigate();
-  const [weightHistory, setWeightHistory] = useState<WeightEntry[]>([]);
-  const [profileData, setProfileData] = useState<ProfileData | null>(null);
+  const { currentStreak, perfectDaysThisMonth } = useStreak(user?.id, currentWeek);
 
-  const [isLoading, setIsLoading] = useState(true);
+  const [weights, setWeights] = useState<WeightEntry[]>([]);
+  const [profile, setProfile] = useState<ProfileData | null>(null);
+  const [photos, setPhotos] = useState<ProgressPhoto[]>([]);
+  const [lessons, setLessons] = useState({ done: 0, total: 0 });
+  const [workoutsThisMonth, setWorkoutsThisMonth] = useState(0);
+  const [fromStartAverage, setFromStartAverage] = useState<number | null>(null);
   const [weighingGuideLink, setWeighingGuideLink] = useState('');
+  const [weighingGuideId, setWeighingGuideId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Weight modal state
   const [isWeightModalOpen, setIsWeightModalOpen] = useState(false);
+  // The Friday weigh-in reminder opens /app/progress?weigh=1 straight into adding a weight.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    if (searchParams.get('weigh') !== '1') return;
+    setIsWeightModalOpen(true);
+    setSearchParams({}, { replace: true });
+  }, [searchParams, setSearchParams]);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [newWeight, setNewWeight] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingWeightId, setDeletingWeightId] = useState<string | null>(null);
 
-  // Steps state — DB logs for history, live counter for today's display
-  const { logs: stepLogs, todaySteps, weeklyAverage, isLoading: stepsLoading } = useStepLogs();
+  // Steps — DB logs for history, live counter for today on device
+  const { logs: stepLogs, todaySteps, weeklyAverage } = useStepLogs();
   const { stepData } = useStepCounter(user?.id);
   const liveSteps = Capacitor.isNativePlatform() ? stepData.steps : todaySteps;
 
-  // Step averages (monthly + fromStart fetched separately; weekly comes from useStepLogs)
-  const [stepAverages, setStepAverages] = useState<{
-    monthly: number | null;
-    fromStart: number | null;
-  }>({ monthly: null, fromStart: null });
-
-  const stepGoal = weeklyAverage ?? 10_000;
-
-  const today = new Date();
-  const todayDayOfWeek = today.getDay();
-  const isFriday = todayDayOfWeek === 5;
-  const dateString = format(today, 'yyyy-MM-dd');
-
-  // Build last-7-days scaffold for bar chart (fills missing days with 0)
-  const last7Days = Array.from({ length: 7 }, (_, i) => {
-    const d = subDays(today, 6 - i);
-    const dateKey = format(d, 'yyyy-MM-dd');
-    const label = format(d, 'd/M');
-    const found = stepLogs.find((log) => log.date === dateKey);
-    return { date: label, steps: found?.steps ?? 0 };
-  });
-
-  const stepProgress = Math.min((liveSteps / stepGoal) * CIRCLE_CIRCUMFERENCE, CIRCLE_CIRCUMFERENCE);
-  const strokeDashoffset = CIRCLE_CIRCUMFERENCE - stepProgress;
-
-  const fetchStepAverages = useCallback(async () => {
+  const fetchWeights = useCallback(async () => {
     if (!user) return;
-    const now = new Date();
-    const thirtyDaysAgo = format(subDays(now, 29), 'yyyy-MM-dd');
-
-    const monthlyRes = await (supabase as any)
-      .from('steps_log').select('steps').eq('user_id', user.id)
-      .gte('date', thirtyDaysAgo).gt('steps', 0);
-
-    const avg = (rows: { steps: number }[] | null) => {
-      if (!rows || rows.length === 0) return null;
-      return Math.round(rows.reduce((s: number, r: { steps: number }) => s + r.steps, 0) / rows.length);
-    };
-
-    setStepAverages(prev => ({ ...prev, monthly: avg(monthlyRes.data) }));
+    const { data } = await supabase
+      .from('weight_log')
+      .select('id, recorded_at, weight, created_at')
+      .eq('user_id', user.id);
+    setWeights(sortWeights(data || []));
   }, [user]);
 
-  // Fetch from-start average once profileData is known
+  const fetchPhotos = useCallback(async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from('transformation_photos')
+      .select('id, photo_url, photo_type, taken_at')
+      .eq('user_id', user.id)
+      .order('taken_at', { ascending: true })
+      .order('created_at', { ascending: true });
+    // Private body photos are shown through short-lived signed links.
+    setPhotos(await withSignedUrls((data as ProgressPhoto[]) || []));
+  }, [user]);
+
   useEffect(() => {
-    if (!user || !profileData?.start_date) return;
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      setIsLoading(true);
+      const monthStart = startOfMonth(new Date()).toISOString();
+      const [profileRes, settingsRes, contentRes, progressRes, workoutsRes] = await Promise.all([
+        supabase
+          .from('profiles')
+          .select('start_date, initial_weight, target_weight')
+          .eq('id', user.id)
+          .single(),
+        supabase.from('app_settings').select('key, value').eq('key', 'weighing_guide_link'),
+        supabase.from('program_content').select('*').filter('archived_at', 'is', null),
+        supabase.from('content_progress').select('content_id').eq('user_id', user.id),
+        (supabase as any)
+          .from('workout_session_logs')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .gte('completed_at', monthStart),
+        fetchWeights(),
+        fetchPhotos(),
+      ]);
+      if (cancelled) return;
+
+      if (profileRes.data) setProfile(profileRes.data);
+      setWeighingGuideLink(settingsRes.data?.[0]?.value || '');
+      // The weighing guide in the app, when it's written there.
+      const inApp = ((contentRes.data || []) as { id: string; title: string; body?: unknown }[]).find((c) => c.title.includes('להישקל') && guideBody(c.body));
+      setWeighingGuideId(inApp?.id ?? null);
+      const contentIds = new Set((contentRes.data || []).map((c) => c.id));
+      const done = new Set(
+        (progressRes.data || []).map((p) => p.content_id).filter((id) => contentIds.has(id)),
+      ).size;
+      setLessons({ done, total: contentIds.size });
+      setWorkoutsThisMonth(workoutsRes.count ?? 0);
+      setIsLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, currentDay, fetchWeights, fetchPhotos]);
+
+  // Average daily steps since the program started (days with steps only)
+  useEffect(() => {
+    if (!user || !profile?.start_date) return;
     (supabase as any)
       .from('steps_log')
       .select('steps')
       .eq('user_id', user.id)
-      .gte('date', profileData.start_date)
+      .gte('date', profile.start_date)
+      .gt('steps', 0)
       .then(({ data }: { data: { steps: number }[] | null }) => {
         if (!data || data.length === 0) return;
-        const avg = Math.round(data.reduce((s, r) => s + r.steps, 0) / data.length);
-        setStepAverages(prev => ({ ...prev, fromStart: avg }));
+        setFromStartAverage(Math.round(data.reduce((s, r) => s + r.steps, 0) / data.length));
       });
-  }, [user, profileData?.start_date]);
+  }, [user, profile?.start_date]);
 
-  useEffect(() => {
-    fetchStepAverages();
-  }, [fetchStepAverages]);
+  // "Current" weight is always the newest weigh-in by date — never the
+  // questionnaire value or a possibly stale profiles.current_weight.
+  const latestWeight = weights.length > 0 ? weights[weights.length - 1].weight : null;
+  const startWeight = profile?.initial_weight ?? weights[0]?.weight ?? null;
 
-  const fetchData = async () => {
-    if (!user) return;
-    setIsLoading(true);
-
-    const [profileRes, weightRes, settingsRes] = await Promise.all([
-      supabase
-        .from('profiles')
-        .select('start_date, current_weight, initial_weight, height')
-        .eq('id', user.id)
-        .single(),
-      supabase
-        .from('weight_log')
-        .select('id, recorded_at, weight')
-        .eq('user_id', user.id)
-        .order('recorded_at', { ascending: true }),
-      (supabase as any)
-        .from('app_settings')
-        .select('key, value')
-        .in('key', ['weighing_guide_link']),
-    ]);
-
-    if (profileRes.data) setProfileData(profileRes.data);
-    setWeightHistory(weightRes.data || []);
-    const link = (settingsRes.data || []).find((s: any) => s.key === 'weighing_guide_link')?.value || '';
-    setWeighingGuideLink(link);
-
-    setIsLoading(false);
-  };
-
-  useEffect(() => {
-    fetchData();
-  }, [user, currentDay]);
-
-  const weightDifference = profileData?.initial_weight && profileData?.current_weight
-    ? (profileData.current_weight - profileData.initial_weight).toFixed(1)
-    : null;
-
-  const chartData = weightHistory.map((entry) => ({
-    date: format(new Date(entry.recorded_at), 'dd/MM', { locale: he }),
-    weight: entry.weight,
-  }));
+  const weightAt = useMemo(
+    () => (day: string) => weightOnOrBefore(weights, day) ?? startWeight,
+    [weights, startWeight],
+  );
 
   const handleAddWeight = async () => {
     if (!user || !newWeight) return;
-
     const weightValue = parseFloat(newWeight);
     if (isNaN(weightValue) || weightValue <= 0) {
       toast.error('נא להזין משקל תקין');
@@ -172,23 +177,20 @@ export default function AppProgress() {
     }
 
     setIsSubmitting(true);
-
     try {
-      const { error: logError } = await supabase
-        .from('weight_log')
-        .insert({
-          user_id: user.id,
-          weight: weightValue,
-          recorded_at: dateString,
-        });
-
-      if (logError) throw logError;
+      const { error } = await supabase.from('weight_log').insert({
+        user_id: user.id,
+        weight: weightValue,
+        recorded_at: format(new Date(), 'yyyy-MM-dd'),
+      });
+      if (error) throw error;
 
       // profiles.current_weight is kept in sync by the weight_log trigger
+      successHaptic();
       toast.success('השקילה נוספה בהצלחה');
       setNewWeight('');
       setIsWeightModalOpen(false);
-      fetchData();
+      fetchWeights();
     } catch (error) {
       console.error('Error adding weight:', error);
       toast.error('שגיאה בהוספת השקילה');
@@ -197,12 +199,7 @@ export default function AppProgress() {
     }
   };
 
-  const handleWeightButtonClick = () => {
-    setIsWeightModalOpen(true);
-  };
-
   const handleDeleteWeight = async (entryId: string) => {
-    if (!user) return;
     setDeletingWeightId(entryId);
     // .select() so a silent RLS no-op (0 rows affected, no error) is
     // distinguishable from an actual delete.
@@ -210,16 +207,8 @@ export default function AppProgress() {
     if (error || !data || data.length === 0) {
       toast.error('שגיאה במחיקת השקילה');
     } else {
-      setWeightHistory(prev => prev.filter(w => w.id !== entryId));
       // profiles.current_weight is recomputed by the weight_log trigger
-      const { data: refreshed } = await supabase
-        .from('profiles')
-        .select('current_weight')
-        .eq('id', user.id)
-        .single();
-      if (refreshed) {
-        setProfileData(p => p ? { ...p, current_weight: refreshed.current_weight } : p);
-      }
+      setWeights((prev) => prev.filter((w) => w.id !== entryId));
       toast.success('השקילה נמחקה');
     }
     setDeletingWeightId(null);
@@ -227,352 +216,93 @@ export default function AppProgress() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen pb-20 pt-4 px-4 space-y-4">
-        <Skeleton className="h-8 w-48" />
-        <div className="grid grid-cols-2 gap-4">
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
+      <div className="min-h-screen pb-24 pt-4 px-4 space-y-card-gap">
+        <Skeleton className="h-12 w-56 rounded-2xl" />
+        <Skeleton className="h-72 rounded-3xl" />
+        <div className="grid grid-cols-3 gap-3">
+          <Skeleton className="h-24 rounded-3xl" />
+          <Skeleton className="h-24 rounded-3xl" />
+          <Skeleton className="h-24 rounded-3xl" />
         </div>
-        <Skeleton className="h-64" />
+        <Skeleton className="h-80 rounded-3xl" />
       </div>
     );
   }
 
+  const tiles = [
+    { icon: CalendarCheck, value: formatNumber(perfectDaysThisMonth), label: 'ימים מושלמים', sub: 'החודש' },
+    { icon: BookOpen, value: `${lessons.done}/${lessons.total}`, label: 'שיעורים', sub: 'הושלמו' },
+    { icon: Dumbbell, value: formatNumber(workoutsThisMonth), label: 'אימונים', sub: 'החודש' },
+  ];
+
   return (
-    <div className="min-h-screen pb-20 pt-4 px-4 space-y-5">
+    <div className="min-h-screen pb-24 pt-4 px-4 space-y-card-gap">
       {/* Header */}
-      <div className="animate-fade-in">
-        <h2 className="text-2xl font-bold text-foreground">ההתקדמות שלי</h2>
-        <p className="text-muted-foreground">מעקב אחר המסע שלך</p>
+      <header className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-screen-title">ההתקדמות שלי</h2>
+          <p className="text-body text-muted-foreground">
+            יום {currentDay} במסע · שלב {currentWeek}
+          </p>
+        </div>
+        <Pill tone="brand" icon={Flame} className="mt-1" aria-label={`רצף של ${currentStreak} ימים`}>
+          {currentStreak === 1 ? 'יום אחד' : `${formatNumber(currentStreak)} ימים`}
+        </Pill>
+      </header>
+
+      <WeightHeroCard
+        latestWeight={latestWeight}
+        startWeight={startWeight}
+        targetWeight={profile?.target_weight ?? null}
+        onWeighIn={() => setIsWeightModalOpen(true)}
+        onOpenGuide={
+          weighingGuideId ? () => navigate(`/app/guides/${weighingGuideId}`) : weighingGuideLink ? () => openExternalLink(weighingGuideLink) : null
+        }
+      />
+
+      <div className="grid grid-cols-3 gap-3">
+        {tiles.map(({ icon, value, label, sub }) => (
+          <StatTile key={label} icon={icon} value={value} label={label} caption={sub} />
+        ))}
       </div>
 
-      {/* Steps Section */}
-      <Card className="shadow-md">
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Footprints className="h-5 w-5 text-primary" />
-            ספירת צעדים
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Circular progress + number display */}
-          <div className="flex flex-col items-center gap-2">
-            <div className="relative w-28 h-28">
-              <svg
-                className="w-full h-full -rotate-90"
-                viewBox="0 0 100 100"
-                aria-label={`${todaySteps} מתוך ${stepGoal.toLocaleString()} צעדים`}
-              >
-                {/* Track circle */}
-                <circle
-                  cx="50"
-                  cy="50"
-                  r={CIRCLE_RADIUS}
-                  fill="none"
-                  stroke="hsl(var(--muted))"
-                  strokeWidth="10"
-                />
-                {/* Progress circle */}
-                <circle
-                  cx="50"
-                  cy="50"
-                  r={CIRCLE_RADIUS}
-                  fill="none"
-                  stroke="hsl(var(--primary))"
-                  strokeWidth="10"
-                  strokeLinecap="round"
-                  strokeDasharray={CIRCLE_CIRCUMFERENCE}
-                  strokeDashoffset={strokeDashoffset}
-                  style={{ transition: 'stroke-dashoffset 0.5s ease' }}
-                />
-              </svg>
-              {/* Center text */}
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-lg font-bold leading-none">
-                  {Math.round((liveSteps / stepGoal) * 100)}%
-                </span>
-              </div>
-            </div>
-            <p className="text-sm text-muted-foreground" dir="rtl">
-              <span className="font-bold text-foreground">{liveSteps.toLocaleString()}</span>
-              {' / '}
-              {stepGoal.toLocaleString()} צעדים
-            </p>
-          </div>
+      <WeightTrendCard
+        weights={weights}
+        targetWeight={profile?.target_weight ?? null}
+        onOpenAll={() => setIsHistoryOpen(true)}
+      />
 
-          {/* Bar chart – last 7 days */}
-          <div>
-            <p className="text-xs text-muted-foreground mb-2 text-right">7 הימים האחרונים</p>
-            {stepsLoading ? (
-              <Skeleton className="h-28 w-full" />
-            ) : (
-              <div className="h-28">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={last7Days} margin={{ top: 4, right: 4, left: 4, bottom: 4 }}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
-                    <XAxis
-                      dataKey="date"
-                      tick={{ fontSize: 10 }}
-                      className="fill-muted-foreground"
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis hide />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: 'hsl(var(--card))',
-                        border: '1px solid hsl(var(--border))',
-                        borderRadius: '8px',
-                        direction: 'rtl',
-                        fontSize: 12,
-                      }}
-                      formatter={(value: number) => [value.toLocaleString(), 'צעדים']}
-                      cursor={{ fill: 'hsl(var(--muted))' }}
-                    />
-                    <Bar
-                      dataKey="steps"
-                      fill="hsl(var(--primary))"
-                      radius={[4, 4, 0, 0]}
-                      maxBarSize={32}
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </div>
+      <StepsCard
+        todaySteps={liveSteps}
+        goal={DEFAULT_STEP_GOAL}
+        logs={stepLogs}
+        weeklyAverage={weeklyAverage}
+        fromStartAverage={fromStartAverage}
+      />
 
-          {/* Step Averages */}
-          <div>
-            <p className="text-xs text-muted-foreground mb-2 text-right flex items-center justify-end gap-1">
-              <BarChart2 className="h-3 w-3" />
-              ממוצעי צעדים
-            </p>
-            <div className="grid grid-cols-3 gap-2">
-              {[
-                { label: 'שבוע', value: weeklyAverage },
-                { label: '30 יום', value: stepAverages.monthly },
-                { label: 'מתחילת תהליך', value: stepAverages.fromStart },
-              ].map(({ label, value }) => (
-                <div
-                  key={label}
-                  className="rounded-xl bg-muted/40 border border-border/40 p-2 text-center"
-                >
-                  <p className="text-[10px] text-muted-foreground mb-1">{label}</p>
-                  <p className="text-sm font-bold text-primary leading-none">
-                    {value != null ? value.toLocaleString() : '—'}
-                  </p>
-                  <p className="text-[9px] text-muted-foreground mt-0.5">צעד/יום</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      {user && (
+        <BeforeNowCard
+          userId={user.id}
+          currentDay={currentDay}
+          photos={photos}
+          weightAt={weightAt}
+          onUploaded={fetchPhotos}
+          onOpenAll={() => navigate('/app/profile')}
+        />
+      )}
 
-      {/* Weight Tracking Section */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-bold flex items-center gap-2">
-            <Scale className="h-5 w-5 text-primary" />
-            מעקב משקל
-          </h3>
-          <Button
-            onClick={handleWeightButtonClick}
-            className="gap-2 gradient-primary shadow-glow"
-          >
-            <Plus className="h-4 w-4" />
-            הוסף שקילה
-          </Button>
-        </div>
-
-        <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 p-3 rounded-lg">
-          <AlertCircle className="h-4 w-4" />
-          <span>צפ/י במדריך שקילה לפני הוספת המשקל</span>
-        </div>
-
-        {/* Weight Stats */}
-        <div className="grid grid-cols-3 gap-3">
-          <Card className="glass-card">
-            <CardContent className="pt-4 text-center">
-              <p className="text-xs text-muted-foreground mb-1">משקל נוכחי</p>
-              <p className="text-xl font-bold text-primary">
-                {profileData?.current_weight || '-'}
-              </p>
-              <p className="text-xs text-muted-foreground">ק"ג</p>
-            </CardContent>
-          </Card>
-
-          <Card className="glass-card">
-            <CardContent className="pt-4 text-center">
-              <p className="text-xs text-muted-foreground mb-1">משקל התחלתי</p>
-              <p className="text-xl font-bold">
-                {profileData?.initial_weight || '-'}
-              </p>
-              <p className="text-xs text-muted-foreground">ק"ג</p>
-            </CardContent>
-          </Card>
-
-          <Card className={cn(
-            'glass-card',
-            weightDifference && Number(weightDifference) < 0 && 'bg-success/5 border-success/20'
-          )}>
-            <CardContent className="pt-4 text-center">
-              <p className="text-xs text-muted-foreground mb-1">סה"כ שינוי</p>
-              <div className="flex items-center justify-center gap-1">
-                {weightDifference && Number(weightDifference) < 0 && (
-                  <ArrowDown className="h-4 w-4 text-success" />
-                )}
-                {weightDifference && Number(weightDifference) > 0 && (
-                  <ArrowUp className="h-4 w-4 text-destructive" />
-                )}
-                <p className={cn(
-                  'text-xl font-bold',
-                  weightDifference && Number(weightDifference) < 0 ? 'text-success' :
-                  weightDifference && Number(weightDifference) > 0 ? 'text-destructive' : ''
-                )}>
-                  {weightDifference || '-'}
-                </p>
-              </div>
-              <p className="text-xs text-muted-foreground">ק"ג</p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Weighing Guide Link */}
-        {weighingGuideLink ? (
-          <Button
-            variant="outline"
-            className="w-full border-primary/30 text-primary hover:bg-primary/5"
-            onClick={() => {
-              const trimmed = weighingGuideLink.trim();
-              // Bare email → mailto:, otherwise assume it needs https:// (and
-              // leave anything that already has a scheme, e.g. mailto:/tel:, as-is).
-              const url = /^[a-z][a-z0-9+.-]*:/i.test(trimmed)
-                ? trimmed
-                : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)
-                ? `mailto:${trimmed}`
-                : `https://${trimmed}`;
-              if (Capacitor.isNativePlatform()) {
-                window.open(url, '_system');
-              } else {
-                window.open(url, '_blank');
-              }
-            }}
-          >
-            <BookOpen className="h-4 w-4 ml-2" />
-            מדריך שקילה נכונה
-            <ExternalLink className="h-4 w-4 mr-auto" />
-          </Button>
-        ) : null}
-
-        {/* Weight Progress Chart */}
-        <Card className="glass-card">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2">
-              <TrendingDown className="h-4 w-4 text-primary" />
-              גרף התקדמות
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {chartData.length > 1 ? (
-              <div className="h-52">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                    <XAxis
-                      dataKey="date"
-                      tick={{ fontSize: 11 }}
-                      className="fill-muted-foreground"
-                    />
-                    <YAxis
-                      domain={['dataMin - 2', 'dataMax + 2']}
-                      tick={{ fontSize: 11 }}
-                      className="fill-muted-foreground"
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: 'hsl(var(--card))',
-                        border: '1px solid hsl(var(--border))',
-                        borderRadius: '8px',
-                        direction: 'rtl',
-                      }}
-                      formatter={(value: number) => [`${value} ק"ג`, 'משקל']}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="weight"
-                      stroke="hsl(var(--primary))"
-                      strokeWidth={3}
-                      dot={{ fill: 'hsl(var(--primary))', strokeWidth: 2, r: 4 }}
-                      activeDot={{ r: 6, fill: 'hsl(var(--primary))' }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            ) : (
-              <div className="h-52 flex items-center justify-center text-muted-foreground text-center">
-                <div>
-                  <Scale className="h-12 w-12 mx-auto mb-2 opacity-30" />
-                  <p>הגרף יוצג לאחר שתי שקילות לפחות</p>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Weigh-in history — manage / delete individual entries */}
-        {weightHistory.length > 0 && (
-          <Card className="glass-card">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Scale className="h-4 w-4 text-primary" />
-                כל השקילות
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="max-h-56 overflow-y-auto space-y-1.5">
-                {[...weightHistory].reverse().map((w) => (
-                  <div
-                    key={w.id}
-                    className="flex items-center justify-between rounded-lg bg-muted/40 px-3 py-2 text-sm"
-                  >
-                    <span className="text-muted-foreground">
-                      {format(new Date(w.recorded_at), 'dd/MM/yyyy', { locale: he })}
-                    </span>
-                    <div className="flex items-center gap-3">
-                      <span className="font-medium">{w.weight} ק"ג</span>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteWeight(w.id)}
-                        disabled={deletingWeightId === w.id}
-                        className="text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
-                      >
-                        {deletingWeightId === w.id ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Trash2 className="h-4 w-4" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-      </div>
-
-      {/* Weight Entry Modal */}
+      {/* Weight entry */}
       <Dialog open={isWeightModalOpen} onOpenChange={setIsWeightModalOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>הוספת שקילה - יום שישי</DialogTitle>
+            <DialogTitle>שקילה של השבוע</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-4">
             <div className="space-y-2">
               <Label>משקל (ק"ג)</Label>
               <Input
                 type="number"
+                inputMode="decimal"
                 step="0.1"
                 placeholder="לדוגמה: 75.5"
                 value={newWeight}
@@ -580,13 +310,46 @@ export default function AppProgress() {
                 className="text-lg h-12"
               />
             </div>
-            <Button
-              onClick={handleAddWeight}
-              className="w-full gradient-primary"
-              disabled={isSubmitting || !newWeight}
-            >
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Button onClick={handleAddWeight} disabled={isSubmitting || !newWeight}>
               {isSubmitting ? 'שומר...' : 'שמור שקילה'}
             </Button>
+            <Button variant="outline" onClick={() => setIsWeightModalOpen(false)}>ביטול</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* All weigh-ins, with delete */}
+      <Dialog open={isHistoryOpen} onOpenChange={setIsHistoryOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>כל השקילות ({weights.length})</DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[60vh] overflow-y-auto space-y-1.5 pt-2">
+            {[...weights].reverse().map((w) => (
+              <div key={w.id} className="flex items-center justify-between rounded-xl bg-muted/40 pr-3 text-sm">
+                <span className="text-muted-foreground tabular-nums">
+                  {format(parseDay(w.recorded_at), 'dd/MM/yyyy')}
+                </span>
+                <div className="flex items-center gap-1">
+                  <span className="font-semibold tabular-nums">{formatKg(w.weight)} ק"ג</span>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteWeight(w.id)}
+                    disabled={deletingWeightId === w.id}
+                    aria-label={`מחיקת השקילה מ-${format(parseDay(w.recorded_at), 'd/M')}`}
+                    className="h-11 w-11 inline-flex items-center justify-center text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
+                  >
+                    {deletingWeightId === w.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" strokeWidth={2} />
+                    )}
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         </DialogContent>
       </Dialog>

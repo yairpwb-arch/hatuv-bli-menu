@@ -1,127 +1,354 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Progress } from '@/components/ui/progress';
-import { Badge } from '@/components/ui/badge';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
-  X, CheckCircle2, Timer, Dumbbell, ChevronLeft, ChevronRight,
-  Trophy, SkipForward, Pause, Play as PlayIcon, Minimize2, Maximize2,
+  Check, CheckCircle2, ChevronLeft, ChevronRight, Dumbbell, Maximize2, Minimize2, Minus, Pause,
+  Play as PlayIcon, Plus, Timer, TrendingUp, Trophy, X,
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { BottomSheet, Card, Pill, PrimaryButton, SecondaryButton, SheetActions } from '@/components/ds';
+import { useAuth } from '@/hooks/useAuth';
+import { saveSet, useExerciseHistory, type SetRecord } from '@/hooks/useExerciseHistory';
+import { equipmentTag, muscleTags } from '@/lib/exerciseLabels';
+import { restLabel } from '@/lib/hebrewTime';
+import { selectionHaptic, successHaptic, tapHaptic } from '@/lib/native';
+import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import type { WorkoutPlanDay, WorkoutPlanExercise } from '@/hooks/useWorkoutPlan';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-export interface ExerciseLog {
-  exerciseId: string;
-  sets: { reps: string; weightKg: string }[];
+export type Difficulty = 'easy' | 'medium' | 'hard';
+
+export interface WorkoutResult {
+  clientSessionId: string;
+  durationMinutes: number;
+  difficulty: Difficulty | null;
+  logs: { exerciseId: string; sets: { setNumber: number; reps: number; weightKg: number }[] }[];
+  setsDone: number;
+  totalVolumeKg: number;
 }
 
 interface Props {
   planDay: WorkoutPlanDay;
   exercises: WorkoutPlanExercise[];
   onMinimize: () => void;
-  onFinish: (durationMinutes: number, logs: ExerciseLog[]) => void;
+  onFinish: (result: WorkoutResult) => Promise<void>;
+  /** Leave without saving a session (nothing was done). */
+  onDiscard: () => void;
+}
+
+type SetStatus = 'pending' | 'done' | 'skipped';
+interface SetEntry {
+  weight: string;
+  reps: string;
+  status: SetStatus;
+}
+interface Pointer {
+  ex: number;
+  set: number;
 }
 
 // ── Utilities ────────────────────────────────────────────────────────────────
 
-function formatTime(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+function formatClock(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 }
 
 function isVideoUrl(url: string): boolean {
   return /\.(mp4|webm|mov|avi)$/i.test(url) || url.includes('/videos/');
 }
 
-// ── Rest Timer ────────────────────────────────────────────────────────────────
+function newSessionId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
 
-function RestTimer({
-  seconds, onDone, onSkip, paused,
+const num = (v: string): number | null => {
+  const n = parseFloat(v.replace(',', '.'));
+  return Number.isFinite(n) ? n : null;
+};
+const fmtKg = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+
+function performanceLabel(r: { weightKg: number | null; reps: number | null }): string {
+  if (r.weightKg && r.reps != null) return `${fmtKg(r.weightKg)} ק"ג × ${r.reps}`;
+  if (r.reps != null) return `${r.reps} חזרות`;
+  if (r.weightKg) return `${fmtKg(r.weightKg)} ק"ג`;
+  return '';
+}
+
+function vibrate() {
+  successHaptic();
+  try {
+    navigator.vibrate?.([200, 100, 200]);
+  } catch {
+    /* not supported */
+  }
+}
+
+// ── Stepper field ─────────────────────────────────────────────────────────────
+
+function Stepper({
+  label, value, onChange, step, decimals, placeholder, id,
 }: {
-  seconds: number; onDone: () => void; onSkip: () => void; paused: boolean;
+  label: string; value: string; onChange: (v: string) => void; step: number; decimals: boolean; placeholder: string; id: string;
 }) {
-  const [remaining, setRemaining] = useState(seconds);
-  const pct = ((seconds - remaining) / seconds) * 100;
-
-  useEffect(() => {
-    if (paused || remaining <= 0) {
-      if (remaining <= 0) onDone();
-      return;
-    }
-    const t = setTimeout(() => setRemaining((r) => r - 1), 1000);
-    return () => clearTimeout(t);
-  }, [remaining, onDone, paused]);
-
+  const bump = (dir: 1 | -1) => {
+    tapHaptic();
+    const cur = num(value) ?? 0;
+    const next = Math.max(0, Math.round((cur + dir * step) * 2) / 2);
+    onChange(decimals ? fmtKg(next) : String(Math.round(next)));
+  };
   return (
-    <div className="flex flex-col items-center gap-6 py-6">
-      <div className="relative w-56 h-56">
-        <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
-          <circle cx="50" cy="50" r="44" fill="none" stroke="hsl(var(--border))" strokeWidth="8" />
-          <circle
-            cx="50" cy="50" r="44"
-            fill="none"
-            stroke="hsl(var(--primary))"
-            strokeWidth="8"
-            strokeLinecap="round"
-            strokeDasharray={`${2 * Math.PI * 44}`}
-            strokeDashoffset={`${2 * Math.PI * 44 * (1 - pct / 100)}`}
-            className="transition-all duration-1000"
-          />
-        </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <Timer className="h-7 w-7 text-primary mb-2" />
-          <span className="text-4xl font-bold tabular-nums">{formatTime(remaining)}</span>
-        </div>
+    <div className="space-y-1">
+      <label htmlFor={id} className="block text-center text-label text-muted-foreground">{label}</label>
+      <div className="flex items-center gap-1">
+        <button type="button" onClick={() => bump(-1)} aria-label={`הורדת ${label}`} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-button bg-card text-foreground active:scale-95">
+          <Minus className="h-4 w-4" strokeWidth={2} />
+        </button>
+        <input
+          id={id}
+          type="text"
+          inputMode={decimals ? 'decimal' : 'numeric'}
+          dir="ltr"
+          placeholder={placeholder}
+          value={value}
+          onChange={(e) => onChange(e.target.value.replace(/[^\d.,]/g, ''))}
+          onFocus={(e) => e.target.select()}
+          className="h-11 w-full min-w-0 rounded-button border border-border bg-background text-center text-card-title font-bold tabular-nums placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary"
+        />
+        <button type="button" onClick={() => bump(1)} aria-label={`הוספת ${label}`} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-button bg-card text-foreground active:scale-95">
+          <Plus className="h-4 w-4" strokeWidth={2} />
+        </button>
       </div>
-      <p className="text-muted-foreground font-medium">זמן מנוחה</p>
-      <Button variant="outline" size="sm" onClick={onSkip} className="gap-1.5">
-        <SkipForward className="h-4 w-4" />
-        דלג על המנוחה
-      </Button>
     </div>
   );
 }
 
-// ── Main Component ────────────────────────────────────────────────────────────
+// ── Rest timer ────────────────────────────────────────────────────────────────
 
-export default function WorkoutActiveSession({
-  planDay, exercises, onMinimize, onFinish,
-}: Props) {
+function RestTimer({
+  endsAt, total, paused, onAdd, onDone, nextLabel,
+}: {
+  endsAt: number; total: number; paused: boolean; onAdd: () => void; onDone: (natural: boolean) => void; nextLabel: string | null;
+}) {
+  const [now, setNow] = useState(Date.now());
+  const remaining = Math.max(0, (endsAt - now) / 1000);
+  const doneRef = useRef(false);
+
+  useEffect(() => {
+    if (paused) return;
+    const id = window.setInterval(() => setNow(Date.now()), 250);
+    return () => window.clearInterval(id);
+  }, [paused]);
+
+  useEffect(() => {
+    if (!paused && remaining <= 0 && !doneRef.current) {
+      doneRef.current = true;
+      onDone(true);
+    }
+  }, [remaining, paused, onDone]);
+
+  const R = 44;
+  const C = 2 * Math.PI * R;
+  const ratio = total > 0 ? Math.min(remaining / total, 1) : 0;
+
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-6 px-6 py-6">
+      <p className="text-card-title text-muted-foreground">מנוחה</p>
+      <div className="relative h-64 w-64">
+        <svg className="h-full w-full -rotate-90" viewBox="0 0 100 100" aria-hidden>
+          <circle cx="50" cy="50" r={R} fill="none" stroke="hsl(var(--card-inner))" strokeWidth="7" />
+          <circle
+            cx="50" cy="50" r={R} fill="none" stroke="hsl(var(--primary))" strokeWidth="7" strokeLinecap="round"
+            strokeDasharray={C} strokeDashoffset={C * (1 - ratio)}
+            style={{ transition: 'stroke-dashoffset 0.25s linear' }}
+          />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="text-[3.5rem] font-bold leading-none tabular-nums" role="timer" aria-live="off">{formatClock(Math.ceil(remaining))}</span>
+        </div>
+      </div>
+      {nextLabel && <p className="text-center text-body text-muted-foreground">הבא: {nextLabel}</p>}
+      <div className="grid w-full max-w-xs grid-cols-2 gap-3">
+        <SecondaryButton size="lg" onClick={onAdd}>+15 שניות</SecondaryButton>
+        <PrimaryButton onClick={() => onDone(false)}>דלג</PrimaryButton>
+      </div>
+    </div>
+  );
+}
+
+// ── Summary ───────────────────────────────────────────────────────────────────
+
+const DIFFICULTY: { value: Difficulty; label: string }[] = [
+  { value: 'easy', label: 'קל' },
+  { value: 'medium', label: 'בינוני' },
+  { value: 'hard', label: 'קשה' },
+];
+
+function Summary({
+  durationMinutes, setsDone, totalSets, volume, prs, onSave,
+}: {
+  durationMinutes: number; setsDone: number; totalSets: number; volume: number;
+  prs: { name: string; weight: number }[];
+  onSave: (d: Difficulty | null) => Promise<void>;
+}) {
+  const [difficulty, setDifficulty] = useState<Difficulty | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const stat = (value: string, label: string) => (
+    <div className="rounded-inner bg-card-inner px-2 py-3 text-center">
+      <p className="text-stat tabular-nums">{value}</p>
+      <p className="text-label text-muted-foreground">{label}</p>
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 z-[55] flex flex-col bg-background safe-top" dir="rtl">
+      <div className="flex flex-1 flex-col justify-center overflow-y-auto px-4 py-6">
+        <div className="mx-auto w-full max-w-md space-y-card-gap">
+          <div className="space-y-2 text-center">
+            <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-pill bg-primary-tint">
+              <Trophy className="h-8 w-8 text-primary" strokeWidth={2} />
+            </span>
+            <h2 className="text-screen-title">כל הכבוד!</h2>
+            <p className="text-body text-muted-foreground">סיכום האימון</p>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2">
+            {stat(String(durationMinutes), durationMinutes === 1 ? 'דקה' : 'דקות')}
+            {stat(`${setsDone}/${totalSets}`, 'סטים')}
+            {stat(volume > 0 ? Math.round(volume).toLocaleString('he-IL') : '0', 'נפח (ק"ג)')}
+          </div>
+
+          {prs.length > 0 && (
+            <Card className="space-y-2">
+              <h3 className="flex items-center gap-2 text-card-title">
+                <TrendingUp className="h-5 w-5 text-primary" strokeWidth={2} />
+                {prs.length === 1 ? 'שיא אישי חדש' : 'שיאים אישיים חדשים'}
+              </h3>
+              <ul className="space-y-1">
+                {prs.map((p) => (
+                  <li key={p.name} className="flex items-center justify-between text-body">
+                    <span>{p.name}</span>
+                    <span className="font-bold tabular-nums text-primary-soft">{fmtKg(p.weight)} ק"ג</span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+
+          <Card className="space-y-3">
+            <h3 className="text-card-title">איך היה?</h3>
+            <div role="radiogroup" aria-label="איך היה האימון" className="grid grid-cols-3 gap-3">
+              {DIFFICULTY.map((d) => (
+                <button
+                  key={d.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={difficulty === d.value}
+                  onClick={() => {
+                    selectionHaptic();
+                    setDifficulty(d.value);
+                  }}
+                  className={cn(
+                    'h-12 rounded-button text-body font-semibold transition-colors',
+                    difficulty === d.value ? 'bg-primary text-primary-foreground' : 'bg-card-inner text-muted-foreground',
+                  )}
+                >
+                  {d.label}
+                </button>
+              ))}
+            </div>
+          </Card>
+        </div>
+      </div>
+
+      <div className="shrink-0 px-4 pt-3" style={{ paddingBottom: 'calc(1rem + var(--app-safe-bottom))' }}>
+        <PrimaryButton
+          icon={CheckCircle2}
+          className="mx-auto max-w-md"
+          disabled={saving}
+          onClick={async () => {
+            setSaving(true);
+            await onSave(difficulty);
+            setSaving(false);
+          }}
+        >
+          {saving ? 'שומר...' : 'שמור וסיים'}
+        </PrimaryButton>
+      </div>
+    </div>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
+export default function WorkoutActiveSession({ planDay, exercises, onMinimize, onFinish, onDiscard }: Props) {
+  const { user } = useAuth();
+  const clientSessionId = useRef(newSessionId()).current;
+
   // Elapsed timer using real time diff so it stays accurate after backgrounding
   const startTimeRef = useRef(Date.now());
   const pauseStartRef = useRef<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [paused, setPaused] = useState(false);
   const [videoFullscreen, setVideoFullscreen] = useState(false);
+  const [descOpen, setDescOpen] = useState(false);
+  const [confirmFinish, setConfirmFinish] = useState(false);
+  const [phase, setPhase] = useState<'workout' | 'summary'>('workout');
 
-  // Per-exercise set logs
-  const initLogs = (): ExerciseLog[] =>
-    exercises.map((ex) => ({
-      exerciseId: ex.exercise_id,
-      sets: Array.from({ length: ex.sets }, () => ({ reps: '', weightKg: '' })),
-    }));
+  const [entries, setEntries] = useState<SetEntry[][]>(() =>
+    exercises.map((ex) => Array.from({ length: ex.sets }, () => ({ weight: '', reps: '', status: 'pending' as SetStatus }))),
+  );
+  const [ptr, setPtr] = useState<Pointer>({ ex: 0, set: 0 });
+  const [rest, setRest] = useState<{ endsAt: number; total: number } | null>(null);
 
-  const [logs, setLogs] = useState<ExerciseLog[]>(initLogs);
-  const [exerciseIdx, setExerciseIdx] = useState(0);
-  const [setIdx, setSetIdx] = useState(0);
-  const [resting, setResting] = useState(false);
-  const [finished, setFinished] = useState(false);
+  const exerciseIds = useMemo(() => exercises.map((e) => e.exercise_id), [exercises]);
+  const { history } = useExerciseHistory(user?.id, exerciseIds);
+
+  const previousFor = useCallback(
+    (exIdx: number, setIdx: number): SetRecord | null => {
+      const last = history[exercises[exIdx]?.exercise_id]?.last ?? [];
+      return last.find((s) => s.setNumber === setIdx + 1) ?? null;
+    },
+    [history, exercises],
+  );
+
+  // Pre-fill untouched sets from last time, once history arrives.
+  useEffect(() => {
+    setEntries((prev) =>
+      prev.map((sets, ei) =>
+        sets.map((s, si) => {
+          if (s.status !== 'pending' || s.weight || s.reps) return s;
+          const p = previousFor(ei, si);
+          if (!p) return s;
+          return { ...s, weight: p.weightKg ? fmtKg(p.weightKg) : '', reps: p.reps != null ? String(p.reps) : '' };
+        }),
+      ),
+    );
+  }, [previousFor]);
 
   // ── WakeLock — keeps screen on during workout ──
   useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let wakeLock: any = null;
     const acquire = async () => {
       try {
         if ('wakeLock' in navigator) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           wakeLock = await (navigator as any).wakeLock.request('screen');
         }
-      } catch (_) {}
+      } catch {
+        /* not available */
+      }
     };
     acquire();
-    const onVisible = () => { if (document.visibilityState === 'visible') acquire(); };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') acquire();
+    };
     document.addEventListener('visibilitychange', onVisible);
     return () => {
       wakeLock?.release();
@@ -132,107 +359,170 @@ export default function WorkoutActiveSession({
   // ── Elapsed timer — stops when paused ──
   useEffect(() => {
     if (paused) return;
-    const id = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000));
-    }, 1000);
+    const id = setInterval(() => setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000)), 1000);
     return () => clearInterval(id);
   }, [paused]);
 
-  // ── Pause / resume ──
   const handlePause = () => {
     pauseStartRef.current = Date.now();
     setPaused(true);
   };
-
   const handleResume = () => {
     if (pauseStartRef.current !== null) {
-      // Shift the start time forward by pause duration → elapsed stays accurate
-      startTimeRef.current += Date.now() - pauseStartRef.current;
+      const pausedFor = Date.now() - pauseStartRef.current;
+      // Shift the start (and any running rest) forward by the pause → both stay accurate
+      startTimeRef.current += pausedFor;
+      setRest((r) => (r ? { ...r, endsAt: r.endsAt + pausedFor } : r));
       pauseStartRef.current = null;
     }
     setPaused(false);
   };
 
-  // ── Session state ──
-  const currentEx = exercises[exerciseIdx];
-  const totalExercises = exercises.length;
-  const progress =
-    totalExercises > 0
-      ? ((exerciseIdx + setIdx / (currentEx?.sets || 1)) / totalExercises) * 100
-      : 0;
+  // ── Derived ──
+  const totalSets = entries.reduce((n, s) => n + s.length, 0);
+  const setsDone = entries.reduce((n, s) => n + s.filter((x) => x.status === 'done').length, 0);
+  const progress = totalSets > 0 ? (setsDone / totalSets) * 100 : 0;
+  const durationMinutes = Math.max(1, Math.round(elapsed / 60));
 
-  const updateLog = (field: 'reps' | 'weightKg', value: string) => {
-    setLogs((prev) =>
-      prev.map((l, i) =>
-        i === exerciseIdx
-          ? { ...l, sets: l.sets.map((s, j) => (j === setIdx ? { ...s, [field]: value } : s)) }
-          : l
-      )
-    );
-  };
+  const volume = entries.reduce(
+    (sum, sets) => sum + sets.reduce((s, x) => (x.status === 'done' ? s + (num(x.weight) ?? 0) * (num(x.reps) ?? 0) : s), 0),
+    0,
+  );
 
-  const handleSetDone = useCallback(() => setResting(true), []);
+  const prs = exercises.flatMap((ex, i) => {
+    const best = history[ex.exercise_id]?.bestWeight ?? 0;
+    const today = Math.max(0, ...entries[i].filter((s) => s.status === 'done').map((s) => num(s.weight) ?? 0));
+    return best > 0 && today > best ? [{ name: ex.exercises.name, weight: today }] : [];
+  });
 
-  const afterRest = useCallback(() => {
-    setResting(false);
-    const totalSets = currentEx?.sets ?? 1;
-    if (setIdx + 1 < totalSets) {
-      setSetIdx((s) => s + 1);
-    } else if (exerciseIdx + 1 < totalExercises) {
-      setExerciseIdx((e) => e + 1);
-      setSetIdx(0);
-    } else {
-      setFinished(true);
+  /** First set still pending after `from` (wrapping to the start), or null when all are resolved. */
+  const nextPending = (list: SetEntry[][], from: Pointer): Pointer | null => {
+    const flat: Pointer[] = list.flatMap((sets, ex) => sets.map((_, set) => ({ ex, set })));
+    const at = flat.findIndex((p) => p.ex === from.ex && p.set === from.set);
+    for (let k = 1; k <= flat.length; k++) {
+      const p = flat[(at + k) % flat.length];
+      if (list[p.ex][p.set].status === 'pending') return p;
     }
-  }, [currentEx, setIdx, exerciseIdx, totalExercises]);
-
-  const handleFinish = () => {
-    onFinish(Math.max(1, Math.round(elapsed / 60)), logs);
+    return null;
   };
 
-  // ── Finished screen ──
-  if (finished) {
-    const durationMinutes = Math.max(1, Math.round(elapsed / 60));
+  const updateEntry = (field: 'weight' | 'reps', value: string) => {
+    setEntries((prev) => prev.map((sets, ei) => (ei !== ptr.ex ? sets : sets.map((s, si) => (si === ptr.set ? { ...s, [field]: value } : s)))));
+  };
+
+  const markDone = async () => {
+    const ex = exercises[ptr.ex];
+    const cur = entries[ptr.ex][ptr.set];
+    const reps = num(cur.reps);
+    const weight = num(cur.weight);
+    successHaptic();
+
+    const next = entries.map((sets, ei) =>
+      sets.map((s, si) => {
+        if (ei === ptr.ex && si === ptr.set) return { ...s, status: 'done' as SetStatus };
+        // Carry today's numbers to the next untouched set of the same exercise.
+        if (ei === ptr.ex && si === ptr.set + 1 && s.status === 'pending' && !s.weight && !s.reps) {
+          return { ...s, weight: cur.weight, reps: cur.reps };
+        }
+        return s;
+      }),
+    );
+    setEntries(next);
+
+    const wasDone = cur.status === 'done';
+    const following = nextPending(next, ptr);
+    if (wasDone) {
+      // Editing a finished set: just save the new numbers, stay put.
+    } else if (!following) {
+      setRest(null);
+      setPhase('summary');
+    } else {
+      setPtr(following);
+      const seconds = ex.rest_seconds ?? 60;
+      if (seconds > 0) setRest({ endsAt: Date.now() + seconds * 1000, total: seconds });
+    }
+
+    if (user) {
+      const ok = await saveSet({
+        userId: user.id,
+        clientSessionId,
+        planDayId: planDay.id,
+        exerciseId: ex.exercise_id,
+        setNumber: ptr.set + 1,
+        reps,
+        weightKg: weight,
+        repsMaxTarget: ex.reps_max,
+      });
+      if (!ok) toast({ title: 'הסט לא נשמר בשרת', description: 'הוא יישמר יחד עם האימון בסיום', variant: 'destructive' });
+    }
+  };
+
+  const skipSet = () => {
+    selectionHaptic();
+    const next = entries.map((sets, ei) =>
+      sets.map((s, si) => (ei === ptr.ex && si === ptr.set && s.status === 'pending' ? { ...s, status: 'skipped' as SetStatus } : s)),
+    );
+    setEntries(next);
+    const following = nextPending(next, ptr);
+    if (following) setPtr(following);
+    else if (setsDone > 0) setPhase('summary');
+    else setConfirmFinish(true);
+  };
+
+  const goExercise = (dir: 1 | -1) => {
+    selectionHaptic();
+    const ex = ptr.ex + dir;
+    if (ex < 0 || ex >= exercises.length) return;
+    const firstPending = entries[ex].findIndex((s) => s.status === 'pending');
+    setPtr({ ex, set: firstPending >= 0 ? firstPending : 0 });
+    setDescOpen(false);
+  };
+
+  const endRest = useCallback((natural: boolean) => {
+    if (natural) vibrate();
+    setRest(null);
+  }, []);
+
+  const save = async (difficulty: Difficulty | null) => {
+    await onFinish({
+      clientSessionId,
+      durationMinutes,
+      difficulty,
+      setsDone,
+      totalVolumeKg: Math.round(volume * 100) / 100,
+      logs: exercises
+        .map((ex, i) => ({
+          exerciseId: ex.exercise_id,
+          sets: entries[i]
+            .map((s, si) => ({ s, setNumber: si + 1 }))
+            .filter(({ s }) => s.status === 'done')
+            .map(({ s, setNumber }) => ({ setNumber, reps: num(s.reps) ?? 0, weightKg: num(s.weight) ?? 0 })),
+        }))
+        .filter((l) => l.sets.length > 0),
+    });
+  };
+
+  // ── Summary (only reached with at least one set done) ──
+  if (phase === 'summary') {
     return (
-      <div
-        className="fixed inset-0 z-50 bg-background flex flex-col items-center justify-center gap-6 px-6 text-center"
-        dir="rtl"
-      >
-        <div className="w-24 h-24 rounded-full bg-orange-100 dark:bg-orange-950/40 flex items-center justify-center">
-          <Trophy className="h-12 w-12 text-orange-500" />
-        </div>
-        <div>
-          <h2 className="text-3xl font-bold mb-1">כל הכבוד!</h2>
-          <p className="text-muted-foreground">סיימת את האימון</p>
-        </div>
-        <div className="flex gap-6 text-center">
-          <div>
-            <p className="text-3xl font-bold text-primary">{durationMinutes}</p>
-            <p className="text-xs text-muted-foreground mt-1">דקות</p>
-          </div>
-          <div>
-            <p className="text-3xl font-bold text-primary">{totalExercises}</p>
-            <p className="text-xs text-muted-foreground mt-1">תרגילים</p>
-          </div>
-          <div>
-            <p className="text-3xl font-bold text-primary">
-              {exercises.reduce((acc, ex) => acc + ex.sets, 0)}
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">סטים</p>
-          </div>
-        </div>
-        <Button size="lg" className="w-full max-w-xs" onClick={handleFinish}>
-          <CheckCircle2 className="h-5 w-5 ml-2" />
-          שמור אימון
-        </Button>
-      </div>
+      <Summary
+        durationMinutes={durationMinutes}
+        setsDone={setsDone}
+        totalSets={totalSets}
+        volume={volume}
+        prs={prs}
+        onSave={save}
+      />
     );
   }
 
+  const currentEx = exercises[ptr.ex];
   if (!currentEx) {
     return (
-      <div className="fixed inset-0 z-50 bg-background flex items-center justify-center" dir="rtl">
-        <p className="text-muted-foreground">אין תרגילים לאימון זה</p>
+      <div className="fixed inset-0 z-[55] flex flex-col items-center justify-center gap-4 bg-background px-6" dir="rtl">
+        <Dumbbell className="h-10 w-10 text-muted-foreground" strokeWidth={2} />
+        <p className="text-body text-muted-foreground">אין תרגילים לאימון הזה</p>
+        <SecondaryButton onClick={onDiscard}>חזרה</SecondaryButton>
       </div>
     );
   }
@@ -240,277 +530,249 @@ export default function WorkoutActiveSession({
   const ex = currentEx.exercises;
   const hasMedia = !!ex.media_url;
   const isVideo = hasMedia && isVideoUrl(ex.media_url!);
+  const tags = [...muscleTags(ex.muscle_groups), ...(equipmentTag(ex.equipment) ? [equipmentTag(ex.equipment)!] : [])];
+  const sets = entries[ptr.ex];
+  const active = sets[ptr.set];
+  const prev = previousFor(ptr.ex, ptr.set);
+  const weightStep = (num(active.weight) ?? 0) < 20 ? 0.5 : 1;
+  const rangeLabel = currentEx.reps_min === currentEx.reps_max ? `${currentEx.reps_min} חזרות` : `⁦${currentEx.reps_min}–${currentEx.reps_max}⁩ חזרות`;
+
+  // "You hit the top of the range on every set last time" → suggest more weight.
+  const last = history[currentEx.exercise_id]?.last ?? [];
+  const readyToProgress = last.length >= currentEx.sets && last.every((s) => (s.reps ?? 0) >= currentEx.reps_max);
+
+  const nextLabel = (() => {
+    if (!rest) return null;
+    const nx = exercises[ptr.ex];
+    return nx ? `סט ${ptr.set + 1} מתוך ${nx.sets} · ${nx.exercises.name}` : null;
+  })();
 
   return (
     <>
-      {/* ── Video fullscreen overlay (9:16 reels style) ── */}
+      {/* ── Video fullscreen overlay ── */}
       {videoFullscreen && isVideo && (
-        <div
-          className="fixed inset-0 z-[70] bg-black flex items-center justify-center"
-          onClick={() => setVideoFullscreen(false)}
-        >
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black" onClick={() => setVideoFullscreen(false)}>
           <button
-            className="absolute top-4 right-4 z-10 p-2 rounded-full bg-white/20 text-white"
+            type="button"
+            aria-label="סגירה"
+            className="absolute right-4 top-4 z-10 flex h-11 w-11 items-center justify-center rounded-pill bg-white/20 text-white safe-top"
             onClick={() => setVideoFullscreen(false)}
           >
-            <X className="h-6 w-6" />
+            <X className="h-6 w-6" strokeWidth={2} />
           </button>
-          <div
-            className="relative w-full max-w-sm"
-            style={{ aspectRatio: '9/16', maxHeight: '90vh' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <video
-              src={ex.media_url!}
-              controls
-              autoPlay
-              playsInline
-              className="w-full h-full object-contain"
-            />
+          <div className="relative w-full max-w-sm" style={{ aspectRatio: '9/16', maxHeight: '90vh' }} onClick={(e) => e.stopPropagation()}>
+            <video src={ex.media_url!} controls autoPlay playsInline className="h-full w-full object-contain" />
           </div>
         </div>
       )}
 
       {/* ── Pause overlay ── */}
       {paused && (
-        <div
-          className="fixed inset-0 z-[60] bg-black/75 flex flex-col items-center justify-center gap-5"
-          dir="rtl"
-        >
-          <div className="w-20 h-20 rounded-full bg-orange-500/20 flex items-center justify-center">
-            <Pause className="h-10 w-10 text-orange-500" />
-          </div>
+        <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-5 bg-black/80" dir="rtl">
+          <span className="flex h-20 w-20 items-center justify-center rounded-pill bg-primary-tint">
+            <Pause className="h-10 w-10 text-primary" strokeWidth={2} />
+          </span>
           <div className="text-center">
-            <p className="text-white text-2xl font-bold">מושהה</p>
-            <p className="text-white/60 text-base font-mono mt-1">{formatTime(elapsed)}</p>
+            <p className="text-screen-title text-white">מושהה</p>
+            <p className="mt-1 font-mono text-body text-white/70">{formatClock(elapsed)}</p>
           </div>
-          <div className="flex flex-col gap-3 w-52">
-            <Button
-              className="bg-orange-500 hover:bg-orange-600 text-white font-bold h-12 rounded-xl gap-2"
-              onClick={handleResume}
-            >
-              <PlayIcon className="h-5 w-5" />
-              המשך אימון
-            </Button>
-            <Button
-              variant="outline"
-              className="border-white/30 text-white hover:bg-white/10 h-10 rounded-xl gap-2 bg-transparent"
-              onClick={() => { handleResume(); setFinished(true); }}
-            >
-              סיים ושמור
-            </Button>
+          <div className="w-56">
+            <PrimaryButton icon={PlayIcon} onClick={handleResume}>המשך אימון</PrimaryButton>
           </div>
         </div>
       )}
 
-      {/* ── Main session UI ── */}
-      <div className="fixed inset-0 z-50 bg-background flex flex-col overflow-hidden" dir="rtl">
-
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 pb-3 border-b border-border bg-card shrink-0 safe-top">
-          {/* Minimize button */}
-          <button
-            onClick={onMinimize}
-            className="p-2 rounded-full hover:bg-muted transition-colors"
-            aria-label="מזער"
+      {/* ── Finish: bottom sheet ── */}
+      <BottomSheet
+        open={confirmFinish}
+        onOpenChange={setConfirmFinish}
+        title="לסיים את האימון?"
+        description={`ביצעת ${setsDone} מתוך ${totalSets} סטים`}
+      >
+        {setsDone === 0 && (
+          <p className="mb-4 rounded-inner bg-card-inner px-3 py-2 text-label text-muted-foreground">לא סימנת אף סט, האימון לא יישמר</p>
+        )}
+        <SheetActions>
+          <Button onClick={() => setConfirmFinish(false)}>המשך באימון</Button>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setConfirmFinish(false);
+              setRest(null);
+              if (setsDone > 0) setPhase('summary');
+              else onDiscard();
+            }}
           >
-            <Minimize2 className="h-5 w-5 text-muted-foreground" />
-          </button>
+            {setsDone > 0 ? 'סיים' : 'צא בלי לשמור'}
+          </Button>
+        </SheetActions>
+      </BottomSheet>
 
-          <div className="text-center">
-            <p className="font-semibold text-sm">{planDay.name}</p>
-            <p className="text-xs text-muted-foreground">
-              תרגיל {exerciseIdx + 1} מתוך {totalExercises}
-            </p>
-          </div>
-
-          {/* Timer + pause */}
-          <div className="flex items-center gap-1">
-            <span className="text-sm font-mono text-muted-foreground">{formatTime(elapsed)}</span>
-            <button
-              onClick={handlePause}
-              className="p-2 rounded-full hover:bg-muted transition-colors"
-              aria-label="השהה"
-            >
-              <Pause className="h-4 w-4 text-muted-foreground" />
+      {/* ── Main session UI ── */}
+      <div className="fixed inset-0 z-[55] flex flex-col overflow-hidden bg-background" dir="rtl">
+        {/* Header */}
+        <header className="relative shrink-0 border-b border-[#26262D] bg-[#0E0E11] safe-top">
+          <div className="flex h-14 items-center gap-1 px-1">
+            <button type="button" onClick={() => setConfirmFinish(true)} aria-label="סגירת האימון" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-pill text-foreground active:bg-card-inner">
+              <X className="h-5 w-5" strokeWidth={2} />
             </button>
+            <div className="min-w-0 flex-1 text-center">
+              <p className="truncate text-[16px] font-bold leading-tight">{planDay.name}</p>
+              <p className="text-[13px] leading-tight text-muted-foreground">תרגיל {ptr.ex + 1} מתוך {exercises.length}</p>
+            </div>
+            <div className="flex shrink-0 items-center" dir="ltr">
+              <span className="pl-1 text-[16px] font-semibold tabular-nums" aria-label="זמן אימון">{formatClock(elapsed)}</span>
+              <button type="button" onClick={handlePause} aria-label="השהיה" className="flex h-11 w-11 items-center justify-center text-muted-foreground">
+                <Pause className="h-4 w-4" strokeWidth={2} />
+              </button>
+            </div>
           </div>
-        </div>
+          <div
+            className="absolute inset-x-0 -bottom-px h-[3px]"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={totalSets}
+            aria-valuenow={setsDone}
+            aria-label={`${setsDone} מתוך ${totalSets} סטים`}
+            dir="rtl"
+          >
+            <div className="h-full bg-primary transition-[width] duration-300" style={{ width: `${progress}%` }} />
+          </div>
+        </header>
 
-        {/* Progress bar */}
-        <div className="px-4 pt-3 pb-1 shrink-0">
-          <Progress value={progress} className="h-2 rounded-full" />
-        </div>
-
-        {/* Scrollable content */}
-        <div className={resting ? "flex-1 flex flex-col items-center justify-center" : "flex-1 overflow-y-auto pb-4"}>
-          {resting ? (
-            <RestTimer
-              seconds={currentEx.rest_seconds ?? 60}
-              onDone={afterRest}
-              onSkip={afterRest}
-              paused={paused}
-            />
-          ) : (
-            <div className="flex flex-col">
-              {/* Media */}
-              {hasMedia ? (
-                <div
-                  className={cn(
-                    'w-full bg-muted overflow-hidden flex items-center justify-center relative',
-                    isVideo && 'cursor-pointer'
-                  )}
-                  onClick={() => isVideo && setVideoFullscreen(true)}
-                >
-                  {isVideo ? (
-                    <>
-                      <video
-                        src={ex.media_url!}
-                        className="w-full max-h-56 object-contain"
-                        autoPlay muted loop playsInline
-                      />
-                      {/* Tap-to-fullscreen hint */}
-                      <div className="absolute inset-0 flex items-end justify-center pb-2 pointer-events-none">
-                        <div className="bg-black/50 rounded-full px-2.5 py-1 flex items-center gap-1">
-                          <Maximize2 className="h-3.5 w-3.5 text-white" />
-                          <span className="text-white text-xs">הגדל</span>
-                        </div>
-                      </div>
-                    </>
+        {rest ? (
+          <RestTimer
+            endsAt={rest.endsAt}
+            total={rest.total}
+            paused={paused}
+            onAdd={() => {
+              tapHaptic();
+              setRest((r) => (r ? { endsAt: r.endsAt + 15000, total: r.total + 15 } : r));
+            }}
+            onDone={endRest}
+            nextLabel={nextLabel}
+          />
+        ) : (
+          <div className="flex-1 overflow-y-auto">
+            <div className="space-y-card-gap px-4 py-4">
+              {/* Media on a dark card — never a white square */}
+              <div className="rounded-[16px] bg-[#17171C] p-3">
+                {hasMedia ? (
+                  isVideo ? (
+                    <button type="button" className="relative block w-full" onClick={() => setVideoFullscreen(true)} aria-label="הגדלת הסרטון">
+                      <video src={ex.media_url!} className="mx-auto max-h-52 w-full rounded-xl object-contain" autoPlay muted loop playsInline />
+                      <span className="absolute bottom-2 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-pill bg-black/60 px-2.5 py-1 text-label text-white">
+                        <Maximize2 className="h-3.5 w-3.5" strokeWidth={2} />
+                        הגדלה
+                      </span>
+                    </button>
                   ) : (
-                    <img src={ex.media_url!} alt={ex.name} className="w-full max-h-56 object-contain" />
-                  )}
-                </div>
-              ) : (
-                <div className="w-full h-32 bg-muted flex items-center justify-center">
-                  <Dumbbell className="h-12 w-12 text-muted-foreground/30" />
+                    <img src={ex.media_url!} alt={ex.name} className="mx-auto max-h-52 w-full rounded-xl object-contain" />
+                  )
+                ) : (
+                  <div className="flex h-28 items-center justify-center">
+                    <Dumbbell className="h-12 w-12 text-muted-foreground/40" strokeWidth={2} />
+                  </div>
+                )}
+              </div>
+
+              {/* Exercise details */}
+              <div className="space-y-2">
+                <h2 className="text-screen-title leading-tight">{ex.name}</h2>
+                {(tags.length > 0 || currentEx.rest_seconds) && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {tags.map((t) => <Pill key={t}>{t}</Pill>)}
+                    {restLabel(currentEx.rest_seconds) && <Pill icon={Timer}>{restLabel(currentEx.rest_seconds)}</Pill>}
+                  </div>
+                )}
+                {ex.description && (
+                  <div>
+                    <p className={cn('text-body text-muted-foreground', !descOpen && 'line-clamp-2')}>{ex.description}</p>
+                    <button type="button" onClick={() => setDescOpen((o) => !o)} className="min-h-[44px] text-label font-semibold text-primary-soft">
+                      {descOpen ? 'פחות' : 'עוד'}
+                    </button>
+                  </div>
+                )}
+                {currentEx.notes && <p className="text-body font-medium text-primary-soft">{currentEx.notes}</p>}
+              </div>
+
+              {readyToProgress && (
+                <div className="flex items-start gap-2 rounded-inner bg-primary-tint p-3">
+                  <TrendingUp className="mt-0.5 h-5 w-5 shrink-0 text-primary" strokeWidth={2} />
+                  <p className="text-body">הגעת ל-{currentEx.reps_max} בכל הסטים. נסה להעלות משקל</p>
                 </div>
               )}
 
-              <div className="px-4 pt-4 space-y-4">
-                {/* Exercise info */}
-                <div>
-                  <h2 className="text-xl font-bold">{ex.name}</h2>
-                  <div className="flex flex-wrap gap-2 mt-1.5">
-                    {(ex.muscle_groups || []).map((g) => (
-                      <Badge key={g} variant="secondary" className="text-xs">{g}</Badge>
-                    ))}
-                    {ex.equipment && (
-                      <Badge variant="outline" className="text-xs">{ex.equipment}</Badge>
-                    )}
-                  </div>
-                  {ex.description && (
-                    <p className="text-muted-foreground text-sm mt-2 leading-relaxed">
-                      {ex.description}
-                    </p>
+              {/* Sets of this exercise */}
+              <Card className="space-y-2 p-3">
+                <h3 className="px-1 text-card-title">
+                  סט {ptr.set + 1} מתוך {currentEx.sets} · {rangeLabel}
+                </h3>
+                <ol className="space-y-2">
+                  {sets.map((s, i) =>
+                    i === ptr.set ? (
+                      <li key={i} className="space-y-3 rounded-inner border-2 border-primary bg-card-inner p-3" aria-current="step">
+                        <div className="grid grid-cols-2 gap-2">
+                          <Stepper id="set-weight" label='משקל (ק"ג)' value={active.weight} onChange={(v) => updateEntry('weight', v)} step={weightStep} decimals placeholder="0" />
+                          <Stepper id="set-reps" label="חזרות" value={active.reps} onChange={(v) => updateEntry('reps', v)} step={1} decimals={false} placeholder={String(currentEx.reps_min)} />
+                        </div>
+                        {prev && performanceLabel(prev) && (
+                          <p className="text-center text-label text-muted-foreground">בפעם הקודמת: {performanceLabel(prev)}</p>
+                        )}
+                        <PrimaryButton icon={Check} onClick={markDone}>{s.status === 'done' ? 'עדכון הסט' : 'בוצע'}</PrimaryButton>
+                      </li>
+                    ) : (
+                      <li key={i}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            selectionHaptic();
+                            setPtr({ ex: ptr.ex, set: i });
+                          }}
+                          className={cn(
+                            'flex min-h-[48px] w-full items-center gap-3 rounded-inner px-3 text-right',
+                            s.status === 'done' ? 'bg-success/10' : 'bg-card-inner',
+                          )}
+                        >
+                          <span className="text-body font-semibold">סט {i + 1}</span>
+                          <span className="flex-1 text-label tabular-nums text-muted-foreground">
+                            {s.status === 'done'
+                              ? performanceLabel({ weightKg: num(s.weight), reps: num(s.reps) })
+                              : s.status === 'skipped'
+                              ? 'דולג'
+                              : 'ממתין'}
+                          </span>
+                          {s.status === 'done' && <Check className="h-5 w-5 text-success" strokeWidth={2.5} aria-label="בוצע" />}
+                        </button>
+                      </li>
+                    ),
                   )}
-                  {currentEx.notes && (
-                    <p className="text-primary text-sm mt-1 font-medium">💡 {currentEx.notes}</p>
-                  )}
-                </div>
-
-                {/* Set card */}
-                <div className="bg-card border border-border rounded-xl p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold">סט {setIdx + 1} מתוך {currentEx.sets}</span>
-                    <span className="text-sm text-muted-foreground">
-                      {currentEx.reps_min}–{currentEx.reps_max} חזרות
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground">משקל (ק"ג)</label>
-                      <Input
-                        type="number" inputMode="decimal" placeholder="0"
-                        value={logs[exerciseIdx]?.sets[setIdx]?.weightKg ?? ''}
-                        onChange={(e) => updateLog('weightKg', e.target.value)}
-                        className="text-center text-lg font-semibold"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground">חזרות</label>
-                      <Input
-                        type="number" inputMode="numeric" placeholder="0"
-                        value={logs[exerciseIdx]?.sets[setIdx]?.reps ?? ''}
-                        onChange={(e) => updateLog('reps', e.target.value)}
-                        className="text-center text-lg font-semibold"
-                      />
-                    </div>
-                  </div>
-                  <Button className="w-full" onClick={handleSetDone}>
-                    <CheckCircle2 className="h-4 w-4 ml-2" />
-                    בצעתי סט זה
-                  </Button>
-                </div>
-
-                {/* Sets overview dots */}
-                <div className="flex gap-2 flex-wrap">
-                  {Array.from({ length: currentEx.sets }).map((_, i) => (
-                    <div
-                      key={i}
-                      className={cn(
-                        'w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium border',
-                        i < setIdx
-                          ? 'bg-primary text-primary-foreground border-primary'
-                          : i === setIdx
-                          ? 'bg-primary/20 text-primary border-primary'
-                          : 'bg-muted text-muted-foreground border-border'
-                      )}
-                    >
-                      {i + 1}
-                    </div>
-                  ))}
-                </div>
-              </div>
+                </ol>
+              </Card>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Bottom nav */}
-        {!resting && (
-          <div className="shrink-0 border-t border-border bg-card px-4 py-3 flex items-center justify-between gap-3">
-            <Button
-              variant="outline" size="sm"
-              disabled={exerciseIdx === 0 && setIdx === 0}
-              onClick={() => {
-                if (setIdx > 0) {
-                  setSetIdx((s) => s - 1);
-                } else if (exerciseIdx > 0) {
-                  const prevEx = exercises[exerciseIdx - 1];
-                  setExerciseIdx((e) => e - 1);
-                  setSetIdx(prevEx.sets - 1);
-                }
-              }}
-            >
-              <ChevronRight className="h-4 w-4 ml-1" />
-              קודם
-            </Button>
-
-            <Button
-              variant="ghost" size="sm"
-              onClick={() => {
-                const totalSets = currentEx.sets;
-                if (setIdx + 1 < totalSets) {
-                  setSetIdx((s) => s + 1);
-                } else if (exerciseIdx + 1 < totalExercises) {
-                  setExerciseIdx((e) => e + 1);
-                  setSetIdx(0);
-                } else {
-                  setFinished(true);
-                }
-              }}
-            >
-              <SkipForward className="h-4 w-4 ml-1" />
-              דלג
-            </Button>
-
-            <Button size="sm" variant="destructive" onClick={() => setFinished(true)}>
-              סיים אימון
-              <ChevronLeft className="h-4 w-4 mr-1" />
-            </Button>
-          </div>
+        {!rest && (
+          <nav className="shrink-0 border-t border-border bg-card px-4 pt-3" style={{ paddingBottom: 'calc(0.75rem + var(--app-safe-bottom))' }}>
+            <div className="flex items-center gap-2">
+              <SecondaryButton className="h-11 flex-1" disabled={ptr.ex === 0} onClick={() => goExercise(-1)}>
+                <ChevronRight className="h-4 w-4" strokeWidth={2} />
+                קודם
+              </SecondaryButton>
+              <button type="button" onClick={skipSet} className="min-h-[44px] px-3 text-body font-semibold text-muted-foreground underline-offset-4 hover:underline">
+                דלג
+              </button>
+              <SecondaryButton className="h-11 flex-1" disabled={ptr.ex >= exercises.length - 1} onClick={() => goExercise(1)}>
+                הבא
+                <ChevronLeft className="h-4 w-4" strokeWidth={2} />
+              </SecondaryButton>
+            </div>
+          </nav>
         )}
       </div>
     </>
   );
 }
+

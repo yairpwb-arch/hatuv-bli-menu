@@ -1,12 +1,14 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { format, subDays, startOfDay } from 'date-fns';
+import { isHiddenKey, isTableKey, resolveVisualKey, summaryHabitsOf } from '@/lib/habitVisuals';
 
 interface StreakData {
   currentStreak: number;
   bestStreak: number;
   perfectDaysThisMonth: number;
   isLoading: boolean;
+  refetch: () => Promise<void>;
 }
 
 export function useStreak(userId: string | undefined, currentWeek: number): StreakData {
@@ -43,7 +45,7 @@ export function useStreak(userId: string | undefined, currentWeek: number): Stre
         .lte('completed_at', today),
       (supabase as any)
         .from('habit_definitions')
-        .select('id, name')
+        .select('id, name, is_bonus, visual_key, day_end')
         .lte('week_start', currentWeek)
         .or(`week_end.gte.${currentWeek},week_end.is.null`)
         .or(`user_id.is.null,user_id.eq.${userId}`),
@@ -56,10 +58,13 @@ export function useStreak(userId: string | undefined, currentWeek: number): Stre
 
     setHabitLogs(habitsResult.data || []);
     setActivityLogs(activityResult.data || []);
-    // Filter out walk/workout habits (handled by activity system) and bonus habits (optional)
-    const staticHabits = (habitDefsResult.data || []).filter(h =>
-      !h.name.includes('הליכה') && !h.name.includes('אימון') && !h.is_bonus
-    );
+    // A perfect day = everything on the table + the habits the bedtime summary asks about.
+    // Walk/workout habits (activity system), bonus, hidden and retired habits don't count.
+    const defs = ((habitDefsResult.data || []) as { id: string; name: string; is_bonus?: boolean; visual_key?: string | null; day_end?: number | null }[])
+      .filter((h) => !h.name.includes('הליכה') && !h.name.includes('אימון') && !h.is_bonus && h.day_end !== 0)
+      .map((h) => ({ ...h, visual_key: resolveVisualKey(h.visual_key) }))
+      .filter((h) => !isHiddenKey(h.visual_key));
+    const staticHabits = [...defs.filter((h) => isTableKey(h.visual_key)), ...summaryHabitsOf(defs)];
     setHabitDefinitions(staticHabits);
     setScheduledActivities(scheduleResult.data || []);
     setIsLoading(false);
@@ -83,6 +88,7 @@ export function useStreak(userId: string | undefined, currentWeek: number): Stre
       return { currentStreak: 0, bestStreak: 0, perfectDaysThisMonth: 0 };
     }
 
+    const requiredIds = new Set(habitDefinitions.map((h) => h.id));
     const today = startOfDay(new Date());
     let streak = 0;
     let maxStreak = 0;
@@ -97,7 +103,7 @@ export function useStreak(userId: string | undefined, currentWeek: number): Stre
       const dayOfWeek = checkDate.getDay();
       
       // Get completed habits for this day
-      const completedHabitsForDay = habitLogs.filter(h => h.completed_at === dateStr);
+      const completedHabitsForDay = habitLogs.filter(h => h.completed_at === dateStr && requiredIds.has(h.habit_id));
       const completedHabitCount = completedHabitsForDay.length;
       
       // Check if this day has scheduled activity
@@ -139,7 +145,7 @@ export function useStreak(userId: string | undefined, currentWeek: number): Stre
     // Check if today is also a perfect day (to add to streak)
     const todayStr = format(today, 'yyyy-MM-dd');
     const todayDayOfWeek = today.getDay();
-    const completedHabitsToday = habitLogs.filter(h => h.completed_at === todayStr).length;
+    const completedHabitsToday = habitLogs.filter(h => h.completed_at === todayStr && requiredIds.has(h.habit_id)).length;
     const hasActivityToday = scheduledActivities.some(a => a.day_of_week === todayDayOfWeek);
     const activityCompletedToday = activityLogs.some(a => a.completed_at === todayStr);
     const totalTasksToday = habitDefinitions.length + (hasActivityToday ? 1 : 0);
@@ -159,5 +165,5 @@ export function useStreak(userId: string | undefined, currentWeek: number): Stre
     return { currentStreak: streak, bestStreak: finalBestStreak, perfectDaysThisMonth: perfectDays };
   }, [habitLogs, activityLogs, habitDefinitions, scheduledActivities, isLoading]);
 
-  return { currentStreak, bestStreak, perfectDaysThisMonth, isLoading };
+  return { currentStreak, bestStreak, perfectDaysThisMonth, isLoading, refetch: fetchData };
 }

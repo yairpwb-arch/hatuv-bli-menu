@@ -12,7 +12,7 @@ export default function Index() {
         <div className="animate-slide-up">
           <div className="flex items-center justify-center mb-6">
             <img
-              src="/logo.jpg"
+              src="/logo.png"
               alt="חטוב בלי תפריט"
               className="w-28 h-28 rounded-full object-cover shadow-glow"
             />

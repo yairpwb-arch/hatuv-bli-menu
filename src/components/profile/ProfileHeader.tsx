@@ -156,7 +156,7 @@ export function ProfileHeader({
 
   return (
     <>
-      <div className="relative bg-gradient-to-br from-primary/10 via-primary/5 to-transparent rounded-2xl p-6 animate-fade-in">
+      <div className="relative bg-primary-tint rounded-card p-6 animate-fade-in">
         {/* Edit button — top left corner (RTL = visual top-right of card) */}
         {onEdit && (
           <Button
@@ -216,7 +216,7 @@ export function ProfileHeader({
 
             {currentStreak > 0 && (
               <p className="text-sm text-muted-foreground">
-                🔥 רצף של {currentStreak} ימים
+                רצף של {currentStreak} ימים
               </p>
             )}
           </div>

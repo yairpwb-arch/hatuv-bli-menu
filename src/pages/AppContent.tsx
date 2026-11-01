@@ -1,113 +1,99 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
-import WeeklySurveyModal from '@/components/WeeklySurveyModal';
+import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
+import { BookText, Check, FileText, Lock, Play, Star } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Progress } from '@/components/ui/progress';
+import { Card, PrimaryButton } from '@/components/ds';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
-import { toast } from '@/hooks/use-toast';
-import { Check, Star, ExternalLink, ClipboardList, BookText, FileText, Lock, Map } from 'lucide-react';
+import { successHaptic, selectionHaptic } from '@/lib/native';
+import { applySequentialGate } from '@/lib/contentGate';
+import { inDays, opensIn } from '@/lib/hebrewDays';
+import { milestoneDay } from '@/lib/contentPathStyle';
+import { ContentItem, PartMeta, buildParts, metaLine } from '@/lib/contentModel';
 import { cn } from '@/lib/utils';
-import ContentPath from '@/components/content/ContentPath';
-import StageUnlockSplash from '@/components/content/StageUnlockSplash';
-import { useContentCelebration } from '@/hooks/useContentCelebration';
-import {
-  MILESTONE_ID,
-  MILESTONE_DAY,
-  getNodeVisual,
-  getMilestoneVisual,
-  type ContentKind,
-} from '@/lib/contentPathStyle';
+import ContentMap, { ContentMapHandle } from '@/components/content/ContentMap';
+import ContentCards, { CardsFilter } from '@/components/content/ContentCards';
+import { VideoLauncher } from '@/components/content/VideoLauncher';
+import { BunnyEmbed } from '@/components/content/BunnyPlayer';
+import { bunnyId } from '@/lib/bunny';
+import { guideBody } from '@/lib/guideBlocks';
+import { useContentView, ContentView } from '@/hooks/useContentView';
+import { useUnlockReveal } from '@/hooks/useUnlockReveal';
 
-interface ContentItem {
-  id: string;
-  part_number: number;
-  week_range: string;
-  unlock_day: number;
-  title: string;
-  description: string | null;
-  video_url: string | null;
-  resource_link: string | null;
-  is_bonus: boolean;
-  content_type?: ContentKind | null;
-  /** date gate only — currentDay has reached unlock_day */
-  dateUnlocked: boolean;
-  /** final gate: dateUnlocked AND the previous stage in the path was completed */
-  isUnlocked: boolean;
-  isCompleted: boolean;
-  daysUntilUnlock: number;
+/** The global AppHeader's height; the collapsed bar sits right under it. */
+const HEADER_TOP = 'calc(3.5rem + var(--app-safe-top))';
+const BAR_H = 56;
+
+/** Where "the current point" should land: about the top third, below the bars. */
+function anchorY() {
+  const header = document.querySelector('header.app-bar')?.getBoundingClientRect().bottom ?? 56;
+  return Math.max(window.innerHeight / 3, header + BAR_H + 72);
 }
 
-const PART_NAMES: Record<number, string> = {
-  1: 'חלק 1',
-  2: 'חלק 2',
-  3: 'חלק 3',
-  5: 'הבסיס לשינוי הרגלים',
-};
+/** Video or guide link → the system app; nothing to open → the details dialog. */
+function openLink(item: ContentItem): boolean {
+  if (bunnyId(item.video_url)) return false; // played in the app
+  const url = item.video_url || item.resource_link;
+  if (!url) return false;
+  window.open(url, Capacitor.isNativePlatform() ? '_system' : '_blank');
+  return true;
+}
 
-// Stages unlock a WEEK at a time, not one-by-one: everything sharing the same
-// week_range opens together once its date has come, as long as the previous
-// week's stages are all completed — items within the same week never gate
-// each other (no waiting for a sibling video to be marked watched before the
-// next one in that same week opens). Re-run this any time completion state
-// changes, not just once at fetch time — otherwise finishing a week never
-// actually reveals the next one until the page is reloaded.
-function applySequentialGate<T extends { week_range: string; dateUnlocked: boolean; isCompleted: boolean }>(
-  items: T[]
-): (T & { isUnlocked: boolean })[] {
-  const result: (T & { isUnlocked: boolean })[] = [];
-  let previousWeekCompleted = true;
-  let i = 0;
-  while (i < items.length) {
-    let j = i;
-    while (j < items.length && items[j].week_range === items[i].week_range) j++;
-    const weekItems = items.slice(i, j);
-    for (const item of weekItems) {
-      result.push({ ...item, isUnlocked: item.dateUnlocked && previousWeekCompleted });
-    }
-    previousWeekCompleted = weekItems.every((it) => it.isCompleted);
-    i = j;
-  }
-  return result;
+/** "מפה" / "רשימה" — a text switch next to the page title. */
+function ViewToggle({ view, onChange }: { view: ContentView; onChange: (v: ContentView) => void }) {
+  return (
+    <div role="radiogroup" aria-label="תצוגה" className="flex rounded-pill bg-card-inner p-1">
+      {([
+        { v: 'map', label: 'מפה' },
+        { v: 'cards', label: 'רשימה' },
+      ] as const).map(({ v, label }) => (
+        <button
+          key={v}
+          type="button"
+          role="radio"
+          aria-checked={view === v}
+          onClick={() => onChange(v)}
+          className={cn(
+            'h-11 min-w-[72px] rounded-pill px-4 text-label font-bold transition-colors',
+            view === v ? 'bg-primary text-primary-foreground' : 'text-muted-foreground',
+          )}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 export default function AppContent() {
-  const { currentDay, currentWeek, user } = useAuth();
+  const { currentDay, user, profile } = useAuth();
+  const navigate = useNavigate();
   const [allContent, setAllContent] = useState<ContentItem[]>([]);
+  const [partMetas, setPartMetas] = useState<PartMeta[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedContent, setSelectedContent] = useState<ContentItem | null>(null);
   const [snacksBookLink, setSnacksBookLink] = useState('');
-  const [surveyOpen, setSurveyOpen] = useState(false);
-  const [viewMode, setViewMode] = useState<'path' | 'guides'>('path');
-
-  // Switching views lands on a page that's much shorter than the river path
-  // (which can be scrolled far down, e.g. after the boat auto-scrolls to the
-  // current stage) — without resetting scroll, the guides grid opens already
-  // scrolled near its own bottom instead of starting at its top.
-  useEffect(() => {
-    window.scrollTo(0, 0);
-  }, [viewMode]);
+  const { view, ready: viewReady, choose } = useContentView(user?.id);
+  const [cardsFilter, setCardsFilter] = useState<CardsFilter>('all');
+  const [fading, setFading] = useState(false);
 
   useEffect(() => {
     const fetchContent = async () => {
       if (!user) return;
       setIsLoading(true);
 
-      const [contentResult, progressResult, settingsResult] = await Promise.all([
-        supabase
-          .from('program_content')
-          .select('*')
-          .order('sort_order', { ascending: true }),
-        supabase
-          .from('content_progress')
-          .select('content_id')
-          .eq('user_id', user.id),
-        supabase
-          .from('app_settings')
-          .select('key, value'),
+      const [contentResult, progressResult, settingsResult, partsResult] = await Promise.all([
+        supabase.from('program_content').select('*').filter('archived_at', 'is', null).order('sort_order', { ascending: true }),
+        supabase.from('content_progress').select('content_id').eq('user_id', user.id),
+        supabase.from('app_settings').select('key, value'),
+        // program_parts isn't in the generated types yet; missing table → default names.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (supabase as any).from('program_parts').select('part_number, name, subtitle'),
       ]);
 
       if (contentResult.error) {
@@ -117,362 +103,358 @@ export default function AppContent() {
       }
 
       const completedIds = new Set(progressResult.data?.map((p) => p.content_id) || []);
-
-      // Pass 1: date-based gate + completion, in fetched (sort_order) order.
       const withDateGate = (contentResult.data || []).map((item) => ({
         ...item,
         dateUnlocked: currentDay >= item.unlock_day,
         isCompleted: completedIds.has(item.id),
         daysUntilUnlock: Math.max(0, item.unlock_day - currentDay),
       }));
-
       setAllContent(applySequentialGate(withDateGate) as ContentItem[]);
+      setPartMetas(((partsResult.data ?? []) as PartMeta[]));
 
-      // Parse settings
-      if (settingsResult.data) {
-        settingsResult.data.forEach((s: { key: string; value: string | null }) => {
-          if (s.key === 'snacks_book_link') setSnacksBookLink(s.value || '');
-        });
-      }
-
+      settingsResult.data?.forEach((s: { key: string; value: string | null }) => {
+        if (s.key === 'snacks_book_link') setSnacksBookLink(s.value || '');
+      });
       setIsLoading(false);
     };
-
     fetchContent();
   }, [user, currentDay]);
 
-  // Calculate progress
+  // ── Derived ──
+  const parts = useMemo(() => buildParts(allContent, partMetas), [allContent, partMetas]);
   const totalContent = allContent.length;
-  const completedContent = allContent.filter((item) => item.isCompleted).length;
+  const completedContent = allContent.filter((i) => i.isCompleted).length;
   const progressPercentage = totalContent > 0 ? Math.round((completedContent / totalContent) * 100) : 0;
+  const lastCompleted = allContent.length === 0 || allContent[allContent.length - 1].isCompleted;
+  const MILESTONE_DAY = milestoneDay(allContent);
+  const finalUnlocked = currentDay >= MILESTONE_DAY && lastCompleted;
+  const nextUp = useMemo(() => allContent.find((i) => i.isUnlocked && !i.isCompleted) ?? null, [allContent]);
+  const soon = useMemo(() => allContent.find((i) => !i.isUnlocked) ?? null, [allContent]);
+  const currentId = nextUp?.id ?? null;
+  const lockedNextLabel = !nextUp && soon ? `התוכן הבא נפתח ${soon.daysUntilUnlock > 0 ? inDays(soon.daysUntilUnlock) : 'אחרי השלב הנוכחי'}` : null;
 
-  const lastContentCompleted = allContent.length === 0 || allContent[allContent.length - 1].isCompleted;
-  const milestoneUnlocked = currentDay >= MILESTONE_DAY && lastContentCompleted;
+  const unlockedIds = useMemo(() => allContent.filter((i) => i.isUnlocked).map((i) => i.id), [allContent]);
+  const completedParts = useMemo(() => parts.filter((p) => p.complete).map((p) => p.number), [parts]);
+  const { revealIds, trophyParts } = useUnlockReveal(user?.id, unlockedIds, completedParts, !isLoading && allContent.length > 0);
 
-  // The boat's destination: the next stage that's actually unlocked and not
-  // yet completed. It never advances onto a still-locked stage — if nothing
-  // unlocked is left to do, it waits at the last unlocked stage instead of
-  // jumping ahead (so the "completed" glow on the path never reaches past
-  // what's really been unlocked). Only the milestone once everything is done
-  // AND the milestone itself has unlocked.
-  const currentFrontierId = useMemo(() => {
-    const nextUnlocked = allContent.find((i) => i.isUnlocked && !i.isCompleted);
-    if (nextUnlocked) return nextUnlocked.id;
-    if (milestoneUnlocked) return MILESTONE_ID;
-    const unlockedItems = allContent.filter((i) => i.isUnlocked);
-    if (unlockedItems.length > 0) return unlockedItems[unlockedItems.length - 1].id;
-    return MILESTONE_ID;
-  }, [allContent, milestoneUnlocked]);
+  // ── Scrolling to points on the map / cards ──
+  const viewRef = useRef<ContentMapHandle>(null);
+  const scrollToId = useCallback((id: string, behavior: ScrollBehavior) => {
+    const y = viewRef.current?.nodeY(id);
+    if (y == null) return false;
+    window.scrollTo({ top: Math.max(0, y - anchorY()), behavior });
+    return true;
+  }, []);
 
-  const celebrationItems = useMemo(
-    () => [...allContent.map((i) => ({ id: i.id })), { id: MILESTONE_ID }],
-    [allContent]
-  );
-  const celebration = useContentCelebration(celebrationItems, user?.id, allContent.length > 0 ? currentFrontierId : null);
-
-  // What the full-screen splash should show for the celebrated id.
-  const splashInfo = useMemo(() => {
-    if (!celebration.cardTargetId) return null;
-    if (celebration.cardTargetId === MILESTONE_ID) {
-      const { Icon } = getMilestoneVisual();
-      return { title: 'כל הכבוד על סיום התוכנית!', stageLabel: 'סיכום', Icon };
-    }
-    const index = allContent.findIndex((i) => i.id === celebration.cardTargetId);
-    if (index === -1) return null;
-    const item = allContent[index];
-    const { Icon } = getNodeVisual(item.content_type ?? (item.video_url ? 'video' : 'content'));
-    return { title: item.title, stageLabel: String(index + 1), Icon };
-  }, [celebration.cardTargetId, allContent]);
-
-  const toggleCompletion = async (contentId: string, isCurrentlyCompleted: boolean) => {
-    if (!user) return;
-
-    if (isCurrentlyCompleted) {
-      // Remove completion
-      const { error } = await supabase
-        .from('content_progress')
-        .delete()
-        .eq('user_id', user.id)
-        .eq('content_id', contentId);
-
-      if (error) {
-        toast({ title: 'שגיאה', description: 'לא ניתן לבטל סימון', variant: 'destructive' });
-        return;
-      }
-
-      setAllContent((prev) =>
-        applySequentialGate(prev.map((item) => (item.id === contentId ? { ...item, isCompleted: false } : item)))
-      );
-      toast({ title: 'בוטל', description: 'הסימון בוטל' });
-    } else {
-      // Add completion
-      const { error } = await supabase
-        .from('content_progress')
-        .insert({ user_id: user.id, content_id: contentId });
-
-      if (error && !error.message.includes('duplicate')) {
-        toast({ title: 'שגיאה', description: 'לא ניתן לסמן כהושלם', variant: 'destructive' });
-        return;
-      }
-
-      setAllContent((prev) =>
-        applySequentialGate(prev.map((item) => (item.id === contentId ? { ...item, isCompleted: true } : item)))
-      );
-      toast({ title: 'מעולה!', description: 'התוכן סומן כהושלם' });
-    }
-
-    // Close the detail dialog on any toggle (mark done or undo) so the boat's
-    // sail to its new destination is visible instead of hidden behind it.
-    if (selectedContent?.id === contentId) {
-      setSelectedContent(null);
-    }
+  const jumpToCurrent = (behavior: ScrollBehavior = 'smooth') => {
+    const id = currentId ?? soon?.id;
+    if (!id) return;
+    if (scrollToId(id, behavior)) viewRef.current?.spotlight(id);
   };
 
-  const handleWeeklySurveyClick = () => {
-    setSurveyOpen(true);
+  // Opening the page lands on the current point (no long animation).
+  const landedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (isLoading || !viewReady || allContent.length === 0) return;
+    const key = `${view}`;
+    if (landedRef.current === key) return;
+    landedRef.current = key;
+    const id = currentId ?? soon?.id;
+    if (!id) return;
+    // Two frames: the map measures its width, then lays out.
+    requestAnimationFrame(() => requestAnimationFrame(() => scrollToId(id, 'auto')));
+  }, [isLoading, viewReady, allContent.length, view, currentId, soon, scrollToId]);
+
+  // ── Collapsing header: the bar shows once the full "next up" card is gone ──
+  const fullCardRef = useRef<HTMLDivElement>(null);
+  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => {
+    const el = fullCardRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const header = document.querySelector('header.app-bar')?.getBoundingClientRect().bottom ?? 56;
+    const io = new IntersectionObserver(([e]) => setCollapsed(!e.isIntersecting), { rootMargin: `-${Math.round(header)}px 0px 0px 0px` });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [isLoading, currentId, lockedNextLabel]);
+
+  // ── Switching views: a quick fade, landing on the same part ──
+  const switchView = (next: ContentView, filter: CardsFilter = 'all') => {
+    selectionHaptic();
+    setCardsFilter(filter);
+    if (next === view) return;
+    const anchor = window.scrollY + anchorY();
+    const partHere = [...parts].reverse().find((p) => (viewRef.current?.partY(p.number) ?? Infinity) <= anchor)?.number;
+    setFading(true);
+    window.setTimeout(() => {
+      landedRef.current = next; // keep the reading position instead of jumping to "current"
+      choose(next);
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          const y = partHere != null ? viewRef.current?.partY(partHere) : null;
+          if (y != null) window.scrollTo({ top: Math.max(0, y - anchorY() + 40), behavior: 'auto' });
+          setFading(false);
+        }),
+      );
+    }, 150);
+  };
+
+  // An in-app guide opens its own screen; anything else, the details window.
+  const selectItem = (item: ContentItem) => {
+    if (guideBody(item.body)) navigate(`/app/guides/${item.id}`);
+    else setSelectedContent(item);
+  };
+
+  const openItem = (item: ContentItem) => {
+    if (guideBody(item.body)) return navigate(`/app/guides/${item.id}`);
+    if (bunnyId(item.video_url)) return setSelectedContent(item); // the video plays in the window
+    if (!openLink(item)) setSelectedContent(item);
+  };
+
+  const toggleCompletion = async (contentId: string, isCurrentlyCompleted: boolean, keepOpen = false) => {
+    if (!user) return;
+    if (isCurrentlyCompleted) {
+      const { error } = await supabase.from('content_progress').delete().eq('user_id', user.id).eq('content_id', contentId);
+      if (error) {
+        toast.error('לא ניתן לבטל סימון');
+        return;
+      }
+      setAllContent((prev) => applySequentialGate(prev.map((i) => (i.id === contentId ? { ...i, isCompleted: false } : i))));
+      toast('הסימון בוטל');
+    } else {
+      const { error } = await supabase.from('content_progress').insert({ user_id: user.id, content_id: contentId });
+      if (error && !error.message.includes('duplicate')) {
+        toast.error('לא ניתן לסמן כהושלם');
+        return;
+      }
+      setAllContent((prev) => applySequentialGate(prev.map((i) => (i.id === contentId ? { ...i, isCompleted: true } : i))));
+      successHaptic();
+      toast('התוכן סומן כהושלם');
+    }
+    if (keepOpen) setSelectedContent((s) => (s?.id === contentId ? { ...s, isCompleted: !isCurrentlyCompleted } : s));
+    else if (selectedContent?.id === contentId) setSelectedContent(null);
   };
 
   const handleSnacksBookClick = () => {
-    if (snacksBookLink) {
-      const trimmed = snacksBookLink.trim();
-      // Already has a scheme (https:, mailto:, tel:...) — use as-is. A bare
-      // email address becomes mailto: instead of being treated as a domain
-      // (e.g. "someone@gmail.com" naively prefixed with "https://" resolves
-      // to just gmail.com, landing the trainee on a Gmail login page instead
-      // of wherever the admin actually meant to send them).
-      const url = /^[a-z][a-z0-9+.-]*:/i.test(trimmed)
-        ? trimmed
-        : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)
-        ? `mailto:${trimmed}`
-        : `https://${trimmed}`;
-      if (Capacitor.isNativePlatform()) {
-        window.open(url, '_system');
-      } else {
-        window.open(url, '_blank');
-      }
-    } else {
-      toast({
-        title: 'ספר נשנושים',
-        description: 'הקישור לספר לא הוגדר עדיין',
-      });
+    if (!snacksBookLink) {
+      toast('הקישור לספר הנשנושים לא הוגדר עדיין');
+      return;
     }
+    const trimmed = snacksBookLink.trim();
+    // Already has a scheme → as-is; a bare email → mailto: (not a domain).
+    const url = /^[a-z][a-z0-9+.-]*:/i.test(trimmed)
+      ? trimmed
+      : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)
+      ? `mailto:${trimmed}`
+      : `https://${trimmed}`;
+    window.open(url, Capacitor.isNativePlatform() ? '_system' : '_blank');
   };
 
   if (isLoading) {
     return (
-      <div className="min-h-screen pb-24 pt-4 px-4 space-y-6">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-4 w-full" />
-        <div className="flex gap-2">
-          <Skeleton className="h-10 w-20 rounded-full" />
-          <Skeleton className="h-10 w-24 rounded-full" />
-          <Skeleton className="h-10 w-24 rounded-full" />
-        </div>
-        {Array.from({ length: 3 }).map((_, i) => (
-          <div key={i} className="space-y-3">
-            <Skeleton className="h-12 w-full rounded-xl" />
-            <Skeleton className="h-20 w-full rounded-xl" />
-            <Skeleton className="h-20 w-full rounded-xl" />
-          </div>
-        ))}
+      <div className="min-h-screen space-y-card-gap px-4 pb-24 pt-4">
+        <Skeleton className="h-8 w-40 rounded-inner" />
+        <Skeleton className="h-24 rounded-card" />
+        <Skeleton className="h-12 rounded-inner" />
+        <Skeleton className="h-36 rounded-card" />
+        <Skeleton className="h-64 rounded-card" />
       </div>
     );
   }
 
+  if (allContent.length === 0) {
+    return (
+      <div className="min-h-screen px-4 pb-24 pt-4">
+        <h1 className="text-screen-title">תכנים</h1>
+        <p className="mt-6 text-center text-body text-muted-foreground">התכנים של התוכנית יופיעו כאן</p>
+      </div>
+    );
+  }
+
+  const nextTitle = nextUp?.title ?? lockedNextLabel;
+  const initials = (profile?.full_name ?? '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join('');
+
   return (
-    <div className="min-h-screen pb-32">
-      {/* Sticky header block — header, progress bar, snacks button stay put;
-          only the river path underneath actually scrolls. */}
-      {/* top offset matches the global AppHeader's real height (56px + its own
-          safe-area inset) exactly, so this doesn't slide up underneath it —
-          env() keeps it correct on every phone, notched or not. */}
-      <div
-        className="sticky z-30 bg-background pt-4 px-4 pb-3 space-y-3 border-b border-border/50"
-        style={{ top: 'calc(3.5rem + env(safe-area-inset-top, 0px))' }}
-      >
-        <div className="glass-card p-4 animate-fade-in">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium">ההתקדמות שלך</span>
-            <span className="text-sm font-bold text-primary">{progressPercentage}%</span>
-          </div>
-          <Progress value={progressPercentage} className="h-2" />
-          <p className="text-xs text-muted-foreground mt-2">
-            {completedContent} מתוך {totalContent} תכנים הושלמו
-          </p>
+    <div className="min-h-screen pb-[calc(3.5rem+var(--app-safe-bottom)+24px)]">
+      {/* ── Full header (scrolls away) ── */}
+      <div className="space-y-card-gap px-4 pt-4">
+        <div className="flex items-center justify-between">
+          <h1 className="text-screen-title">תכנים</h1>
+          <ViewToggle view={view} onChange={(v) => switchView(v)} />
         </div>
 
-        <div className="flex gap-2 animate-fade-in" style={{ animationDelay: '0.12s' }}>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleSnacksBookClick}
-            className="flex-1 border-accent/30 text-accent hover:bg-accent/10"
-          >
-            <BookText className="h-4 w-4 ml-2" />
+        <Card className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-body font-semibold">ההתקדמות שלך</span>
+            <span className="text-body font-bold tabular-nums text-primary">{progressPercentage}%</span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-pill bg-card-inner">
+            <div className="h-full rounded-pill bg-primary" style={{ width: `${progressPercentage}%` }} />
+          </div>
+          <p className="text-label text-muted-foreground">{completedContent} מתוך {totalContent} תכנים הושלמו</p>
+        </Card>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Button variant="outline" onClick={handleSnacksBookClick}>
+            <BookText strokeWidth={2} />
             ספר נשנושים
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setViewMode((m) => (m === 'path' ? 'guides' : 'path'))}
-            className="flex-1 border-white/30 text-white hover:bg-white/10"
-          >
-            {viewMode === 'path' ? (
-              <>
-                <FileText className="h-4 w-4 ml-2" />
-                מדריכים
-              </>
-            ) : (
-              <>
-                <Map className="h-4 w-4 ml-2" />
-                מפת דרכים
-              </>
-            )}
+          <Button variant="outline" onClick={() => navigate('/app/guides')}>
+            <FileText strokeWidth={2} />
+            ספריית מדריכים
           </Button>
         </div>
-      </div>
 
-      {viewMode === 'path' ? (
-        /* Content Path — bleeds to the screen edges, scrolls underneath the sticky header above */
-        allContent.length > 0 &&
-        celebration.boatStationId && (
-          <ContentPath
-            allContent={allContent}
-            currentDay={currentDay}
-            milestoneUnlocked={milestoneUnlocked}
-            partNames={PART_NAMES}
-            boatStationId={celebration.boatStationId}
-            onSelect={setSelectedContent}
-          />
-        )
-      ) : (
-        /* Guides grid */
-        <div className="px-4 pt-4 grid grid-cols-2 gap-3 animate-fade-in">
-          {allContent.filter((item) => item.content_type === 'guide').length === 0 ? (
-            <p className="col-span-2 text-center text-muted-foreground py-8">אין מדריכים עדיין</p>
+        {/* Next up — when it scrolls away, the compact bar takes over */}
+        <div ref={fullCardRef}>
+          {nextUp ? (
+            <Card className="space-y-3 border-primary/40">
+              <div>
+                <p className="text-label font-semibold text-primary-soft">הבא בתור · {metaLine(nextUp)}</p>
+                <p className="text-card-title">{nextUp.title}</p>
+              </div>
+              {nextUp.video_url || nextUp.resource_link ? (
+                <VideoLauncher
+                  url={(nextUp.video_url || nextUp.resource_link)!}
+                  isVideo={!!nextUp.video_url}
+                  onPlay={bunnyId(nextUp.video_url) ? () => setSelectedContent(nextUp) : undefined}
+                />
+              ) : (
+                <PrimaryButton onClick={() => selectItem(nextUp)}>{guideBody(nextUp.body) ? 'לקריאה' : 'לפרטים'}</PrimaryButton>
+              )}
+            </Card>
+          ) : lockedNextLabel ? (
+            <Card className="flex items-center gap-3">
+              <Lock className="h-5 w-5 shrink-0 text-muted-foreground" strokeWidth={2} />
+              <p className="text-body text-muted-foreground">{lockedNextLabel}</p>
+            </Card>
           ) : (
-            allContent
-              .filter((item) => item.content_type === 'guide')
-              .map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  disabled={!item.isUnlocked}
-                  onClick={() => item.isUnlocked && setSelectedContent(item)}
-                  className={cn(
-                    'glass-card aspect-square p-3 flex flex-col items-center justify-center gap-2 text-center transition-all',
-                    item.isUnlocked ? 'hover:border-primary/40 hover:shadow-md' : 'opacity-70 cursor-not-allowed',
-                    item.isUnlocked && item.isCompleted && 'bg-success/5 border-success/20'
-                  )}
-                >
-                  <div
-                    className={cn(
-                      'w-14 h-14 rounded-xl flex items-center justify-center flex-shrink-0',
-                      item.isUnlocked ? 'gradient-primary' : 'bg-muted'
-                    )}
-                  >
-                    {item.isUnlocked ? (
-                      <FileText className="h-7 w-7 text-primary-foreground" />
-                    ) : (
-                      <Lock className="h-7 w-7 text-muted-foreground" />
-                    )}
-                  </div>
-                  <p
-                    className={cn(
-                      'text-sm font-semibold leading-snug line-clamp-2',
-                      !item.isUnlocked && 'text-muted-foreground'
-                    )}
-                  >
-                    {item.isUnlocked ? item.title : 'תוכן נעול'}
-                  </p>
-                  {item.isUnlocked && item.isCompleted && <Check className="h-4 w-4 text-success" />}
-                  {!item.isUnlocked && (
-                    <p className="text-xs text-muted-foreground">
-                      {item.daysUntilUnlock > 0 ? `נפתח בעוד ${item.daysUntilUnlock} ימים` : 'נפתח בקרוב'}
-                    </p>
-                  )}
-                </button>
-              ))
+            <div className="h-px" />
           )}
         </div>
-      )}
-
-      {/* Full-screen "stage unlocked" splash */}
-      {splashInfo && celebration.cardPhase !== 'idle' && (
-        <StageUnlockSplash
-          title={splashInfo.title}
-          stageLabel={splashInfo.stageLabel}
-          Icon={splashInfo.Icon}
-          phase={celebration.cardPhase}
-          onSkip={celebration.skip}
-        />
-      )}
-
-      {/* Sticky Weekly Survey Button */}
-      <div className="fixed left-4 right-4 z-40" style={{ bottom: 'calc(4.5rem + env(safe-area-inset-bottom, 0px))' }}>
-        <Button
-          className="w-full gradient-primary shadow-glow text-primary-foreground font-bold ring-2 ring-primary/40 animate-pulse-glow"
-          size="lg"
-          onClick={handleWeeklySurveyClick}
-        >
-          <ClipboardList className="h-5 w-5 ml-2" />
-          שאלון מעקב שבועי
-        </Button>
       </div>
 
-      {/* Weekly Survey Modal */}
-      <WeeklySurveyModal
-        open={surveyOpen}
-        onClose={() => setSurveyOpen(false)}
-        currentWeek={currentWeek}
-      />
+      {/* ── Collapsed bar: one 56px row under the app header ── */}
+      <div
+        aria-hidden={!collapsed}
+        className={cn(
+          'fixed inset-x-0 z-30 border-b border-[#26262D] bg-[#17171C]/95 backdrop-blur-md will-change-transform transition-[transform,opacity] duration-200 ease-out',
+          collapsed ? 'translate-y-0 opacity-100' : 'pointer-events-none -translate-y-3 opacity-0',
+        )}
+        style={{ top: HEADER_TOP }}
+      >
+        <div className="mx-auto flex h-14 max-w-2xl items-center gap-3 px-4">
+          <button type="button" tabIndex={collapsed ? 0 : -1} onClick={() => jumpToCurrent()} className="min-w-0 flex-1 text-right" aria-label="הבא בתור: מעבר לנקודה במפה">
+            {nextUp ? (
+              <>
+                <span className="block text-[11px] font-semibold leading-tight text-primary-soft">הבא בתור</span>
+                <span className="block truncate text-body font-semibold leading-tight">{nextTitle}</span>
+              </>
+            ) : (
+              <span className="flex items-center gap-1.5 text-label leading-tight text-muted-foreground">
+                <Lock className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
+                <span className="line-clamp-2">{nextTitle}</span>
+              </span>
+            )}
+          </button>
+          {nextUp && (
+            <button
+              type="button"
+              tabIndex={collapsed ? 0 : -1}
+              onClick={() => openItem(nextUp)}
+              aria-label={`פתיחת ${nextUp.title}`}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground"
+            >
+              <Play className="h-5 w-5" strokeWidth={2} fill="currentColor" />
+            </button>
+          )}
+        </div>
+      </div>
 
-      {/* Content Detail Dialog */}
+      {/* ── Map or cards ── */}
+      <div className={cn('pt-4 transition-opacity duration-150', fading ? 'opacity-0' : 'opacity-100')}>
+        {view === 'map' ? (
+          <ContentMap
+            ref={viewRef}
+            parts={parts}
+            currentId={currentId}
+            soonId={soon?.id ?? null}
+            revealIds={revealIds}
+            trophyParts={trophyParts}
+            finalUnlocked={finalUnlocked}
+            finalOpensLabel={currentDay < MILESTONE_DAY ? opensIn(MILESTONE_DAY - currentDay) : 'נפתח אחרי סיום התכנים'}
+            initials={initials}
+            onSelect={selectItem}
+          />
+        ) : (
+          <ContentCards
+            ref={viewRef}
+            parts={parts}
+            currentId={currentId}
+            soonId={soon?.id ?? null}
+            initialFilter={cardsFilter}
+            currentDay={currentDay}
+            onSelect={selectItem}
+            onOpen={openItem}
+          />
+        )}
+      </div>
+
+      {/* ── Content details ── */}
       <Dialog open={!!selectedContent} onOpenChange={() => setSelectedContent(null)}>
-        <DialogContent dir="rtl" className="max-w-lg max-h-[92vh] overflow-y-auto p-0">
+        <DialogContent dir="rtl" className="max-h-[92vh] max-w-lg overflow-y-auto p-0">
           {selectedContent && (
-            <div className="p-6 pt-10 space-y-4">
-              {/* Title row */}
-              <div className="flex items-start gap-2">
-                <div className="flex-1 min-w-0">
-                  <h2 className="text-lg font-bold text-foreground leading-snug">
-                    {selectedContent.title}
-                  </h2>
-                  {selectedContent.is_bonus && (
-                    <Badge variant="outline" className="mt-1 bg-warning/10 text-warning border-warning/30">
-                      <Star className="h-3 w-3 ml-1" />
-                      בונוס
-                    </Badge>
-                  )}
-                </div>
+            <div className="space-y-4 p-6 pt-10">
+              <div>
+                <p className="text-label font-semibold text-muted-foreground">{metaLine(selectedContent)}</p>
+                <h2 className="text-card-title leading-snug">{selectedContent.title}</h2>
+                {selectedContent.is_bonus && (
+                  <Badge variant="outline" className="mt-1 border-primary/30 bg-primary-tint text-primary-soft">
+                    <Star className="ml-1 h-3 w-3" />
+                    בונוס
+                  </Badge>
+                )}
               </div>
-
-              {/* Direct link button — video or guide */}
-              {(selectedContent.video_url || selectedContent.resource_link) && (
-                <Button
-                  className="w-full gradient-primary text-primary-foreground shadow-glow"
-                  size="lg"
-                  onClick={() => window.open((selectedContent.video_url || selectedContent.resource_link)!, '_blank')}
-                >
-                  <ExternalLink className="h-5 w-5 ml-2" />
-                  {selectedContent.video_url ? 'פתח סרטון' : 'פתח מדריך'}
-                </Button>
+              {bunnyId(selectedContent.video_url) && user && (
+                <BunnyEmbed
+                  videoId={bunnyId(selectedContent.video_url)!}
+                  userId={user.id}
+                  title={selectedContent.title}
+                  className="rounded-lg"
+                  onEnded={() => {
+                    // Watched to the end: marked "נצפה" (completed) automatically, the window stays open.
+                    if (!selectedContent.isCompleted) toggleCompletion(selectedContent.id, false, true);
+                  }}
+                />
               )}
-
               {selectedContent.description && (
-                <p className="text-muted-foreground text-sm leading-relaxed">
-                  {selectedContent.description}
-                </p>
+                <p className="text-body leading-relaxed text-muted-foreground">{selectedContent.description}</p>
               )}
-
-              {/* Completion Toggle */}
-              <Button
-                className={cn('w-full', selectedContent.isCompleted ? 'bg-success hover:bg-success/90' : 'gradient-primary')}
-                onClick={() => toggleCompletion(selectedContent.id, selectedContent.isCompleted)}
-              >
-                <Check className="h-4 w-4 ml-2" />
-                {selectedContent.isCompleted ? 'סומן כהושלם - לחץ לביטול' : 'סמן כהושלם'}
-              </Button>
+              {/* Two actions side by side: open it, and mark it done */}
+              <div className="grid grid-cols-2 gap-3">
+                {!bunnyId(selectedContent.video_url) && (selectedContent.video_url || selectedContent.resource_link) ? (
+                  <VideoLauncher
+                    url={(selectedContent.video_url || selectedContent.resource_link)!}
+                    isVideo={!!selectedContent.video_url}
+                    label={selectedContent.video_url ? 'צפייה' : 'פתיחה'}
+                    className="h-12 text-[15px]"
+                  />
+                ) : (
+                  <Button variant="outline" onClick={() => setSelectedContent(null)}>סגירה</Button>
+                )}
+                <Button
+                  variant={selectedContent.isCompleted || (!bunnyId(selectedContent.video_url) && (selectedContent.video_url || selectedContent.resource_link)) ? 'outline' : 'default'}
+                  onClick={() => toggleCompletion(selectedContent.id, selectedContent.isCompleted)}
+                >
+                  <Check strokeWidth={2} />
+                  {selectedContent.isCompleted ? 'בטל השלמה' : 'סמן כהושלם'}
+                </Button>
+              </div>
             </div>
           )}
         </DialogContent>

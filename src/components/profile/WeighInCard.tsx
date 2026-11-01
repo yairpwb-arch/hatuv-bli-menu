@@ -9,6 +9,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { format, differenceInDays, nextFriday } from 'date-fns';
 import { he } from 'date-fns/locale';
+import { successHaptic } from '@/lib/native';
 
 interface WeighInCardProps {
   userId: string;
@@ -54,6 +55,7 @@ export function WeighInCard({ userId, currentWeight, onWeightAdded }: WeighInCar
       if (logError) throw logError;
 
       // profiles.current_weight is kept in sync by the weight_log trigger
+      successHaptic();
       toast.success('השקילה נוספה בהצלחה');
       setNewWeight('');
       setIsModalOpen(false);
@@ -78,7 +80,7 @@ export function WeighInCard({ userId, currentWeight, onWeightAdded }: WeighInCar
               <div>
                 <h3 className="font-bold">שקילה שבועית</h3>
                 {isFriday ? (
-                  <p className="text-sm text-primary font-medium">היום יום שקילה! 🎯</p>
+                  <p className="text-sm text-primary font-medium">היום יום שקילה!</p>
                 ) : (
                   <p className="text-sm text-muted-foreground flex items-center gap-1">
                     <Clock className="h-3 w-3" />
@@ -131,7 +133,7 @@ export function WeighInCard({ userId, currentWeight, onWeightAdded }: WeighInCar
               />
             </div>
             <div className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-lg">
-              <p>💡 טיפים לשקילה נכונה:</p>
+              <p> טיפים לשקילה נכונה:</p>
               <ul className="list-disc list-inside mt-1 space-y-1 text-xs">
                 <li>שקלו בבוקר לפני אכילה</li>
                 <li>באותו הביגוד</li>

@@ -40,6 +40,8 @@ interface HabitDefinition {
   day_end: number | null;
   icon: string | null;
   is_bonus: boolean;
+  explanation?: string | null;
+  plate_zone?: 'plate' | 'side' | null;
 }
 
 interface HabitFormData {
@@ -48,6 +50,8 @@ interface HabitFormData {
   day_end: string;    // program day of last Saturday habit shows (empty = no end)
   icon: string;
   is_bonus: boolean;
+  explanation: string;
+  plate_zone: 'plate' | 'side';
 }
 
 // ─── Day ↔ Week conversions ───────────────────────────────────────────────────
@@ -90,6 +94,8 @@ const EMPTY_FORM: HabitFormData = {
   day_end: '',
   icon: 'target',
   is_bonus: false,
+  explanation: '',
+  plate_zone: 'side',
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -174,6 +180,8 @@ export default function AdminHabits() {
       day_end: habit.day_end !== null ? String(habit.day_end) : '',
       icon: habit.icon || 'target',
       is_bonus: habit.is_bonus,
+      explanation: habit.explanation ?? '',
+      plate_zone: habit.plate_zone === 'plate' ? 'plate' : 'side',
     });
     setIsDialogOpen(true);
   };
@@ -204,6 +212,8 @@ export default function AdminHabits() {
       week_end: day_end !== null ? dayToWeek(day_end) : null,
       icon: form.icon || null,
       is_bonus: form.is_bonus,
+      explanation: form.explanation.trim() || null,
+      plate_zone: form.plate_zone,
       ...(editingHabit ? { id: editingHabit.id } : {}),
     };
 
@@ -273,7 +283,7 @@ export default function AdminHabits() {
                     </TableCell>
                     <TableCell>
                       {habit.is_bonus && (
-                        <span className="inline-flex items-center gap-1 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded-full">
+                        <span className="inline-flex items-center gap-1 text-xs bg-primary-tint dark:bg-primary-tint text-amber-700 dark:text-primary-soft px-1.5 py-0.5 rounded-full">
                           <Star className="h-3 w-3" />
                           בונוס
                         </span>
@@ -357,6 +367,34 @@ export default function AdminHabits() {
                 onChange={(e) => setForm({ ...form, day_end: e.target.value })}
                 placeholder="ללא הגבלה"
               />
+            </div>
+
+            {/* Explanation — shown on long-press on the home plate */}
+            <div className="space-y-2">
+              <Label>הסבר במשפט אחד</Label>
+              <Input
+                value={form.explanation}
+                onChange={(e) => setForm({ ...form, explanation: e.target.value })}
+                placeholder="לדוגמה: מעלה שובע ומונע אכילה מופרזת"
+              />
+              <p className="text-xs text-muted-foreground">מוצג בלחיצה ארוכה על ההרגל בצלחת שבדף הבית</p>
+            </div>
+
+            {/* Plate position */}
+            <div className="space-y-2">
+              <Label>מיקום בצלחת</Label>
+              <Select
+                value={form.plate_zone}
+                onValueChange={(val) => setForm({ ...form, plate_zone: val as 'plate' | 'side' })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="side">סביב הצלחת (מים, הליכה, שינה…)</SelectItem>
+                  <SelectItem value="plate">בתוך הצלחת (חלבון, פחמימה, ירק…)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Icon */}

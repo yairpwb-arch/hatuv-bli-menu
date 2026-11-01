@@ -78,6 +78,7 @@ export default function AdminContent() {
     const { data, error } = await supabase
       .from('program_content')
       .select('*')
+      .filter('archived_at', 'is', null)
       .order('sort_order', { ascending: true });
 
     if (error) {

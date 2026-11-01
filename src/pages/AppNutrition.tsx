@@ -216,7 +216,7 @@ export default function AppNutrition() {
     <div className="min-h-screen pb-24 pt-6 px-4 space-y-6 bg-background">
       {/* Header */}
       <div className="animate-slide-up">
-        <h2 className="text-2xl font-bold text-foreground">יומן תזונה</h2>
+        <h2 className="text-screen-title text-foreground">יומן תזונה</h2>
         <p className="text-muted-foreground text-sm">תעד את הארוחות שלך בקלות</p>
       </div>
 

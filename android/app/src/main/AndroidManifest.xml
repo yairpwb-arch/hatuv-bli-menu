@@ -51,13 +51,41 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
+
+        <!-- Health Connect privacy-policy rationale (required by Health Connect).
+             Android 13 and below: -->
+        <activity
+            android:name="com.fit_up.health.capacitor.PermissionsRationaleActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+            </intent-filter>
+        </activity>
+        <!-- Android 14+: -->
+        <activity-alias
+            android:name="ViewPermissionUsageActivity"
+            android:exported="true"
+            android:targetActivity="com.fit_up.health.capacitor.PermissionsRationaleActivity"
+            android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+            </intent-filter>
+        </activity-alias>
     </application>
+
+    <queries>
+        <package android:name="com.google.android.apps.healthdata" />
+    </queries>
 
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Step counter / pedometer (Android 10+) -->
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+    <!-- Home calendar: "sync to the phone's calendar" (asked only when tapped) -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
     <!-- Foreground service for continuous step counting -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <!-- Restart the step counter service after the phone reboots -->
@@ -66,20 +94,26 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
     <!-- Push notifications (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- GPS walk (background-geolocation adds the location + foreground-service permissions).
+         GPS isn't required to install the app: the walk just isn't offered without it. -->
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" tools:replace="android:required" />
     <!-- Camera only — photo picker handles gallery access without READ_MEDIA_IMAGES -->
     <uses-permission android:name="android.permission.CAMERA" />
     <!-- Explicitly remove READ_MEDIA_IMAGES/VIDEO even if a library adds them -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" tools:node="remove" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" tools:node="remove" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove" />
-    <!-- Health Connect permissions pulled in by capacitor-health are unused on Android
-         (step counting uses the raw TYPE_STEP_COUNTER sensor, not Health Connect) —
-         removed to satisfy Health Connect's minimum-scope policy -->
+    <!-- Health Connect: ONLY what the smartwatch-workouts feature reads (workout
+         sessions, their active calories and heart rate). These three must match
+         the Health Connect declaration in Play Console exactly — Play rejects
+         apps that declare anything they don't use (minimum-scope policy). -->
+    <uses-permission android:name="android.permission.health.READ_EXERCISE" />
+    <uses-permission android:name="android.permission.health.READ_ACTIVE_CALORIES_BURNED" />
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
+    <!-- The rest of what capacitor-health pulls in stays stripped: steps come
+         from the device step sensor, and distance/route/total calories are unused. -->
     <uses-permission android:name="android.permission.health.READ_STEPS" tools:node="remove" />
-    <uses-permission android:name="android.permission.health.READ_EXERCISE" tools:node="remove" />
     <uses-permission android:name="android.permission.health.READ_DISTANCE" tools:node="remove" />
-    <uses-permission android:name="android.permission.health.READ_ACTIVE_CALORIES_BURNED" tools:node="remove" />
     <uses-permission android:name="android.permission.health.READ_TOTAL_CALORIES_BURNED" tools:node="remove" />
-    <uses-permission android:name="android.permission.health.READ_HEART_RATE" tools:node="remove" />
     <uses-permission android:name="android.permission.health.READ_EXERCISE_ROUTE" tools:node="remove" />
 </manifest>

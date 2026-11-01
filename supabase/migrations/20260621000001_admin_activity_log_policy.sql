@@ -1,5 +1,6 @@
 -- Allow admin to read all users' activity_log entries (walks/workouts)
 -- so that walk completions logged by users appear in the admin dashboard history.
+DROP POLICY IF EXISTS "admins_select_all_activity_log" ON public.activity_log;
 CREATE POLICY "admins_select_all_activity_log" ON public.activity_log
   FOR SELECT TO authenticated
   USING (

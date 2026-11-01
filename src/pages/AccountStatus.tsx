@@ -38,7 +38,7 @@ export default function AccountStatus() {
           <ChevronLeft className="h-5 w-5" />
         </Button>
         <div>
-          <h1 className="text-xl font-bold">סטטוס חשבון</h1>
+          <h1 className="text-screen-title">סטטוס חשבון</h1>
           <p className="text-xs text-muted-foreground">פרטי התוכנית שלך</p>
         </div>
       </div>
@@ -94,7 +94,7 @@ export default function AccountStatus() {
                   ? <Trophy className="h-4 w-4 text-success mx-auto mb-1" />
                   : <Clock className="h-4 w-4 text-primary mx-auto mb-1" />}
                 <p className={`text-lg font-bold ${isProgramDone ? 'text-success' : ''}`}>
-                  {isProgramDone ? '✓' : daysRemaining}
+                  {isProgramDone ? 'הושלם' : daysRemaining}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {isProgramDone ? 'הושלם!' : 'ימים נשארו'}

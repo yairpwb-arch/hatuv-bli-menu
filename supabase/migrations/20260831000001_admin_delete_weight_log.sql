@@ -4,6 +4,7 @@
 -- and scoped to auth.uid() = user_id, so it does not cover admins deleting
 -- other users' rows.
 
+DROP POLICY IF EXISTS "Admins can delete weight logs" ON public.weight_log;
 CREATE POLICY "Admins can delete weight logs"
   ON public.weight_log FOR DELETE
   USING (public.is_admin());

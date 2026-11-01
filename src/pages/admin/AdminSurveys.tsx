@@ -67,9 +67,9 @@ const EXTRA_KEYS = ['extra_q1', 'extra_q2', 'extra_q3', 'extra_q4', 'extra_q5'];
 
 function scoreColor(v: number | null) {
   if (v == null) return 'text-muted-foreground';
-  if (v <= 4) return 'text-red-500 font-semibold';
+  if (v <= 4) return 'text-destructive font-semibold';
   if (v <= 7) return 'text-yellow-500 font-semibold';
-  return 'text-green-500 font-semibold';
+  return 'text-success font-semibold';
 }
 
 // ── Questions Tab ─────────────────────────────────────────────────────────────
@@ -314,7 +314,7 @@ function QuestionsTab() {
                   <Pencil className="h-3.5 w-3.5" />
                 </button>
                 {EXTRA_KEYS.includes(q.column_key) && (
-                  <button onClick={() => deleteQuestion(q)} className="p-1.5 text-muted-foreground hover:text-red-500 shrink-0">
+                  <button onClick={() => deleteQuestion(q)} className="p-1.5 text-muted-foreground hover:text-destructive shrink-0">
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 )}

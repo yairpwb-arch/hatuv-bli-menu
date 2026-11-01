@@ -4,7 +4,10 @@
 -- All GIFs from ExerciseDB OSS (static.exercisedb.dev)
 -- =====================================================
 
-INSERT INTO public.exercises (name, description, muscle_groups, equipment, difficulty, media_url) VALUES
+-- Safe to run more than once: an exercise whose name already exists is skipped.
+INSERT INTO public.exercises (name, description, muscle_groups, equipment, difficulty, media_url)
+SELECT v.name, v.description, v.muscle_groups, v.equipment, v.difficulty, v.media_url
+FROM (VALUES
 
 -- ── TRICEPS ───────────────────────────────────────
 (
@@ -88,4 +91,6 @@ INSERT INTO public.exercises (name, description, muscle_groups, equipment, diffi
   'barbell',
   'intermediate',
   'https://static.exercisedb.dev/media/UDlhcO8.gif'
-);
+)
+) AS v(name, description, muscle_groups, equipment, difficulty, media_url)
+WHERE NOT EXISTS (SELECT 1 FROM public.exercises e WHERE e.name = v.name);

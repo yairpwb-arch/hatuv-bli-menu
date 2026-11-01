@@ -36,7 +36,7 @@ export function WeightChart({ weightHistory, targetWeight }: WeightChartProps) {
                 ? `${(payload[0].value - targetWeight).toFixed(1)} ק"ג מעל היעד`
                 : payload[0].value < targetWeight 
                   ? `${(targetWeight - payload[0].value).toFixed(1)} ק"ג מתחת ליעד`
-                  : 'ביעד! 🎯'
+                  : 'ביעד!'
               }
             </p>
           )}
@@ -62,8 +62,8 @@ export function WeightChart({ weightHistory, targetWeight }: WeightChartProps) {
       </CardHeader>
       <CardContent>
         {chartData.length > 1 ? (
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
+          <div>
+            <ResponsiveContainer width="100%" height={256}>
               <LineChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                 <XAxis
@@ -73,6 +73,8 @@ export function WeightChart({ weightHistory, targetWeight }: WeightChartProps) {
                 />
                 <YAxis
                   domain={[minWeight, maxWeight]}
+                  width={40}
+                  tickFormatter={(v: number) => String(Math.round(v))}
                   tick={{ fontSize: 11 }}
                   className="fill-muted-foreground"
                 />
@@ -85,12 +87,6 @@ export function WeightChart({ weightHistory, targetWeight }: WeightChartProps) {
                     stroke="hsl(var(--success))" 
                     strokeDasharray="5 5"
                     strokeWidth={2}
-                    label={{ 
-                      value: `יעד: ${targetWeight} ק"ג`, 
-                      position: 'right',
-                      fill: 'hsl(var(--success))',
-                      fontSize: 11,
-                    }}
                   />
                 )}
                 
@@ -104,6 +100,13 @@ export function WeightChart({ weightHistory, targetWeight }: WeightChartProps) {
                 />
               </LineChart>
             </ResponsiveContainer>
+            {/* Goal label as HTML, not SVG text — SVG <text> scrambles Hebrew on an RTL page */}
+            {targetWeight && (
+              <p className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                <span className="inline-block w-5 border-t-2 border-dashed border-success" />
+                יעד: {targetWeight} ק"ג
+              </p>
+            )}
           </div>
         ) : (
           <div className="h-64 flex items-center justify-center text-muted-foreground text-center">

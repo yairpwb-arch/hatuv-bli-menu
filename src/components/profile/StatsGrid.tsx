@@ -198,7 +198,7 @@ export function StatsGrid({
                   <p className="text-xs text-muted-foreground">עד היעד</p>
                   <p className="text-lg font-bold">
                     {weightToGoal <= 0 ? (
-                      <span className="text-success">הגעת! 🎉</span>
+                      <span className="text-success">הגעת!</span>
                     ) : (
                       `${weightToGoal.toFixed(1)} ק"ג`
                     )}

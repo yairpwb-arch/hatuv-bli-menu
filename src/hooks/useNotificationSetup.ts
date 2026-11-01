@@ -3,6 +3,7 @@ import { Capacitor } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { requestNavigate } from '@/lib/appNavigate';
 
 function getPlatform(): 'ios' | 'android' {
   return Capacitor.getPlatform() === 'ios' ? 'ios' : 'android';
@@ -19,13 +20,12 @@ function getUserTimezone(): string {
 // Navigate to the right screen based on notification type
 function handleNotificationTap(type: string) {
   const routes: Record<string, string> = {
-    daily_quote: '/app/content',
     phase_check: '/app',
     new_habits: '/app',
-    weigh_reminder: '/app/tracker',
-    survey_followup: '/app',
+    // Friday morning weigh-in opens the add-weight dialog directly.
+    weigh_reminder: '/app/progress?weigh=1',
   };
-  window.location.hash = '#' + (routes[type] ?? '/app');
+  requestNavigate(routes[type] ?? '/app');
 }
 
 // Saves the raw FCM / APNs token directly to notification_settings.

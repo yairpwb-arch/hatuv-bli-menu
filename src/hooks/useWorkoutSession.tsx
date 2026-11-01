@@ -16,11 +16,19 @@ export interface WorkoutSessionLog {
   } | null;
 }
 
+export interface SessionExtras {
+  clientSessionId: string;
+  difficulty: 'easy' | 'medium' | 'hard' | null;
+  setsDone: number;
+  totalVolumeKg: number;
+}
+
 export interface ExerciseSetLog {
   exerciseId: string;
   sets: {
     reps: number;
     weightKg: number;
+    setNumber?: number;
   }[];
 }
 
@@ -58,24 +66,33 @@ export function useWorkoutSession() {
   });
 
   const logSession = async (
-    planDayId: string,
+    /** null for a workout the trainee built (not from the plan). */
+    planDayId: string | null,
     durationMinutes: number,
-    exerciseLogs: ExerciseSetLog[]
-  ) => {
-    if (!user) return;
+    exerciseLogs: ExerciseSetLog[],
+    extras?: SessionExtras,
+  ): Promise<string | null> => {
+    if (!user) return null;
 
     try {
       // Insert the session log
-      const { data: sessionData, error: sessionError } = await supabase
-        .from('workout_session_logs')
-        .insert({
-          user_id: user.id,
-          plan_day_id: planDayId,
-          duration_minutes: durationMinutes > 0 ? durationMinutes : null,
-          completed_at: new Date().toISOString(),
-        })
-        .select()
-        .single();
+      const base = {
+        user_id: user.id,
+        plan_day_id: planDayId,
+        duration_minutes: durationMinutes > 0 ? durationMinutes : null,
+        completed_at: new Date().toISOString(),
+      };
+      const row = extras
+        ? {
+            ...base,
+            client_session_id: extras.clientSessionId,
+            difficulty: extras.difficulty,
+            sets_done: extras.setsDone,
+            total_volume_kg: extras.totalVolumeKg,
+          }
+        : base;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: sessionData, error: sessionError } = await (supabase as any).from('workout_session_logs').insert(row).select().single();
 
       if (sessionError) {
         console.error('Error logging workout session:', sessionError);
@@ -84,7 +101,7 @@ export function useWorkoutSession() {
           description: 'לא ניתן לשמור את האימון',
           variant: 'destructive',
         });
-        return;
+        return null;
       }
 
       // Insert exercise logs for each exercise and its sets
@@ -101,7 +118,7 @@ export function useWorkoutSession() {
           exerciseLogRows.push({
             session_id: sessionData.id,
             exercise_id: exerciseLog.exerciseId,
-            set_number: setIndex + 1,
+            set_number: set.setNumber ?? setIndex + 1,
             reps: set.reps,
             weight_kg: set.weightKg,
           });
@@ -118,20 +135,6 @@ export function useWorkoutSession() {
         }
       }
 
-      // Enforce 10-session limit: delete oldest exercise logs + sessions if over limit
-      const { data: allSessions } = await supabase
-        .from('workout_session_logs')
-        .select('id, completed_at')
-        .eq('user_id', user.id)
-        .order('completed_at', { ascending: true });
-
-      if (allSessions && allSessions.length > 10) {
-        const toDelete = allSessions.slice(0, allSessions.length - 10);
-        const idsToDelete = toDelete.map((s: { id: string }) => s.id);
-        await supabase.from('workout_exercise_logs').delete().in('session_id', idsToDelete);
-        await supabase.from('workout_session_logs').delete().in('id', idsToDelete);
-      }
-
       toast({
         title: 'כל הכבוד!',
         description: 'האימון נרשם בהצלחה',
@@ -139,6 +142,7 @@ export function useWorkoutSession() {
 
       // Invalidate sessions cache so UI updates
       await queryClient.invalidateQueries({ queryKey: ['workout-sessions', user.id] });
+      return sessionData.id as string;
     } catch (err) {
       console.error('Unexpected error logging session:', err);
       toast({
@@ -147,6 +151,7 @@ export function useWorkoutSession() {
         variant: 'destructive',
       });
     }
+    return null;
   };
 
   const deleteSession = async (sessionId: string) => {

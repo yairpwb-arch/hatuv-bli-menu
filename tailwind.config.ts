@@ -31,6 +31,8 @@ export default {
         primary: {
           DEFAULT: "hsl(var(--primary))",
           foreground: "hsl(var(--primary-foreground))",
+          soft: "hsl(var(--primary-soft))",
+          tint: "hsl(var(--primary-tint))",
         },
         secondary: {
           DEFAULT: "hsl(var(--secondary))",
@@ -63,6 +65,7 @@ export default {
         card: {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
+          inner: "hsl(var(--card-inner))",
         },
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",
@@ -82,12 +85,43 @@ export default {
         sm: "calc(var(--radius) - 4px)",
         xl: "calc(var(--radius) + 4px)",
         "2xl": "calc(var(--radius) + 8px)",
+        // Design-system radii
+        card: "24px",
+        inner: "16px",
+        button: "16px",
+        pill: "9999px",
+      },
+      spacing: {
+        // Design-system spacing: gap between cards / padding inside a card
+        "card-gap": "16px",
+        card: "20px",
+      },
+      fontSize: {
+        // Design-system type scale (Heebo). In rem (30px / 18 / 28 / 56 / 15 /
+        // 13 at the default 16px root) so Settings → text size scales them.
+        "screen-title": ["1.875rem", { lineHeight: "2.375rem", fontWeight: "800" }],
+        "card-title": ["1.125rem", { lineHeight: "1.625rem", fontWeight: "700" }],
+        stat: ["1.75rem", { lineHeight: "2.125rem", fontWeight: "800" }],
+        "stat-lg": ["3.5rem", { lineHeight: "3.75rem", fontWeight: "800" }],
+        body: ["0.9375rem", { lineHeight: "1.375rem", fontWeight: "400" }],
+        label: ["0.8125rem", { lineHeight: "1.125rem", fontWeight: "400" }],
       },
       boxShadow: {
-        'glow': '0 0 20px hsl(var(--primary) / 0.3)',
-        'glow-lg': '0 0 40px hsl(var(--primary) / 0.4)',
+        // No glows in the design system — kept as no-ops for existing markup.
+        'glow': 'none',
+        'glow-lg': 'none',
       },
       keyframes: {
+        // A guide page's text coming in: fade + a small rise.
+        "story-in": {
+          from: { opacity: "0", transform: "translateY(10px)" },
+          to: { opacity: "1", transform: "translateY(0)" },
+        },
+        // The finished-guide check: drawn in, then a soft settle.
+        "check-draw": {
+          from: { strokeDashoffset: "1" },
+          to: { strokeDashoffset: "0" },
+        },
         "accordion-down": {
           from: { height: "0" },
           to: { height: "var(--radix-accordion-content-height)" },
@@ -115,6 +149,40 @@ export default {
         "bounce-in": {
           "0%": { transform: "scale(0.8)", opacity: "0" },
           "70%": { transform: "scale(1.05)" },
+          "100%": { transform: "scale(1)", opacity: "1" },
+        },
+        // Content map — transform/opacity only, so they stay on the compositor.
+        "here-ring": {
+          "0%": { transform: "scale(1)", opacity: "0.9" },
+          "100%": { transform: "scale(1.35)", opacity: "0" },
+        },
+        "spot-ping": {
+          "0%": { transform: "scale(0.9)", opacity: "1" },
+          "100%": { transform: "scale(1.9)", opacity: "0" },
+        },
+        "spot-ping-box": {
+          "0%, 100%": { transform: "scale(1)" },
+          "30%": { transform: "scale(1.03)" },
+        },
+        "node-reveal": {
+          "0%": { transform: "scale(0.6)", opacity: "0" },
+          "100%": { transform: "scale(1)", opacity: "1" },
+        },
+        "lock-open": {
+          "0%": { transform: "scale(1)", opacity: "1" },
+          "100%": { transform: "scale(1.8)", opacity: "0" },
+        },
+        "trophy-pop": {
+          "0%": { transform: "translate(-50%, -50%) scale(0.5)", opacity: "0" },
+          "60%": { transform: "translate(-50%, -50%) scale(1.2)", opacity: "1" },
+          "100%": { transform: "translate(-50%, -50%) scale(1)", opacity: "1" },
+        },
+        "water-rise": {
+          "0%": { transform: "scaleY(0.05)" },
+          "100%": { transform: "scaleY(1)" },
+        },
+        "fill-pop": {
+          "0%": { transform: "scale(0.82)", opacity: "0.35" },
           "100%": { transform: "scale(1)", opacity: "1" },
         },
         "pulse-glow": {
@@ -152,6 +220,22 @@ export default {
           "0%": { opacity: "0", transform: "translateY(20px)" },
           "100%": { opacity: "1", transform: "translateY(0)" },
         },
+        "menu-in": {
+          "0%": { opacity: "0", transform: "scale(0.96)" },
+          "100%": { opacity: "1", transform: "scale(1)" },
+        },
+        "loader-spin": { to: { transform: "rotate(360deg)" } },
+        "loader-breathe": { "0%, 100%": { transform: "scale(1)" }, "50%": { transform: "scale(1.04)" } },
+        "loader-progress": { from: { width: "0%" }, to: { width: "90%" } },
+        shimmer: { to: { transform: "translateX(100%)" } },
+        "splash-rise": {
+          "0%": { opacity: "0", transform: "translateY(28px) scale(0.92)" },
+          "100%": { opacity: "1", transform: "translateY(0) scale(1)" },
+        },
+        "page-enter": {
+          "0%": { opacity: "0" },
+          "100%": { opacity: "1" },
+        },
         sparkle: {
           "0%": { transform: "scale(0) translate(0, 0)", opacity: "0" },
           "40%": { opacity: "1" },
@@ -159,6 +243,8 @@ export default {
         },
       },
       animation: {
+        "story-in": "story-in 250ms ease-out both",
+        "check-draw": "check-draw 450ms ease-out 200ms both",
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
         "fade-in": "fade-in 0.5s ease-out forwards",
@@ -167,6 +253,14 @@ export default {
         "pulse-soft": "pulse-soft 2s ease-in-out infinite",
         "bounce-in": "bounce-in 0.4s ease-out forwards",
         "pulse-glow": "pulse-glow 2s ease-out infinite",
+        "fill-pop": "fill-pop 0.2s ease-out",
+        "water-rise": "water-rise 0.3s ease-out",
+        "here-ring": "here-ring 2s ease-out infinite",
+        "spot-ping": "spot-ping 0.65s ease-out 2",
+        "spot-ping-box": "spot-ping-box 0.6s ease-out 2",
+        "node-reveal": "node-reveal 0.4s ease-out 0.15s both",
+        "lock-open": "lock-open 0.4s ease-out forwards",
+        "trophy-pop": "trophy-pop 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) both",
         "splash-in": "splash-in 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) forwards",
         "splash-out": "splash-out 0.6s ease-in forwards",
         "screen-shake": "screen-shake 0.15s ease-in-out 2",
@@ -174,6 +268,13 @@ export default {
         "marker-pulse": "marker-pulse 1.8s ease-out infinite",
         "wake-fade": "wake-fade 0.6s ease-out forwards",
         "part-reveal": "part-reveal 0.6s ease-out forwards",
+        "page-enter": "page-enter 0.2s ease-out",
+        "splash-rise": "splash-rise 0.6s ease-out both",
+        "loader-spin": "loader-spin 1.2s ease-in-out infinite",
+        "loader-breathe": "loader-breathe 2s ease-in-out infinite",
+        "loader-progress": "loader-progress 8s ease-out forwards",
+        shimmer: "shimmer 1.6s ease-in-out infinite",
+        "menu-in": "menu-in 150ms ease-out",
         sparkle: "sparkle 0.9s ease-out forwards",
       },
     },

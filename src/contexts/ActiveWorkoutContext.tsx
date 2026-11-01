@@ -1,11 +1,11 @@
 import { createContext, useContext, useState, ReactNode } from 'react';
 import type { WorkoutPlanDay, WorkoutPlanExercise } from '@/hooks/useWorkoutPlan';
-import type { ExerciseLog } from '@/components/WorkoutActiveSession';
+import type { WorkoutResult } from '@/components/WorkoutActiveSession';
 
 export interface WorkoutSessionParams {
   planDay: WorkoutPlanDay;
   exercises: WorkoutPlanExercise[];
-  onFinish: (durationMinutes: number, logs: ExerciseLog[]) => Promise<void>;
+  onFinish: (result: WorkoutResult) => Promise<void>;
 }
 
 interface ActiveWorkoutContextValue {

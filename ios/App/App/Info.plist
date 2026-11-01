@@ -45,8 +45,13 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>כדי למדוד מרחק ומסלול בהליכה. המיקום נשמר רק אצלך.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>כדי להמשיך למדוד את ההליכה גם כשהמסך נעול. המיקום נשמר רק אצלך.</string>
 	<key>UIBackgroundModes</key>
 	<array>
+		<string>location</string>
 		<string>remote-notification</string>
 		<string>fetch</string>
 	</array>
@@ -54,10 +59,16 @@
 	<true/>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
+	<string>כדי להוסיף את האימונים, ההליכות והאירועים שלך ליומן של הטלפון</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>כדי להוסיף את האימונים, ההליכות והאירועים שלך ליומן של הטלפון</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>כדי להוסיף את האימונים, ההליכות והאירועים שלך ליומן של הטלפון</string>
 	<key>NSMotionUsageDescription</key>
 	<string>האפליקציה משתמשת בחיישן התנועה כדי לספור את הצעדים היומיים שלך</string>
 	<key>NSHealthShareUsageDescription</key>
-	<string>האפליקציה מבקשת גישה לנתוני בריאות כדי לספור את הצעדים היומיים שלך</string>
+	<string>האפליקציה קוראת מ-Apple Health את הצעדים היומיים ואת האימונים מהשעון (סוג, משך, קלוריות ודופק) כדי להציג אותם בהיסטוריית האימונים</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>האפליקציה מבקשת גישה לעדכון נתוני בריאות עבור מעקב הצעדים היומיים שלך</string>
 	<key>NSCameraUsageDescription</key>

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Droplets, Footprints, Timer, Moon, Target, Apple, Dumbbell } from 'lucide-react';
+import { VisualKey, isHiddenKey, isTableKey, resolveVisualKey } from '@/lib/habitVisuals';
 
 export interface Habit {
   id: string;
@@ -8,6 +9,23 @@ export interface Habit {
   icon: string;
   completed: boolean;
   is_bonus: boolean;
+  /** One-line explanation, shown on long-press. */
+  explanation: string | null;
+  /** Drawn inside the plate (food portions) or around it. */
+  plate_zone: 'plate' | 'side';
+  /** Object on the home table / routine row it's drawn as; null = tag only. */
+  visual_key: VisualKey | null;
+}
+
+interface HabitDefRow {
+  id: string;
+  name: string;
+  icon: string | null;
+  is_bonus: boolean | null;
+  explanation?: string | null;
+  plate_zone?: string | null;
+  visual_key?: string | null;
+  day_end?: number | null;
 }
 
 export const iconMap: Record<string, typeof Droplets> = {
@@ -21,9 +39,11 @@ export const iconMap: Record<string, typeof Droplets> = {
 };
 
 interface UseHabitsResult {
+  /** Today's habits: this stage's, plus earlier stages' that stay part of the routine. */
   habits: Habit[];
   isLoading: boolean;
   toggleHabit: (habitId: string, completed: boolean) => Promise<void>;
+  setHabitDone: (habitId: string, done: boolean) => Promise<void>;
   refetch: () => Promise<void>;
 }
 
@@ -61,6 +81,14 @@ export function useHabits(
       return;
     }
 
+    // Earlier stages' habits (their window already closed) stay in the
+    // routine: on the plate if they're drawn there, otherwise in the daily summary.
+    const { data: pastDefs } = await supabase
+      .from('habit_definitions')
+      .select('*')
+      .lt('day_end', effectiveDay)
+      .or(`user_id.is.null,user_id.eq.${userId}`);
+
     // Get completed habits for the specified date
     const { data: completedHabits } = await supabase
       .from('daily_habits_log')
@@ -72,19 +100,38 @@ export function useHabits(
 
     // Filter out walk/workout habits (they have their own dedicated card)
     // These are handled by the activity scheduler
-    const staticHabits = (habitDefs || []).filter(h => 
-      !h.name.includes('הליכה') && !h.name.includes('אימון')
-    );
-
-    const habitsWithStatus = staticHabits.map((h) => ({
+    // Also drop habits that are part of the plan but never ticked (slow eating,
+    // the four meals) and ones retired with day_end = 0.
+    const isStatic = (h: HabitDefRow) =>
+      !h.name.includes('הליכה') && !h.name.includes('אימון') &&
+      h.day_end !== 0 && !isHiddenKey(resolveVisualKey(h.visual_key));
+    const toHabit = (h: HabitDefRow): Habit => ({
       id: h.id,
       name: h.name,
       icon: h.icon || 'target',
       completed: completedIds.has(h.id),
       is_bonus: h.is_bonus || false,
-    }));
+      explanation: h.explanation ?? null,
+      plate_zone: h.plate_zone === 'plate' ? 'plate' : 'side',
+      visual_key: resolveVisualKey(h.visual_key),
+    });
 
-    setHabits(habitsWithStatus);
+    const current = ((habitDefs || []) as HabitDefRow[]).filter(isStatic).map(toHabit);
+    // One habit per name, and one per table object — the current stage's wins —
+    // so nothing shows twice (or both on the plate and in the summary).
+    const names = new Set(current.map((h) => h.name));
+    const tableKeys = new Set(current.map((h) => h.visual_key).filter(isTableKey));
+    const past: Habit[] = [];
+    for (const h of ((pastDefs || []) as HabitDefRow[]).filter((d) => isStatic(d) && !d.is_bonus).map(toHabit)) {
+      if (names.has(h.name)) continue;
+      if (isTableKey(h.visual_key)) {
+        if (tableKeys.has(h.visual_key)) continue;
+        tableKeys.add(h.visual_key);
+      }
+      names.add(h.name);
+      past.push(h);
+    }
+    setHabits([...current, ...past]);
     setIsLoading(false);
   }, [userId, effectiveDay, dateString]);
 
@@ -124,5 +171,12 @@ export function useHabits(
     );
   };
 
-  return { habits, isLoading, toggleHabit, refetch: fetchHabits };
+  /** Sets a habit to an exact state (no-op when it's already there). */
+  const setHabitDone = async (habitId: string, done: boolean) => {
+    const habit = habits.find((h) => h.id === habitId);
+    if (!habit || habit.completed === done) return;
+    await toggleHabit(habitId, habit.completed);
+  };
+
+  return { habits, isLoading, toggleHabit, setHabitDone, refetch: fetchHabits };
 }

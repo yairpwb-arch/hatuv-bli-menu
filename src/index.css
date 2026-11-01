@@ -12,6 +12,7 @@
 
     --card: 0 0% 100%;
     --card-foreground: 224 40% 8%;
+    --card-inner: 220 20% 96%;
 
     --popover: 0 0% 100%;
     --popover-foreground: 224 40% 8%;
@@ -19,6 +20,8 @@
     /* #ffb863 slightly deepened for white-bg contrast */
     --primary: 33 90% 52%;
     --primary-foreground: 0 0% 100%;
+    --primary-soft: 27 90% 38%;
+    --primary-tint: 30 100% 95%;
 
     --secondary: 220 20% 94%;
     --secondary-foreground: 224 40% 8%;
@@ -53,10 +56,6 @@
     --sidebar-border: 220 15% 88%;
     --sidebar-ring: 33 90% 52%;
 
-    --gradient-primary: linear-gradient(135deg, hsl(33 90% 52%), hsl(38 88% 46%));
-    --gradient-hero: linear-gradient(180deg, hsl(33 90% 52% / 0.08), transparent);
-    --gradient-card: linear-gradient(180deg, hsl(0 0% 100%), hsl(220 20% 98%));
-    --gradient-success: linear-gradient(135deg, hsl(142 68% 38%), hsl(142 60% 30%));
 
     --shadow-xs: 0 1px 2px 0 hsl(224 40% 8% / 0.04);
     --shadow-sm: 0 2px 4px 0 hsl(224 40% 8% / 0.06), 0 1px 2px -1px hsl(224 40% 8% / 0.04);
@@ -66,71 +65,75 @@
     --shadow-glow: 0 0 28px hsl(33 90% 52% / 0.30);
 
     --color-gold: 33 90% 52%;
-    --gradient-premium: linear-gradient(135deg, hsl(33 90% 52%), hsl(38 88% 46%));
-    --gradient-gold: linear-gradient(135deg, hsl(33 90% 56%), hsl(38 88% 50%));
   }
 
-  /* ── Dark Mode (default) ────────────────────────────────────────────────── */
+  /* ── Dark Mode (default) ────────────────────────────────────────────────
+     The design system. Every screen colour comes from these tokens — never a
+     raw hex in a component. Values are HSL channels so Tailwind can apply
+     opacity (bg-primary/15).
+       background   #0E0E11   card        #17171C   card-inner  #1F1F25
+       border       #26262D   foreground  #F5F3EE   muted-fg    #A9A7AE
+       primary      #FF8A2A   primary-soft #FFB070  primary-tint #22160C
+       success      #5BE38F
+     Contrast on card #17171C: foreground 16:1, muted-fg 7.5:1,
+     primary-soft 10:1, success 11:1; dark text on primary 8:1. */
   .dark {
-    --background: 240 12% 6%;
-    --foreground: 220 18% 94%;
+    --background: 240 10% 6%;
+    --foreground: 43 26% 95%;
 
-    --card: 240 10% 9%;
-    --card-foreground: 220 18% 94%;
+    --card: 240 10% 10%;
+    --card-foreground: 43 26% 95%;
+    --card-inner: 240 9% 13%;
 
     --popover: 240 10% 10%;
-    --popover-foreground: 220 18% 94%;
+    --popover-foreground: 43 26% 95%;
 
-    /* #ffb863 — exact */
-    --primary: 33 100% 69%;
-    --primary-foreground: 240 12% 7%;
+    --primary: 27 100% 58%;
+    --primary-foreground: 240 10% 6%;
+    --primary-soft: 27 100% 72%;
+    --primary-tint: 27 48% 9%;
 
-    --secondary: 240 10% 15%;
-    --secondary-foreground: 220 18% 88%;
+    --secondary: 240 9% 13%;
+    --secondary-foreground: 43 26% 95%;
 
-    --muted: 240 10% 14%;
-    --muted-foreground: 220 12% 52%;
+    --muted: 240 9% 13%;
+    --muted-foreground: 257 4% 67%;
 
-    --accent: 33 100% 69%;
-    --accent-foreground: 240 12% 7%;
+    /* shadcn "accent" = neutral hover/focus surface (menus, ghost buttons) */
+    --accent: 240 9% 13%;
+    --accent-foreground: 43 26% 95%;
 
-    --destructive: 0 65% 52%;
-    --destructive-foreground: 0 0% 100%;
+    /* #FF6B6B soft red — sign out / delete */
+    --destructive: 0 100% 71%;
+    --destructive-foreground: 240 10% 6%;
 
-    --success: 142 65% 42%;
-    --success-foreground: 0 0% 100%;
+    --success: 143 71% 62%;
+    --success-foreground: 240 10% 6%;
 
     --warning: 38 90% 58%;
-    --warning-foreground: 240 12% 7%;
+    --warning-foreground: 240 10% 6%;
 
-    --border: 240 10% 16%;
-    --input: 240 10% 14%;
-    --ring: 33 100% 69%;
+    --border: 240 8% 16%;
+    --input: 240 8% 16%;
+    --ring: 27 100% 58%;
 
-    --sidebar-background: 240 12% 7%;
-    --sidebar-foreground: 220 18% 88%;
-    --sidebar-primary: 33 100% 69%;
-    --sidebar-primary-foreground: 240 12% 7%;
-    --sidebar-accent: 240 10% 14%;
-    --sidebar-accent-foreground: 33 100% 75%;
-    --sidebar-border: 240 10% 15%;
-    --sidebar-ring: 33 100% 69%;
+    --sidebar-background: 240 10% 6%;
+    --sidebar-foreground: 43 26% 95%;
+    --sidebar-primary: 27 100% 58%;
+    --sidebar-primary-foreground: 240 10% 6%;
+    --sidebar-accent: 240 9% 13%;
+    --sidebar-accent-foreground: 27 100% 72%;
+    --sidebar-border: 240 8% 16%;
+    --sidebar-ring: 27 100% 58%;
 
-    --gradient-primary: linear-gradient(135deg, hsl(33 100% 69%), hsl(38 95% 60%));
-    --gradient-hero: linear-gradient(180deg, hsl(33 100% 69% / 0.12), transparent);
-    --gradient-card: linear-gradient(160deg, hsl(240 10% 11%), hsl(240 10% 9%));
-    --gradient-success: linear-gradient(135deg, hsl(142 65% 42%), hsl(142 60% 33%));
+    --shadow-xs: none;
+    --shadow-sm: none;
+    --shadow-md: none;
+    --shadow-lg: 0 12px 28px -6px hsl(240 30% 2% / 0.5);
+    --shadow-xl: 0 24px 44px -8px hsl(240 30% 2% / 0.6);
+    --shadow-glow: none;
 
-    --shadow-xs: 0 1px 3px 0 hsl(240 30% 3% / 0.35);
-    --shadow-sm: 0 2px 6px 0 hsl(240 30% 3% / 0.40), 0 1px 2px -1px hsl(240 30% 3% / 0.25);
-    --shadow-md: 0 4px 14px -1px hsl(240 30% 3% / 0.45), 0 2px 6px -2px hsl(240 30% 3% / 0.28);
-    --shadow-lg: 0 12px 28px -3px hsl(240 30% 3% / 0.55), 0 4px 10px -4px hsl(240 30% 3% / 0.32);
-    --shadow-xl: 0 24px 44px -5px hsl(240 30% 3% / 0.60), 0 8px 16px -6px hsl(240 30% 3% / 0.38);
-    --shadow-glow: 0 0 32px hsl(33 100% 69% / 0.28), 0 0 8px hsl(33 100% 69% / 0.14);
-
-    --color-gold: 33 100% 69%;
-    --gradient-premium: linear-gradient(135deg, hsl(33 100% 69%), hsl(38 95% 60%));
-    --gradient-gold: linear-gradient(135deg, hsl(33 100% 73%), hsl(38 95% 63%));
+    --color-gold: 27 100% 58%;
   }
 }
 
@@ -141,6 +144,8 @@
     -webkit-user-select: none;
     user-select: none;
     -webkit-touch-callout: none;
+    /* No grey/blue flash on tap — native apps use their own pressed states */
+    -webkit-tap-highlight-color: transparent;
   }
 
   /* Re-enable selection in form elements */
@@ -161,34 +166,66 @@
 }
 
 /* ── Safe-area utilities (iOS/Android notch + home indicator) ─────────────── */
+/* iOS reports insets through env(). Android 15+ edge-to-edge WebViews often
+   don't, so Capacitor 8 injects --safe-area-inset-* instead (and leaves them
+   at 0 on older Android, where the WebView is already padded natively). */
+:root {
+  --app-safe-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
+  --app-safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
+}
 .safe-top {
-  padding-top: env(safe-area-inset-top, 0px);
+  padding-top: var(--app-safe-top);
 }
 .safe-bottom-spacer {
-  height: env(safe-area-inset-bottom, 0px);
+  height: var(--app-safe-bottom);
+}
+
+/* Top header + bottom tab bar share one surface. */
+:root {
+  --bar-bg: hsl(var(--card));
+  --bar-bg-translucent: hsl(var(--card) / 0.92);
+  --bar-border: hsl(var(--border));
+  --bar-inactive: hsl(var(--muted-foreground));
+}
+.dark {
+  --bar-bg: #121216;
+  --bar-bg-translucent: rgba(18, 18, 22, 0.92);
+  --bar-border: #26262D;
+  --bar-inactive: #8E8C94; /* 5.6:1 on #121216 */
+}
+.app-bar {
+  background-color: var(--bar-bg);
+  border-color: var(--bar-border);
+}
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .app-bar {
+    background-color: var(--bar-bg-translucent);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    backdrop-filter: blur(20px) saturate(160%);
+  }
 }
 
 @layer components {
   .glass-card {
-    @apply bg-card/80 border border-border/50 rounded-2xl backdrop-blur-sm;
+    @apply bg-card border border-border rounded-card;
     box-shadow: var(--shadow-md);
   }
 
   .card-elevated {
-    @apply bg-card rounded-2xl;
-    box-shadow: var(--shadow-lg);
+    @apply bg-card border border-border rounded-card;
   }
 
+  /* Legacy names kept so existing markup keeps working — all solid now. */
   .gradient-primary {
-    background: var(--gradient-primary);
+    background: hsl(var(--primary));
   }
 
   .gradient-success {
-    background: var(--gradient-success);
+    background: hsl(var(--success));
   }
 
   .gradient-hero {
-    background: var(--gradient-hero);
+    background: hsl(var(--primary-tint));
   }
 
   .shadow-glow {
@@ -203,12 +240,9 @@
     box-shadow: var(--shadow-lg);
   }
 
-  /* Premium frosted glass surface */
   .glass-surface {
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    background: hsl(var(--card) / 0.75);
-    border: 1px solid hsl(var(--border) / 0.5);
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
   }
 
   .animate-float {
@@ -240,13 +274,11 @@
 
 @layer utilities {
   .text-gradient {
-    @apply bg-clip-text text-transparent;
-    background-image: var(--gradient-primary);
+    color: hsl(var(--primary-soft));
   }
 
   .text-gradient-gold {
-    @apply bg-clip-text text-transparent;
-    background-image: var(--gradient-gold);
+    color: hsl(var(--primary-soft));
   }
 }
 
@@ -289,20 +321,15 @@
 
 /* ── Utility classes ─────────────────────────────────────────────────────── */
 .gradient-premium {
-  background: var(--gradient-premium);
+  background: hsl(var(--primary));
 }
 
 .gradient-gold {
-  background: var(--gradient-gold);
+  background: hsl(var(--primary));
 }
 
 .shimmer {
-  background: linear-gradient(
-    90deg,
-    hsl(var(--muted)) 25%,
-    hsl(var(--secondary)) 50%,
-    hsl(var(--muted)) 75%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
+  background: hsl(var(--muted));
+  animation: pulse-soft 1.5s ease-in-out infinite;
 }
+

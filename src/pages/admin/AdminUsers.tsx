@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { nextSaturday } from '@/lib/programStart';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -43,6 +44,8 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { format, differenceInDays, startOfWeek, addDays } from 'date-fns';
 import { he } from 'date-fns/locale';
+import { Moon } from 'lucide-react';
+import { DailySummariesTab } from '@/components/admin/DailySummariesTab';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -347,9 +350,9 @@ function calcAge(birthdate: string | null): string {
 
 function scoreColor(score: number | null): string {
   if (score == null) return '';
-  if (score <= 4) return 'text-red-500';
+  if (score <= 4) return 'text-destructive';
   if (score <= 7) return 'text-yellow-500';
-  return 'text-green-500';
+  return 'text-success';
 }
 
 // ── Main Component ─────────────────────────────────────────────────────────────
@@ -364,7 +367,7 @@ export default function AdminUsers() {
 
   // Add-user form
   const [isAddOpen, setIsAddOpen] = useState(false);
-  const [newUser, setNewUser] = useState({ email: '', password: '', fullName: '', startDate: '', height: '', initialWeight: '', gender: '', phoneNumber: '', age: '', targetWeight: '' });
+  const [newUser, setNewUser] = useState({ email: '', password: '', startDate: nextSaturday() });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Tab-specific data
@@ -961,38 +964,23 @@ export default function AdminUsers() {
   // ── Add user ─────────────────────────────────────────────────────────────────
 
   const handleAddUser = async () => {
-    if (!newUser.email || !newUser.password) {
+    if (!newUser.email || !newUser.password || !newUser.startDate) {
       toast({ title: 'שגיאה', description: 'אנא מלא את כל השדות', variant: 'destructive' });
       return;
     }
     setIsSubmitting(true);
 
-    // Convert age → birthdate approximation
-    const ageNum = parseInt(newUser.age);
-    const birthdate = !isNaN(ageNum) && ageNum > 0
-      ? `${new Date().getFullYear() - ageNum}-01-01`
-      : undefined;
-
+    // Everything else (name, body details, goal) comes from the trainee's
+    // onboarding questionnaire on first login.
     const { data: fnData, error: fnError } = await supabase.functions.invoke('admin-create-user', {
-      body: {
-        email: newUser.email,
-        password: newUser.password,
-        full_name: newUser.fullName || undefined,
-        start_date: newUser.startDate || undefined,
-        height: newUser.height || undefined,
-        initial_weight: newUser.initialWeight || undefined,
-        gender: newUser.gender || undefined,
-        phone_number: newUser.phoneNumber || undefined,
-        birthdate,
-        target_weight: newUser.targetWeight || undefined,
-      },
+      body: { email: newUser.email.trim(), password: newUser.password, start_date: newUser.startDate },
     });
     if (fnError || fnData?.error) {
       const msg = fnData?.error || fnError?.message || 'שגיאה ביצירת משתמש';
       toast({ title: 'שגיאה', description: msg, variant: 'destructive' });
     } else {
       toast({ title: 'הצלחה', description: 'המשתמש נוסף בהצלחה' });
-      setNewUser({ email: '', password: '', fullName: '', startDate: '', height: '', initialWeight: '', gender: '', phoneNumber: '', age: '', targetWeight: '' });
+      setNewUser({ email: '', password: '', startDate: nextSaturday() });
       setIsAddOpen(false);
       fetchUsers();
     }
@@ -1017,10 +1005,6 @@ export default function AdminUsers() {
             <DialogHeader><DialogTitle>הוספת מתאמן חדש</DialogTitle></DialogHeader>
             <div className="space-y-3 pt-2">
               <div className="space-y-1">
-                <Label>שם מלא</Label>
-                <Input placeholder="ישראל ישראלי" value={newUser.fullName} onChange={e => setNewUser(p => ({ ...p, fullName: e.target.value }))} />
-              </div>
-              <div className="space-y-1">
                 <Label>אימייל</Label>
                 <Input type="email" placeholder="email@example.com" dir="ltr" className="text-left" value={newUser.email} onChange={e => setNewUser(p => ({ ...p, email: e.target.value }))} />
               </div>
@@ -1030,81 +1014,25 @@ export default function AdminUsers() {
               </div>
               <div className="space-y-1">
                 <Label>תאריך התחלה</Label>
-                <Input
-                  type="date"
-                  dir="ltr"
-                  className="text-left"
-                  value={newUser.startDate || nextSaturdayStr()}
-                  onChange={e => setNewUser(p => ({ ...p, startDate: e.target.value }))}
-                />
+                {/* The program starts on a Saturday: any other day snaps to the next Saturday. */}
+                <Input type="date" dir="ltr" className="text-left" value={newUser.startDate} onChange={e => setNewUser(p => ({ ...p, startDate: e.target.value ? nextSaturday(new Date(`${e.target.value}T12:00:00`)) : '' }))} />
+                <p className="text-xs text-muted-foreground">התהליך מתחיל תמיד ביום שבת. תאריך אחר יעבור לשבת הקרובה אחריו.</p>
                 {newUser.startDate && (() => {
                   const d = differenceInDays(new Date(), new Date(newUser.startDate)) + 1;
                   return (
-                    <p className={`text-xs font-medium ${d > 0 ? 'text-green-500' : 'text-destructive'}`}>
-                      {d > 0 ? `יום ${d} בתוכנית` : 'תאריך עתידי — תוכן יהיה נעול'}
+                    <p className={`text-xs font-medium ${d > 0 ? 'text-success' : 'text-destructive'}`}>
+                      {d > 0 ? `יום ${d} בתוכנית` : 'תאריך עתידי: התוכן יהיה נעול עד אז'}
                     </p>
                   );
                 })()}
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label>גיל</Label>
-                  <Input type="number" min={10} max={120} placeholder="30" dir="ltr" className="text-left" value={newUser.age} onChange={e => setNewUser(p => ({ ...p, age: e.target.value }))} />
-                </div>
-                <div className="space-y-1">
-                  <Label>מגדר</Label>
-                  <Select value={newUser.gender} onValueChange={v => setNewUser(p => ({ ...p, gender: v }))}>
-                    <SelectTrigger><SelectValue placeholder="בחר" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="male">זכר</SelectItem>
-                      <SelectItem value="female">נקבה</SelectItem>
-                      <SelectItem value="other">אחר</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+              <p className="text-xs text-muted-foreground">שאר הפרטים (שם, גיל, גובה, משקל, מטרה) המתאמן ממלא בשאלון הפתיחה בכניסה הראשונה.</p>
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                <Button variant="outline" onClick={() => setIsAddOpen(false)} disabled={isSubmitting}>ביטול</Button>
+                <Button onClick={handleAddUser} disabled={isSubmitting}>
+                  {isSubmitting && <Loader2 className="h-4 w-4 ml-2 animate-spin" />}הוסף מתאמן
+                </Button>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label>גובה (ס"מ)</Label>
-                  <Input type="number" placeholder="170" dir="ltr" className="text-left" value={newUser.height} onChange={e => setNewUser(p => ({ ...p, height: e.target.value }))} />
-                </div>
-                <div className="space-y-1">
-                  <Label>טלפון</Label>
-                  <Input placeholder="050-000-0000" dir="ltr" className="text-left" value={newUser.phoneNumber} onChange={e => setNewUser(p => ({ ...p, phoneNumber: e.target.value }))} />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label>משקל התחלתי (ק"ג)</Label>
-                  <Input type="number" step="0.1" placeholder="75.5" dir="ltr" className="text-left" value={newUser.initialWeight} onChange={e => setNewUser(p => ({ ...p, initialWeight: e.target.value }))} />
-                </div>
-                <div className="space-y-1">
-                  <Label>משקל יעד (ק"ג)</Label>
-                  <Input type="number" step="0.1" placeholder="65.0" dir="ltr" className="text-left" value={newUser.targetWeight} onChange={e => setNewUser(p => ({ ...p, targetWeight: e.target.value }))} />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <Label>תוכנית</Label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[{ label: '4 חודשים (120 ימים)', value: '120' }, { label: '6 חודשים (168 ימים)', value: '168' }, { label: '10 חודשים (300 ימים)', value: '300' }].map(opt => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => setNewUser(p => ({ ...p, planDuration: opt.value }))}
-                      className={`rounded-xl border py-2.5 px-3 text-sm font-medium transition-colors text-right ${
-                        newUser.planDuration === opt.value
-                          ? 'border-primary bg-primary/10 text-primary'
-                          : 'border-border bg-card text-muted-foreground hover:border-primary/50'
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <Button onClick={handleAddUser} className="w-full" disabled={isSubmitting}>
-                {isSubmitting && <Loader2 className="h-4 w-4 ml-2 animate-spin" />}הוסף מתאמן
-              </Button>
             </div>
           </DialogContent>
         </Dialog>
@@ -1168,12 +1096,13 @@ export default function AdminUsers() {
           </DialogHeader>
 
           <Tabs defaultValue="personal" dir="rtl" className="w-full">
-            <TabsList className="w-full grid grid-cols-5 mx-6 mt-3" style={{ width: 'calc(100% - 3rem)' }}>
+            <TabsList className="w-full grid grid-cols-6 mx-6 mt-3" style={{ width: 'calc(100% - 3rem)' }}>
               <TabsTrigger value="personal" className="text-xs gap-1"><UserIcon className="h-3.5 w-3.5" />פרטים</TabsTrigger>
               <TabsTrigger value="body" className="text-xs gap-1"><Scale className="h-3.5 w-3.5" />נתונים</TabsTrigger>
               <TabsTrigger value="habits" className="text-xs gap-1"><Repeat2 className="h-3.5 w-3.5" />הרגלים</TabsTrigger>
               <TabsTrigger value="workout" className="text-xs gap-1"><Dumbbell className="h-3.5 w-3.5" />אימון</TabsTrigger>
               <TabsTrigger value="survey" className="text-xs gap-1"><ClipboardList className="h-3.5 w-3.5" />שאלון</TabsTrigger>
+              <TabsTrigger value="daily" className="text-xs gap-1"><Moon className="h-3.5 w-3.5" />סיכומים יומיים</TabsTrigger>
             </TabsList>
 
             {/* ── Tab 1: Personal ── */}
@@ -1238,7 +1167,7 @@ export default function AdminUsers() {
                   {editPersonal.start_date && (() => {
                     const d = differenceInDays(new Date(), new Date(editPersonal.start_date)) + 1;
                     return (
-                      <p className={`text-xs font-medium ${d > 0 ? 'text-green-500' : 'text-destructive'}`}>
+                      <p className={`text-xs font-medium ${d > 0 ? 'text-success' : 'text-destructive'}`}>
                         {d > 0 ? `יום ${d} בתוכנית` : 'תאריך עתידי — תוכן יהיה נעול'}
                       </p>
                     );
@@ -1843,7 +1772,7 @@ export default function AdminUsers() {
                           <Button
                             size="sm"
                             variant="outline"
-                            className="w-full text-xs h-7 gap-1 text-green-600 border-green-500/40 hover:bg-green-500/10"
+                            className="w-full text-xs h-7 gap-1 text-green-600 border-green-500/40 hover:bg-success/10"
                             onClick={async () => {
                               const today = new Date().toISOString().split('T')[0];
                               const { data: existing } = await (supabase as any)
@@ -1899,9 +1828,9 @@ export default function AdminUsers() {
                     {/* Walks */}
                     {walkHistory.map(w => (
                       <div key={w.id} className="border border-green-500/25 rounded-xl">
-                        <div className="flex items-center gap-2.5 px-3 py-2.5 bg-green-500/5">
-                          <div className="w-7 h-7 rounded-lg bg-green-500/20 flex items-center justify-center flex-shrink-0">
-                            <Footprints className="h-3.5 w-3.5 text-green-500" />
+                        <div className="flex items-center gap-2.5 px-3 py-2.5 bg-success/5">
+                          <div className="w-7 h-7 rounded-lg bg-success/20 flex items-center justify-center flex-shrink-0">
+                            <Footprints className="h-3.5 w-3.5 text-success" />
                           </div>
                           <div>
                             <p className="text-sm font-medium">הליכה</p>
@@ -1909,7 +1838,7 @@ export default function AdminUsers() {
                               {format(new Date(w.completed_at), 'EEEE, d בMMMM yyyy', { locale: he })}
                             </p>
                           </div>
-                          <Badge className="mr-auto bg-green-500/15 text-green-600 border-0 text-xs">הושלם ✓</Badge>
+                          <Badge className="mr-auto bg-success/15 text-green-600 border-0 text-xs">הושלם ✓</Badge>
                         </div>
                       </div>
                     ))}
@@ -1942,8 +1871,8 @@ export default function AdminUsers() {
                             }}
                           >
                             <div className="flex items-center gap-2.5">
-                              <div className="w-7 h-7 rounded-lg bg-orange-500/20 flex items-center justify-center flex-shrink-0">
-                                <Dumbbell className="h-3.5 w-3.5 text-orange-500" />
+                              <div className="w-7 h-7 rounded-lg bg-primary/20 flex items-center justify-center flex-shrink-0">
+                                <Dumbbell className="h-3.5 w-3.5 text-primary" />
                               </div>
                               <div>
                                 <p className="text-sm font-medium">{dayName}</p>
@@ -1989,7 +1918,7 @@ export default function AdminUsers() {
                                               <p className="text-sm font-bold">{s.reps}</p>
                                               <p className="text-xs text-muted-foreground">חז'</p>
                                               {s.weight_kg > 0 && (
-                                                <p className="text-xs text-orange-500 font-medium mt-0.5">{s.weight_kg}ק"ג</p>
+                                                <p className="text-xs text-primary font-medium mt-0.5">{s.weight_kg}ק"ג</p>
                                               )}
                                             </div>
                                           ))}
@@ -2072,6 +2001,10 @@ export default function AdminUsers() {
                   ))}
                 </Accordion>
               )}
+            </TabsContent>
+            {/* ── Tab 6: Daily summaries (the bedtime questionnaire) ── */}
+            <TabsContent value="daily" className="px-6 pb-6 pt-4">
+              {editingUser && <DailySummariesTab userId={editingUser.id} />}
             </TabsContent>
           </Tabs>
         </DialogContent>

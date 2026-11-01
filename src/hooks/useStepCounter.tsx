@@ -121,7 +121,7 @@ async function queryIOSStepsHistory(days: number): Promise<StepEntry[]> {
   return entries;
 }
 
-async function requestHealthKitStepsPermission() {
+export async function requestHealthKitStepsPermission() {
   try {
     const { Health } = await import('capacitor-health');
     await Health.requestHealthPermissions({ permissions: ['READ_STEPS'] });

@@ -12,6 +12,11 @@ interface Profile {
   current_weight: number | null;
   phone_number: string | null;
   is_active: boolean;
+  avatar_url?: string | null;
+  plan_duration_days?: number | null;
+  referral_code?: string | null;
+  height?: number | null;
+  initial_weight?: number | null;
 }
 
 interface AuthContextType {

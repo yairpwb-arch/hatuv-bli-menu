@@ -12,10 +12,13 @@ import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { he } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
+import { removeBodyPhoto, uploadBodyPhoto, withSignedUrls } from '@/lib/bodyPhotos';
 
 interface Photo {
   id: string;
   photo_url: string;
+  /** The value in the table (photo_url holds the viewable link). */
+  stored_url?: string;
   photo_type: 'before' | 'after' | 'progress';
   taken_at: string;
   notes: string | null;
@@ -46,7 +49,8 @@ export function PhotoGallery({ userId, isAdmin = false }: PhotoGalleryProps) {
       .order('taken_at', { ascending: true });
 
     if (!error && data) {
-      setPhotos(data as Photo[]);
+      // Private body photos are shown through short-lived signed links.
+      setPhotos(await withSignedUrls(data as Photo[]));
     }
     setIsLoading(false);
   };
@@ -72,24 +76,14 @@ export function PhotoGallery({ userId, isAdmin = false }: PhotoGalleryProps) {
     setIsUploading(true);
 
     try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${userId}/${Date.now()}.${fileExt}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('profile_photos')
-        .upload(fileName, file);
-
-      if (uploadError) throw uploadError;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('profile_photos')
-        .getPublicUrl(fileName);
+      // Body photos go to the private bucket, never a public one.
+      const stored = await uploadBodyPhoto(userId, file);
 
       const { error: dbError } = await supabase
         .from('transformation_photos')
         .insert({
           user_id: userId,
-          photo_url: publicUrl,
+          photo_url: stored,
           photo_type: photoType,
           taken_at: photoDate,
           notes: photoNotes || null,
@@ -119,6 +113,7 @@ export function PhotoGallery({ userId, isAdmin = false }: PhotoGalleryProps) {
         .eq('id', photo.id);
 
       if (error) throw error;
+      await removeBodyPhoto(photo.stored_url ?? photo.photo_url);
 
       toast.success('התמונה נמחקה');
       setSelectedPhoto(null);

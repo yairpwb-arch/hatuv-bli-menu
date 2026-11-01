@@ -4,4 +4,7 @@
     <string name="title_activity_main">חטוב בלי תפריט</string>
     <string name="package_name">com.hatuv.blimenu</string>
     <string name="custom_url_scheme">com.hatuv.blimenu</string>
+    <!-- Shown by Health Connect from its permission screen. MUST be the real
+         privacy-policy URL (the same one as in Play Console) before release. -->
+    <string name="privacy_policy_url">https://REPLACE-WITH-PRIVACY-POLICY-URL</string>
 </resources>

@@ -10,6 +10,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { z } from 'zod';
+import { nextSaturday } from '@/lib/programStart';
 
 const TERMS_URL = 'https://docs.google.com/document/d/1PquUiaPZ6_v2TYH-qOlAbxGqwjpf8E0-hqzYtmomebs/edit?usp=sharing';
 
@@ -77,7 +78,8 @@ export default function Pricing() {
         const today = new Date().toISOString().split('T')[0];
         // Set start_date only if not already set
         await supabase.from('profiles')
-          .update({ is_active: true, start_date: today })
+          // The program starts on a Saturday.
+          .update({ is_active: true, start_date: nextSaturday() })
           .eq('id', uid)
           .is('start_date', null);
         // Always ensure is_active = true
@@ -103,7 +105,7 @@ export default function Pricing() {
         {/* Hero */}
         <div className="text-center space-y-3">
           <div className="flex justify-center">
-            <img src="/logo.jpg" alt="חטוב בלי תפריט" className="w-20 h-20 rounded-full object-cover shadow-glow" />
+            <img src="/logo.png" alt="חטוב בלי תפריט" className="w-20 h-20 rounded-full object-cover shadow-glow" />
           </div>
           <div>
             <h1 className="text-3xl font-bold text-foreground">חטוב בלי תפריט</h1>

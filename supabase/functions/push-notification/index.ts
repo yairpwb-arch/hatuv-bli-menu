@@ -230,6 +230,24 @@ function getUserLocalHour(timezone: string | null): number {
   return local.getHours();
 }
 
+// ── Quiet hours ───────────────────────────────────────────────────────────────
+// No push goes out between a trainee's bedtime and wake-up (profiles.sleep_time
+// / wake_time, set in Settings). Unset → 23:00–07:00.
+
+function toMinutes(t: string | null | undefined, fallback: string): number {
+  const [h, m] = (t || fallback).slice(0, 5).split(':').map(Number);
+  return h * 60 + (m || 0);
+}
+
+function isQuietHours(timezone: string | null, sleepTime: string | null, wakeTime: string | null): boolean {
+  const tz = timezone || 'Asia/Jerusalem';
+  const local = new Date(new Date().toLocaleString('en-US', { timeZone: tz }));
+  const now = local.getHours() * 60 + local.getMinutes();
+  const bed = toMinutes(sleepTime, '23:00');
+  const wake = toMinutes(wakeTime, '07:00');
+  return bed <= wake ? now >= bed && now < wake : now >= bed || now < wake;
+}
+
 // ── notification_logs helpers ─────────────────────────────────────────────────
 
 function getIsraelTodayRange(): { start: string; end: string } {
@@ -276,10 +294,12 @@ async function logSent(userIds: string[], type: string): Promise<void> {
 
 // ── Fetch active users with push tokens ───────────────────────────────────────
 
-async function fetchEligibleUsers(includeStartDate = false) {
+// pref: the per-type switch in Settings (notification_settings.prefs). A
+// missing key means on, so users who never touched the switches get everything.
+async function fetchEligibleUsers(includeStartDate = false, pref?: string) {
   const selectCols = includeStartDate
-    ? 'user_id, player_id, device_platform, timezone, profiles!inner(is_active, start_date)'
-    : 'user_id, player_id, device_platform, timezone, profiles!inner(is_active)';
+    ? 'user_id, player_id, device_platform, timezone, prefs, profiles!inner(is_active, start_date, sleep_time, wake_time)'
+    : 'user_id, player_id, device_platform, timezone, prefs, profiles!inner(is_active, sleep_time, wake_time)';
 
   const { data, error } = await supabase
     .from('notification_settings')
@@ -292,28 +312,18 @@ async function fetchEligibleUsers(includeStartDate = false) {
     return [];
   }
 
-  return (data ?? []).filter((s: any) => s.profiles?.is_active === true);
+  return (data ?? []).filter(
+    (s: any) =>
+      s.profiles?.is_active === true &&
+      (!pref || s.prefs?.[pref] !== false) &&
+      !isQuietHours(s.timezone, s.profiles?.sleep_time, s.profiles?.wake_time),
+  );
 }
 
 // ── Notification handlers ─────────────────────────────────────────────────────
 
-async function handleDailyQuote() {
-  const users = await fetchEligibleUsers(false);
-  const eligible: (TokenRecord & { userId: string })[] = [];
-
-  for (const u of users as any[]) {
-    if (getUserLocalHour(u.timezone) !== 10) continue;
-    if (await alreadySentToday(u.user_id, 'daily_quote')) continue;
-    eligible.push({ userId: u.user_id, token: u.player_id, platform: u.device_platform });
-  }
-
-  if (eligible.length === 0) return;
-  await sendPush(eligible, '💬 משפט יומי', 'יש לך משפט יומי מחכה לך באפליקציה', { type: 'daily_quote' });
-  await logSent(eligible.map((u) => u.userId), 'daily_quote');
-}
-
 async function handlePhaseCheck() {
-  const users = await fetchEligibleUsers(true);
+  const users = await fetchEligibleUsers(true, 'new_content');
   const eligible: (TokenRecord & { userId: string })[] = [];
 
   for (const u of users as any[]) {
@@ -349,7 +359,7 @@ async function handlePhaseCheck() {
 }
 
 async function handleNewHabits() {
-  const users = await fetchEligibleUsers(true);
+  const users = await fetchEligibleUsers(true, 'habits');
   const eligible: (TokenRecord & { userId: string })[] = [];
 
   for (const u of users as any[]) {
@@ -388,11 +398,15 @@ async function handleNewHabits() {
 }
 
 async function handleWeighReminder() {
-  const users = await fetchEligibleUsers(false);
+  const users = await fetchEligibleUsers(false, 'weigh');
   const eligible: (TokenRecord & { userId: string })[] = [];
 
+  // Friday morning, from 8:00 — or the first hour after the trainee wakes up
+  // (quiet hours are filtered above), at most once.
   for (const u of users as any[]) {
-    if (getUserLocalHour(u.timezone) !== 20) continue;
+    const hour = getUserLocalHour(u.timezone);
+    const local = new Date(new Date().toLocaleString('en-US', { timeZone: u.timezone || 'Asia/Jerusalem' }));
+    if (local.getDay() !== 5 || hour < 8 || hour >= 12) continue;
     if (await alreadySentToday(u.user_id, 'weigh_reminder')) continue;
     eligible.push({ userId: u.user_id, token: u.player_id, platform: u.device_platform });
   }
@@ -400,15 +414,17 @@ async function handleWeighReminder() {
   if (eligible.length === 0) return;
   await sendPush(
     eligible,
-    '⚖️ תזכורת שקילה',
-    'מחר בבוקר שקילה! זכור לשקול ולמלא את השאלון השבועי 📋',
+    'בוקר של שקילה',
+    'לפני האוכל ואחרי השירותים. לחיצה פותחת את הוספת השקילה',
     { type: 'weigh_reminder' },
   );
   await logSent(eligible.map((u) => u.userId), 'weigh_reminder');
 }
 
+// The weekly survey was replaced by the bedtime daily summary; nothing to chase.
 async function handleSurveyFollowup() {
-  const users = await fetchEligibleUsers(true);
+  return;
+  const users = await fetchEligibleUsers(true, 'weekly_summary');
   const eligible: (TokenRecord & { userId: string })[] = [];
 
   for (const u of users as any[]) {
@@ -468,7 +484,8 @@ serve(async (req) => {
 
     let result: unknown;
     switch (type) {
-      case 'daily_quote':     result = await handleDailyQuote();     break;
+      // Daily quotes were removed; the old cron job may still call this.
+      case 'daily_quote':     result = 'skipped';                    break;
       case 'phase_check':     result = await handlePhaseCheck();     break;
       case 'new_habits':      result = await handleNewHabits();      break;
       case 'weigh_reminder':  result = await handleWeighReminder();  break;

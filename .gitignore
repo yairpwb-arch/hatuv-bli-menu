@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 hatuv-keystore.jks
 hatuv-keystore.jks
+
+# Database backups (contain user data)
+backups/

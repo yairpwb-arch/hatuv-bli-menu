@@ -30,14 +30,14 @@ export function WorkoutMiniBar() {
     <button
       onClick={maximize}
       dir="rtl"
-      className="fixed bottom-[72px] inset-x-3 z-40 flex items-center justify-between px-4 py-3 rounded-2xl shadow-2xl text-white"
+      className="fixed inset-x-3 z-40 flex items-center justify-between px-4 py-3 rounded-2xl shadow-2xl bg-primary text-primary-foreground"
       style={{
-        background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
+        bottom: 'calc(4.5rem + var(--app-safe-bottom))',
       }}
     >
       {/* Right: icon + name */}
       <div className="flex items-center gap-3">
-        <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
+        <div className="w-9 h-9 rounded-full bg-primary-foreground/15 flex items-center justify-center flex-shrink-0">
           <Dumbbell className="h-4.5 w-4.5" />
         </div>
         <div className="text-right">

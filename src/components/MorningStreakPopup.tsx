@@ -41,10 +41,10 @@ export function MorningStreakPopup({ streak, isLoading }: MorningStreakPopupProp
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent dir="rtl" className="sm:max-w-md text-center">
         <DialogHeader className="space-y-4">
-          <div className="mx-auto w-20 h-20 rounded-full bg-gradient-to-br from-warning to-destructive flex items-center justify-center animate-pulse">
-            <Flame className="h-10 w-10 text-white" />
+          <div className="mx-auto w-20 h-20 rounded-full bg-primary flex items-center justify-center animate-pulse">
+            <Flame className="h-10 w-10 text-primary-foreground" strokeWidth={2} />
           </div>
-          <DialogTitle className="text-2xl">בוקר טוב! ☀️</DialogTitle>
+          <DialogTitle className="text-2xl">בוקר טוב!</DialogTitle>
           <DialogDescription className="text-lg">
             אתה ב-<span className="font-bold text-warning text-xl">{streak}</span> ימים של רצף התמדה.
             <br />
@@ -52,7 +52,7 @@ export function MorningStreakPopup({ streak, isLoading }: MorningStreakPopupProp
           </DialogDescription>
         </DialogHeader>
         <Button onClick={handleClose} className="w-full mt-4">
-          בוא נתחיל! 💪
+          בוא נתחיל!
         </Button>
       </DialogContent>
     </Dialog>

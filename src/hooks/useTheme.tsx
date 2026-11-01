@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { applyStatusBarTheme } from '@/lib/native';
 
 type Theme = 'dark' | 'light';
 
@@ -25,6 +26,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       root.classList.remove('dark');
     }
     localStorage.setItem('app-theme', theme);
+    applyStatusBarTheme(theme);
   }, [theme]);
 
   const toggleTheme = () => {

@@ -8,18 +8,27 @@ const config: CapacitorConfig = {
     androidScheme: 'https',
   },
   android: {
-    // capacitor-health is iOS-only here (HealthKit). On Android, steps come
-    // from the device step sensor, and shipping the plugin pulls in the
-    // Health Connect SDK — Google Play rejects apps that carry Health Connect
-    // without using it (minimum-scope policy). Any new Android plugin must be
-    // added to this list.
+    // Android plugin allowlist — any new Android plugin must be added here.
+    // capacitor-health brings the Health Connect SDK; it's used on Android
+    // only for smartwatch workouts, and AndroidManifest.xml limits it to the
+    // three permissions that feature reads (Play's minimum-scope policy).
     includePlugins: [
       '@capacitor/app',
       '@capacitor/camera',
+      '@capacitor/haptics',
+      '@capacitor/local-notifications',
       '@capacitor/preferences',
       '@capacitor/push-notifications',
+      '@capacitor/status-bar',
       '@capgo/capacitor-pedometer',
+      '@ebarooni/capacitor-calendar',
+      'capacitor-health',
       '@revenuecat/purchases-capacitor',
+      // GPS walk: location with the screen locked (foreground service), screen on, sharing the image.
+      '@capacitor-community/background-geolocation',
+      '@capacitor-community/keep-awake',
+      '@capacitor/filesystem',
+      '@capacitor/share',
     ],
   },
   plugins: {

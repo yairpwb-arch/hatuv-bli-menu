@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
-import { Users, BookOpen, Quote, TrendingUp, UserPlus, Link, Pencil, Check, X, ExternalLink, Gift, Phone, MessageSquare } from 'lucide-react';
+import { Users, BookOpen, TrendingUp, UserPlus, Link, Pencil, Check, X, ExternalLink, Gift, Phone, MessageSquare } from 'lucide-react';
 
 const ADMIN_EMAIL = 'yairpwb@gmail.com';
 
@@ -23,7 +23,6 @@ interface Stats {
   totalUsers: number;
   activeUsers: number;
   totalContent: number;
-  totalQuotes: number;
   mealsLoggedToday: number;
 }
 
@@ -33,7 +32,6 @@ export default function AdminDashboard() {
     totalUsers: 0,
     activeUsers: 0,
     totalContent: 0,
-    totalQuotes: 0,
     mealsLoggedToday: 0,
   });
   const [isLoading, setIsLoading] = useState(true);
@@ -71,10 +69,9 @@ export default function AdminDashboard() {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
-      const [usersRes, contentRes, quotesRes, mealsRes, linksRes] = await Promise.all([
+      const [usersRes, contentRes, mealsRes, linksRes] = await Promise.all([
         supabase.from('profiles').select('id, is_active, email', { count: 'exact' }),
-        supabase.from('program_content').select('id', { count: 'exact' }),
-        supabase.from('daily_quotes').select('id', { count: 'exact' }),
+        supabase.from('program_content').select('id', { count: 'exact' }).filter('archived_at', 'is', null),
         supabase.from('nutrition_log').select('id', { count: 'exact' }).gte('recorded_at', today.toISOString()),
         (supabase as any).from('app_settings').select('key, value').in('key', ['snacks_book_link', 'weighing_guide_link']),
       ]);
@@ -90,7 +87,6 @@ export default function AdminDashboard() {
         totalUsers: nonAdminUsers.length,
         activeUsers: nonAdminUsers.filter((u) => u.is_active).length,
         totalContent: contentRes.count || 0,
-        totalQuotes: quotesRes.count || 0,
         mealsLoggedToday: mealsRes.count || 0,
       });
 
@@ -113,9 +109,8 @@ export default function AdminDashboard() {
 
   const statCards = [
     { label: 'סה"כ מתאמנים', value: stats.totalUsers, icon: Users, color: 'text-primary' },
-    { label: 'פעילים', value: stats.activeUsers, icon: TrendingUp, color: 'text-green-500' },
+    { label: 'פעילים', value: stats.activeUsers, icon: TrendingUp, color: 'text-success' },
     { label: 'פריטי תוכן', value: stats.totalContent, icon: BookOpen, color: 'text-accent' },
-    { label: 'ציטוטים', value: stats.totalQuotes, icon: Quote, color: 'text-primary' },
   ];
 
   return (
@@ -155,10 +150,6 @@ export default function AdminDashboard() {
               <BookOpen className="h-4 w-4 ml-2" />
               נהל תכנים
             </Button>
-            <Button variant="outline" onClick={() => navigate('/admin/quotes')}>
-              <Quote className="h-4 w-4 ml-2" />
-              נהל ציטוטים
-            </Button>
           </div>
         </CardContent>
       </Card>
@@ -186,7 +177,7 @@ export default function AdminDashboard() {
                 />
                 <Button size="icon" variant="ghost" disabled={isSavingLinks}
                   onClick={() => saveLink('snacks_book_link', snacksDraft)}>
-                  <Check className="h-4 w-4 text-green-500" />
+                  <Check className="h-4 w-4 text-success" />
                 </Button>
                 <Button size="icon" variant="ghost" onClick={() => setEditingSnacks(false)}>
                   <X className="h-4 w-4 text-muted-foreground" />
@@ -226,7 +217,7 @@ export default function AdminDashboard() {
                 />
                 <Button size="icon" variant="ghost" disabled={isSavingLinks}
                   onClick={() => saveLink('weighing_guide_link', weighingDraft)}>
-                  <Check className="h-4 w-4 text-green-500" />
+                  <Check className="h-4 w-4 text-success" />
                 </Button>
                 <Button size="icon" variant="ghost" onClick={() => setEditingWeighing(false)}>
                   <X className="h-4 w-4 text-muted-foreground" />
@@ -285,7 +276,7 @@ export default function AdminDashboard() {
                     <div className="text-left shrink-0">
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${
                         r.status === 'converted'
-                          ? 'bg-green-500/15 text-green-500 border-green-500/30'
+                          ? 'bg-success/15 text-success border-green-500/30'
                           : r.status === 'contacted'
                           ? 'bg-yellow-500/15 text-yellow-500 border-yellow-500/30'
                           : 'bg-muted text-muted-foreground border-border'

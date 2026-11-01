@@ -39,9 +39,9 @@ const DIFFICULTY_LABELS: Record<string, string> = {
 };
 
 const DIFFICULTY_COLORS: Record<string, string> = {
-  beginner: 'bg-green-500/20 text-green-400 border-green-500/30',
+  beginner: 'bg-success/20 text-green-400 border-green-500/30',
   intermediate: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-  advanced: 'bg-red-500/20 text-red-400 border-red-500/30',
+  advanced: 'bg-red-500/20 text-destructive border-destructive/30',
 };
 
 const emptyForm = {

@@ -9,6 +9,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 import { z } from 'zod';
+import { FullScreenLoader, setLoadingIntent } from '@/components/BrandedLoader';
 
 const loginSchema = z.object({
   email: z.string().email('כתובת אימייל לא תקינה'),
@@ -25,9 +26,7 @@ export default function Auth() {
   // Show loading state while auth is initializing
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-      </div>
+      <FullScreenLoader />
     );
   }
 
@@ -57,6 +56,7 @@ export default function Auth() {
         return;
       }
 
+      setLoadingIntent('login');
       navigate('/app');
     } catch (err) {
       setLoginError('אירעה שגיאה, נסה שוב');
@@ -71,7 +71,7 @@ export default function Auth() {
         <div className="text-center mb-8">
           <div className="flex items-center justify-center mb-4">
             <img
-              src="/logo.jpg"
+              src="/logo.png"
               alt="חטוב בלי תפריט"
               className="w-20 h-20 rounded-full object-cover shadow-glow"
             />

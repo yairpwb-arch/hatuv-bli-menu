@@ -29,6 +29,8 @@ export interface StepCounterPlugin {
   setUserConfig(options: UserConfigOptions): Promise<void>;
   checkPermission(): Promise<PermissionResult>;
   requestPermission(): Promise<PermissionResult>;
+  /** Android: opens this app's page in system settings. */
+  openAppSettings(): Promise<void>;
   addListener(
     eventName: 'stepUpdate',
     listenerFunc: (data: StepUpdateEvent) => void,

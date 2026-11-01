@@ -22,7 +22,7 @@ import { cn } from '@/lib/utils';
 import { MonthlyCalendar } from '@/components/MonthlyCalendar';
 import { useHabits, iconMap } from '@/hooks/useHabits';
 import { useStepCounter } from '@/hooks/useStepCounter';
-import { useStepLogs } from '@/hooks/useStepLogs';
+import { DEFAULT_STEP_GOAL } from '@/lib/stepGoal';
 
 interface ScheduledActivity {
   activity_type: 'walk' | 'workout';
@@ -40,8 +40,7 @@ interface DayCompletionData {
 export default function AppTracker() {
   const { user, currentDay, currentWeek, planDays } = useAuth();
   const { stepData, isAvailable, isNative, hasPermission, requestPermission } = useStepCounter(user?.id);
-  const { weeklyAverage } = useStepLogs();
-  const stepGoal = weeklyAverage ?? 10_000;
+  const stepGoal = DEFAULT_STEP_GOAL;
   const stepPct = isNative && hasPermission ? Math.min(100, Math.round((stepData.steps / stepGoal) * 100)) : 0;
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [allHabitIds, setAllHabitIds] = useState<string[]>([]);
@@ -87,7 +86,7 @@ export default function AppTracker() {
     }
     await baseToggleHabit(habitId, completed);
     if (!completed) {
-      toast({ title: 'כל הכבוד! 🎉', description: 'ההרגל סומן כהושלם' });
+      toast({ title: 'כל הכבוד!', description: 'ההרגל סומן כהושלם' });
     }
   };
 
@@ -271,21 +270,8 @@ export default function AppTracker() {
           completed_at: dateString,
         });
 
-      if (todayActivity.activity_type === 'walk') {
-        const { data: allWalks } = await supabase
-          .from('activity_log')
-          .select('id, completed_at')
-          .eq('user_id', user.id)
-          .eq('activity_type', 'walk')
-          .order('completed_at', { ascending: true });
-        if (allWalks && allWalks.length > 10) {
-          const toDelete = allWalks.slice(0, allWalks.length - 10);
-          await supabase.from('activity_log').delete().in('id', toDelete.map((w: { id: string }) => w.id));
-        }
-      }
-
       setActivityCompleted(true);
-      toast({ title: 'מעולה! 💪', description: `ה${todayActivity.activity_type === 'walk' ? 'הליכה' : 'אימון'} הושלם/ה` });
+      toast({ title: 'מעולה!', description: `ה${todayActivity.activity_type === 'walk' ? 'הליכה' : 'אימון'} הושלם/ה` });
     }
   };
 
@@ -313,7 +299,7 @@ export default function AppTracker() {
     <div className="min-h-screen pb-20 pt-4 px-4 space-y-5">
       {/* Header */}
       <div className="animate-fade-in">
-        <h2 className="text-2xl font-bold text-foreground">מעקב יומי</h2>
+        <h2 className="text-screen-title text-foreground">מעקב יומי</h2>
         <p className="text-muted-foreground">שבוע {currentWeek} | יום {currentDay}</p>
       </div>
 
@@ -500,7 +486,7 @@ export default function AppTracker() {
           {completionPercentage === 100 && (
             <p className="text-sm text-success mt-2 flex items-center gap-1">
               <Sparkles className="h-4 w-4" />
-              כל המשימות הושלמו! יום מצוין! 🎉
+              כל המשימות הושלמו! יום מצוין!
             </p>
           )}
         </CardContent>
@@ -556,7 +542,7 @@ export default function AppTracker() {
                   {!canEditHabits 
                     ? (isSelectedDateFuture ? 'יום עתידי' : 'יום שעבר')
                     : activityCompleted 
-                    ? 'הושלם ✓' 
+                    ? 'הושלם' 
                     : 'הגיע הזמן לצאת!'}
                 </p>
               </div>
@@ -615,7 +601,7 @@ export default function AppTracker() {
                       {habit.name}
                     </span>
                     {habit.is_bonus && (
-                      <span className="inline-flex items-center gap-0.5 mr-2 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 rounded-full align-middle">
+                      <span className="inline-flex items-center gap-0.5 mr-2 text-xs bg-primary-tint dark:bg-primary-tint text-primary-soft dark:text-primary-soft px-1.5 py-0.5 rounded-full align-middle">
                         <Star className="h-2.5 w-2.5" />
                         בונוס
                       </span>
