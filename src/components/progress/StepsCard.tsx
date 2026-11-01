@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { format, subDays } from 'date-fns';
+import { he } from 'date-fns/locale';
 import { Footprints } from 'lucide-react';
 import { Card } from '@/components/ds';
 import { formatNumber } from './format';
@@ -18,6 +20,8 @@ interface StepsCardProps {
 
 interface DayBar {
   label: string;
+  /** "יום שישי" */
+  dayName: string;
   steps: number;
   isToday: boolean;
 }
@@ -30,14 +34,19 @@ export function StepsCard({ todaySteps, goal, logs, weeklyAverage, fromStartAver
     const isToday = i === 6;
     return {
       label: format(d, 'd/M'),
+      dayName: format(d, 'EEEE', { locale: he }),
       // Today comes from the live counter, which is ahead of the last DB sync.
       steps: isToday ? todaySteps : logs.find((l) => l.date === key)?.steps ?? 0,
       isToday,
     };
   });
 
-  const ratio = Math.min(todaySteps / goal, 1);
-  const remaining = Math.max(goal - todaySteps, 0);
+  // Tapping a bar shows that day up top; today by default.
+  const [selected, setSelected] = useState(6);
+  const day = days[selected];
+  const steps = day.steps;
+  const ratio = Math.min(steps / goal, 1);
+  const remaining = Math.max(goal - steps, 0);
   const hasAnySteps = days.some((d) => d.steps > 0);
   const yMax = Math.max(goal * 1.15, ...days.map((d) => d.steps));
 
@@ -66,22 +75,24 @@ export function StepsCard({ todaySteps, goal, logs, weeklyAverage, fromStartAver
             />
           </svg>
           <span className="absolute inset-0 flex items-center justify-center text-lg font-bold tabular-nums">
-            {Math.round((todaySteps / goal) * 100)}%
+            {Math.round((steps / goal) * 100)}%
           </span>
         </div>
         <div className="min-w-0">
-          <p className="text-sm text-muted-foreground">היום</p>
-          <p className="text-3xl font-bold tabular-nums leading-tight">{formatNumber(todaySteps)}</p>
+          <p className="text-sm text-muted-foreground">{day.isToday ? 'היום' : `${day.dayName} · ${day.label}`}</p>
+          <p className="text-3xl font-bold tabular-nums leading-tight">{formatNumber(steps)}</p>
           <p className="text-sm text-muted-foreground">
-            {remaining > 0
+            {remaining <= 0
+              ? `עברת את היעד של ${formatNumber(goal)}`
+              : day.isToday
               ? `עוד ${formatNumber(remaining)} · בערך ${Math.ceil(remaining / STEPS_PER_MINUTE)} דקות הליכה`
-              : `עברת את היעד של ${formatNumber(goal)}`}
+              : `חסרו ${formatNumber(remaining)} ליעד`}
           </p>
         </div>
       </div>
 
       {hasAnySteps ? (
-        <div dir="ltr" className="h-32">
+        <div dir="ltr" className="relative h-32">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={days} margin={{ top: 6, right: 4, left: 4, bottom: 0 }}>
               <XAxis
@@ -101,6 +112,7 @@ export function StepsCard({ todaySteps, goal, logs, weeklyAverage, fromStartAver
                   const { x = 0, y = 0, width = 0, height = 0, payload } = props;
                   const h = Math.max(height, 3);
                   const metGoal = (payload?.steps ?? 0) >= goal;
+                  const isSelected = payload?.label === day.label;
                   return (
                     <rect
                       x={x}
@@ -109,15 +121,30 @@ export function StepsCard({ todaySteps, goal, logs, weeklyAverage, fromStartAver
                       height={h}
                       rx={6}
                       fill={metGoal ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground) / 0.35)'}
-                      stroke={payload?.isToday ? 'hsl(var(--primary))' : 'none'}
-                      strokeWidth={payload?.isToday ? 1.5 : 0}
-                      strokeDasharray={payload?.isToday ? '4 3' : undefined}
+                      // The day shown up top: a solid outline; today otherwise keeps its dashed one.
+                      stroke={isSelected ? 'hsl(var(--foreground))' : payload?.isToday ? 'hsl(var(--primary))' : 'none'}
+                      strokeWidth={isSelected ? 2 : payload?.isToday ? 1.5 : 0}
+                      strokeDasharray={!isSelected && payload?.isToday ? '4 3' : undefined}
                     />
                   );
                 }}
               />
             </BarChart>
           </ResponsiveContainer>
+          {/* A full-height tap target over each day's column. */}
+          <div className="absolute inset-0 flex px-1" role="radiogroup" aria-label="יום בשבוע">
+            {days.map((d, i) => (
+              <button
+                key={d.label}
+                type="button"
+                role="radio"
+                aria-checked={i === selected}
+                aria-label={`${d.dayName} ${d.label}: ${formatNumber(d.steps)} צעדים`}
+                onClick={() => setSelected(i)}
+                className="h-full min-w-[44px] flex-1"
+              />
+            ))}
+          </div>
         </div>
       ) : (
         <p className="rounded-2xl bg-card-inner px-4 py-5 text-center text-sm text-muted-foreground">
