@@ -3,6 +3,13 @@ import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { RouteThumb } from './RouteThumb';
 
+// MapLibre finds its worker next to its own file, and only on http(s) pages:
+// in the app (capacitor://, and in the bundled build) it found none, so the
+// map stayed blank (style background only). The worker is copied to public/
+// as a plain .js file at dev / build time (scripts/copy-maplibre-worker.mjs) —
+// .js, since the native web views don't reliably serve .mjs as JavaScript.
+maplibregl.setWorkerUrl(`${import.meta.env.BASE_URL}maplibre-gl-worker.js`);
+
 const KEY = import.meta.env.VITE_MAPTILER_KEY as string | undefined;
 const STYLE = KEY ? `https://api.maptiler.com/maps/streets-v2-dark/style.json?key=${KEY}` : null;
 const ORANGE = '#FF8A2A';
@@ -35,8 +42,19 @@ export function WalkMap({
 
   useEffect(() => {
     if (!STYLE || !box.current) return;
+    const created = createMap(box.current);
+    return () => {
+      created.remove();
+      map.current = null;
+      loaded.current = false;
+    };
+    // The map is created once; data changes are applied below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function createMap(container: HTMLDivElement) {
     const m = new maplibregl.Map({
-      container: box.current,
+      container,
       style: STYLE,
       center: current ? [current.lng, current.lat] : route[0] ? [route[0].lng, route[0].lat] : [34.78, 32.08],
       zoom: 16,
@@ -52,14 +70,8 @@ export function WalkMap({
       onLoad.current = null;
     });
     m.on('dragstart', () => onUserPan?.());
-    return () => {
-      m.remove();
-      map.current = null;
-      loaded.current = false;
-    };
-    // The map is created once; data changes are applied below.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return m;
+  }
 
   // Route line (and, on the summary, start / end markers and fit).
   useEffect(() => {

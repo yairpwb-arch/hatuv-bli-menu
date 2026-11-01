@@ -60,6 +60,8 @@ export default function AppWalk() {
   const [steps, setSteps] = useState(0);
   const [splits, setSplits] = useState<Split[]>([]);
   const [confirmEnd, setConfirmEnd] = useState(false);
+  // "מחיקת ההליכה" asks once more before throwing the walk away.
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [intensity, setIntensity] = useState<'easy' | 'medium' | 'hard' | null>(null);
   const [hideEnds, setHideEnds] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -245,7 +247,13 @@ export default function AppWalk() {
   };
 
   const fastest = splits.length ? splits.reduce((a, b) => (b.sec < a.sec ? b : a)) : null;
-  const tooShort = movingSec < 60;
+  // Under a minute since the start (pauses included): not saved. Moving time
+  // alone was too strict: standing still with auto-pause kept it near zero.
+  const tooShort = phase !== 'summary' && Date.now() - startedAt.current < 60_000;
+  const discard = () => {
+    if (!confirmDiscard) return setConfirmDiscard(true);
+    navigate(-1);
+  };
 
   // ── Screens ──
   if (phase === 'intro') {
@@ -338,6 +346,9 @@ export default function AppWalk() {
               שתף
             </Button>
           </SheetActions>
+          <button type="button" onClick={discard} className="min-h-[44px] w-full text-label font-semibold text-destructive">
+            {confirmDiscard ? 'בטוח? ההליכה תימחק ולא תישמר' : 'מחיקת ההליכה'}
+          </button>
         </div>
       </div>
     );
@@ -469,13 +480,25 @@ export default function AppWalk() {
         )}
       </div>
 
-      <BottomSheet open={confirmEnd} onOpenChange={setConfirmEnd} title={tooShort ? 'ההליכה קצרה מדי, לא תישמר' : 'לסיים את ההליכה?'}>
+      <BottomSheet
+        open={confirmEnd}
+        onOpenChange={(o) => {
+          setConfirmEnd(o);
+          if (!o) setConfirmDiscard(false);
+        }}
+        title={tooShort ? 'ההליכה קצרה מדי, לא תישמר' : 'לסיים את ההליכה?'}
+      >
         <SheetActions>
           <Button onClick={() => setConfirmEnd(false)}>המשך</Button>
           <Button variant="outline" onClick={() => (tooShort ? navigate(-1) : finish())}>
             {tooShort ? 'צא בלי לשמור' : 'סיים ושמור'}
           </Button>
         </SheetActions>
+        {!tooShort && (
+          <button type="button" onClick={discard} className="mt-3 min-h-[44px] w-full text-label font-semibold text-destructive">
+            {confirmDiscard ? 'בטוח? ההליכה תימחק ולא תישמר' : 'מחיקת ההליכה'}
+          </button>
+        )}
       </BottomSheet>
     </div>
   );

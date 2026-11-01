@@ -65,6 +65,8 @@ interface PlateProps {
   thirds?: Habit;
   /** "ירקות בכל ארוחה" — takes over the vegetable third when active. */
   veggies?: Habit;
+  /** "חלבון בכל ארוחה" — takes over the protein third when active. */
+  protein?: Habit;
   /** "צלחת אחת בכל ארוחה" — the rim. */
   rim?: Habit;
   onTap: (h: Habit) => void;
@@ -73,13 +75,15 @@ interface PlateProps {
 }
 
 /** The plate: rim + three food thirds, each part driven by its own habit. */
-export function Plate({ thirds, veggies, rim, onTap, onExplain, className }: PlateProps) {
+export function Plate({ thirds, veggies, protein, rim, onTap, onExplain, className }: PlateProps) {
   const id = useId().replace(/:/g, '');
   const vegHabit = veggies ?? thirds;
-  const proteinDone = !!thirds?.completed;
+  const proteinHabit = protein ?? thirds;
+  const proteinDone = !!proteinHabit?.completed;
+  const carbsDone = !!thirds?.completed;
   const vegDone = !!vegHabit?.completed;
   const p = TINTS.protein[proteinDone ? 'done' : 'idle'];
-  const c = TINTS.carbs[proteinDone ? 'done' : 'idle'];
+  const c = TINTS.carbs[carbsDone ? 'done' : 'idle'];
   const v = TINTS.veg[vegDone ? 'done' : 'idle'];
 
   return (
@@ -108,13 +112,20 @@ export function Plate({ thirds, veggies, rim, onTap, onExplain, className }: Pla
         </Region>
       )}
 
-      {thirds && (
-        <Region habit={thirds} label={`${thirds.name}: חלבון ופחמימה`} onTap={onTap} onExplain={onExplain}>
+      {proteinHabit && (
+        <Region habit={proteinHabit} label={protein ? protein.name : `${proteinHabit.name}: חלבון`} onTap={onTap} onExplain={onExplain}>
           <g style={fade(proteinDone)}>
             <path d={PROTEIN} fill={p[0]} stroke="#141418" strokeWidth="1.2" style={fade(true)} />
             <g clipPath={`url(#${id}-p)`} stroke={p[1]} strokeWidth="2.2" strokeLinecap="round" style={fade(true)}>
               <path d="M56 26 L74 34" /><path d="M54 34 L76 44" /><path d="M54 42 L74 52" />
             </g>
+          </g>
+        </Region>
+      )}
+
+      {thirds && (
+        <Region habit={thirds} label={`${thirds.name}: פחמימה`} onTap={onTap} onExplain={onExplain}>
+          <g style={fade(carbsDone)}>
             <path d={CARBS} fill={c[0]} stroke="#141418" strokeWidth="1.2" style={fade(true)} />
             <g clipPath={`url(#${id}-c)`} fill={c[1]} style={fade(true)}>
               {[[30, 34], [38, 28], [34, 42], [24, 44], [42, 38], [28, 26], [44, 46]].map(([x, y]) => (

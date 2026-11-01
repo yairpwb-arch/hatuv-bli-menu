@@ -27,3 +27,6 @@ hatuv-keystore.jks
 
 # Database backups (contain user data)
 backups/
+
+# Copied from maplibre-gl on every dev / build (scripts/copy-maplibre-worker.mjs)
+public/maplibre-gl-worker.js

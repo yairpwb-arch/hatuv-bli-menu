@@ -27,7 +27,7 @@ const OBJECTS: Record<SlotKey, (p: TableObjectProps) => JSX.Element> = {
 
 /** Tag order under the table follows the table, roughly top to bottom. */
 const ORDER: TableKey[] = [
-  'water_before_meal', 'one_sauce', 'one_plate', 'plate_thirds', 'plate_veggies',
+  'water_before_meal', 'one_sauce', 'one_plate', 'plate_thirds', 'plate_protein', 'plate_veggies',
   'fruit_snack', 'water_before_snack', 'olive_oil',
 ];
 
@@ -174,6 +174,7 @@ export function HabitTable({ habits, onToggle, onPerfectDay, firstOpens }: Habit
           <Plate
             thirds={byKey.get('plate_thirds')}
             veggies={byKey.get('plate_veggies')}
+            protein={byKey.get('plate_protein')}
             rim={byKey.get('one_plate')}
             onTap={tap}
             onExplain={setExplain}

@@ -141,6 +141,15 @@ WHERE p.start_date IS NOT NULL
   AND c.unlock_day + 7 <= (CURRENT_DATE - p.start_date) + 1
   AND NOT EXISTS (SELECT 1 FROM public.content_progress cp WHERE cp.user_id = p.id AND cp.content_id = c.id);
 
+-- The home plate's protein third can be its own habit ("חלבון בכל ארוחה").
+ALTER TABLE public.habit_definitions DROP CONSTRAINT IF EXISTS habit_definitions_visual_key_check;
+ALTER TABLE public.habit_definitions ADD CONSTRAINT habit_definitions_visual_key_check CHECK (visual_key IN (
+  'water_before_meal', 'plate_thirds', 'plate_veggies', 'plate_protein', 'one_plate', 'one_sauce',
+  'slow_eating', 'olive_oil', 'fruit_snack', 'water_before_snack', 'meals_4',
+  'routine_wake_eat', 'routine_stop_eating', 'routine_sleep',
+  'no_sweet_drinks', 'coffee_sugar'
+));
+
 -- ── 3. Habits (global; personal habits untouched) ────────────────────────────
 DROP TABLE IF EXISTS v2_habits;
 CREATE TEMP TABLE v2_habits (
@@ -176,7 +185,7 @@ INSERT INTO v2_habits VALUES
          {"key": "sweet",  "label": "ארוחה מתוקה",       "size": "small", "explanation": "כאן נכנס המתוק של היום, בלי רגשות אשם"},
          {"key": "dinner", "label": "ארוחת ערב",         "size": "big",   "explanation": "הארוחה הגדולה השנייה – ואחריה המטבח נסגר"}]}'),
   ('אימון אחד בשבוע', 30, 57, 'dumbbell', NULL, 'side', NULL, NULL),
-  ('חלבון בכל ארוחה', 30, 71, 'target', NULL, 'plate', 'חלבון משביע ושומר על השריר', NULL),
+  ('חלבון בכל ארוחה', 30, 71, 'target', 'plate_protein', 'plate', 'חלבון משביע ושומר על השריר', NULL),
   -- Weeks 7–8 → day 44
   ('6,000 צעדים ביום בממוצע', 44, 85, 'footprints', NULL, 'side', 'ממוצע שבועי – יום חלש מתקזז ביום חזק', NULL),
   ('2 עד 3 ליטר מים ביום', 44, 225, 'droplets', NULL, 'side', NULL, NULL),

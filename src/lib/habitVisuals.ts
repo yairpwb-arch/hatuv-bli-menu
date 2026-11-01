@@ -12,6 +12,7 @@ export type TableKey =
   | 'water_before_meal'
   | 'plate_thirds'
   | 'plate_veggies'
+  | 'plate_protein'
   | 'one_plate'
   | 'one_sauce'
   | 'olive_oil'
@@ -25,7 +26,7 @@ export type HiddenKey = 'slow_eating' | 'meals_4';
 export type VisualKey = TableKey | SummaryKey | HiddenKey;
 
 const TABLE_KEYS: TableKey[] = [
-  'water_before_meal', 'plate_thirds', 'plate_veggies', 'one_plate', 'one_sauce',
+  'water_before_meal', 'plate_thirds', 'plate_veggies', 'plate_protein', 'one_plate', 'one_sauce',
   'olive_oil', 'fruit_snack', 'water_before_snack',
 ];
 /** In the order they're asked; the summary shows at most 4. */
@@ -58,6 +59,7 @@ const SHORT_LABELS: Record<TableKey, string> = {
   one_plate: 'צלחת אחת',
   plate_thirds: 'שליש-שליש-שליש',
   plate_veggies: 'ירקות בכל ארוחה',
+  plate_protein: 'חלבון בכל ארוחה',
   fruit_snack: 'מאכלים בריאים',
   water_before_snack: 'מים לפני נשנוש',
   olive_oil: 'שמן זית',
@@ -85,7 +87,7 @@ export const PLATE = { cx: 0.5, cy: 0.4, d: 0.4 };
 export const CUTLERY = { length: PLATE.d * 0.9, gap: 0.035 };
 
 /** Each corner object's centre, width, and height÷width of its drawing. */
-export const TABLE_SLOTS: Record<Exclude<TableKey, 'plate_thirds' | 'plate_veggies' | 'one_plate'>, { cx: number; cy: number; w: number; ratio: number }> = {
+export const TABLE_SLOTS: Record<Exclude<TableKey, 'plate_thirds' | 'plate_veggies' | 'plate_protein' | 'one_plate'>, { cx: number; cy: number; w: number; ratio: number }> = {
   // top-left
   water_before_meal: { cx: 0.15, cy: 0.1, w: 0.235, ratio: 80 / 122 },
   // top-right
