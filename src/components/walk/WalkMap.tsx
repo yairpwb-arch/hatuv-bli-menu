@@ -13,6 +13,8 @@ maplibregl.setWorkerUrl(`${import.meta.env.BASE_URL}maplibre-gl-worker.js`);
 const KEY = import.meta.env.VITE_MAPTILER_KEY as string | undefined;
 const STYLE = KEY ? `https://api.maptiler.com/maps/streets-v2-dark/style.json?key=${KEY}` : null;
 const ORANGE = '#FF8A2A';
+/** The zoom "מרכז" returns to: close enough to see the street you're on. */
+const CENTER_ZOOM = 17;
 
 type LngLat = { lat: number; lng: number };
 
@@ -38,6 +40,7 @@ export function WalkMap({
   const me = useRef<maplibregl.Marker | null>(null);
   const arrow = useRef<HTMLDivElement | null>(null);
   const loaded = useRef(false);
+  const wasFollowing = useRef(follow);
   const onLoad = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -70,6 +73,10 @@ export function WalkMap({
       onLoad.current = null;
     });
     m.on('dragstart', () => onUserPan?.());
+    // A pinch or wheel zoom by the trainee (not our own easeTo, which has no originalEvent).
+    m.on('zoomstart', (e) => {
+      if (e.originalEvent) onUserPan?.();
+    });
     return m;
   }
 
@@ -114,7 +121,9 @@ export function WalkMap({
       arrow.current.style.display = heading != null ? 'block' : 'none';
       arrow.current.style.transform = `rotate(${heading ?? 0}deg)`;
     }
-    if (follow) m.easeTo({ center: [current.lng, current.lat], duration: 600 });
+    // Following again ("מרכז"): back to the dot and zoomed in; otherwise just keep up with it.
+    if (follow) m.easeTo({ center: [current.lng, current.lat], duration: 600, ...(wasFollowing.current ? {} : { zoom: CENTER_ZOOM }) });
+    wasFollowing.current = follow;
   }, [current, heading, follow, summary]);
 
   if (!STYLE) {
