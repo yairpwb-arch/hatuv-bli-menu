@@ -535,11 +535,20 @@ export default function WorkoutActiveSession({ planDay, exercises, onMinimize, o
   const active = sets[ptr.set];
   const prev = previousFor(ptr.ex, ptr.set);
   const weightStep = (num(active.weight) ?? 0) < 20 ? 0.5 : 1;
-  const rangeLabel = currentEx.reps_min === currentEx.reps_max ? `${currentEx.reps_min} חזרות` : `⁦${currentEx.reps_min}–${currentEx.reps_max}⁩ חזרות`;
+  // A built workout's timed exercise (running, a plank): a time per set instead of reps.
+  const timedSec = currentEx.target_seconds ?? null;
+  const rangeLabel =
+    timedSec != null
+      ? timedSec < 60
+        ? `${timedSec} שניות`
+        : `${Math.floor(timedSec / 60)}:${String(timedSec % 60).padStart(2, '0')} דקות`
+      : currentEx.reps_min === currentEx.reps_max
+      ? `${currentEx.reps_min} חזרות`
+      : `⁦${currentEx.reps_min}–${currentEx.reps_max}⁩ חזרות`;
 
   // "You hit the top of the range on every set last time" → suggest more weight.
   const last = history[currentEx.exercise_id]?.last ?? [];
-  const readyToProgress = last.length >= currentEx.sets && last.every((s) => (s.reps ?? 0) >= currentEx.reps_max);
+  const readyToProgress = timedSec == null && last.length >= currentEx.sets && last.every((s) => (s.reps ?? 0) >= currentEx.reps_max);
 
   const nextLabel = (() => {
     if (!rest) return null;
@@ -712,10 +721,13 @@ export default function WorkoutActiveSession({ planDay, exercises, onMinimize, o
                   {sets.map((s, i) =>
                     i === ptr.set ? (
                       <li key={i} className="space-y-3 rounded-inner border-2 border-primary bg-card-inner p-3" aria-current="step">
-                        <div className="grid grid-cols-2 gap-2">
-                          <Stepper id="set-weight" label='משקל (ק"ג)' value={active.weight} onChange={(v) => updateEntry('weight', v)} step={weightStep} decimals placeholder="0" />
-                          <Stepper id="set-reps" label="חזרות" value={active.reps} onChange={(v) => updateEntry('reps', v)} step={1} decimals={false} placeholder={String(currentEx.reps_min)} />
-                        </div>
+                        {/* A timed exercise: just mark the set done. */}
+                        {timedSec == null && (
+                          <div className="grid grid-cols-2 gap-2">
+                            <Stepper id="set-weight" label='משקל (ק"ג)' value={active.weight} onChange={(v) => updateEntry('weight', v)} step={weightStep} decimals placeholder="0" />
+                            <Stepper id="set-reps" label="חזרות" value={active.reps} onChange={(v) => updateEntry('reps', v)} step={1} decimals={false} placeholder={String(currentEx.reps_min)} />
+                          </div>
+                        )}
                         {prev && performanceLabel(prev) && (
                           <p className="text-center text-label text-muted-foreground">בפעם הקודמת: {performanceLabel(prev)}</p>
                         )}

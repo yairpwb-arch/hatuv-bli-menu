@@ -190,14 +190,15 @@ export function BottomSheet({ open, onOpenChange, title, description, children }
         <DrawerPrimitive.Content
           dir="rtl"
           className="fixed inset-x-0 bottom-0 z-[80] flex flex-col rounded-t-[24px] border-t border-border bg-card px-5 pt-3 outline-none"
-          style={{ paddingBottom: 'calc(1.25rem + var(--app-safe-bottom))' }}
+          // Never taller than the screen below the status bar; the content scrolls inside.
+          style={{ paddingBottom: 'calc(1.25rem + var(--app-safe-bottom))', maxHeight: 'calc(100dvh - var(--app-safe-top) - 24px)' }}
         >
           <div className="mx-auto mb-4 h-1.5 w-10 rounded-pill bg-border" aria-hidden />
           <DrawerPrimitive.Title className="text-card-title">{title}</DrawerPrimitive.Title>
           {description && (
             <DrawerPrimitive.Description className="mt-1 text-body text-muted-foreground">{description}</DrawerPrimitive.Description>
           )}
-          <div className="mt-5">{children}</div>
+          <div className="-mx-5 mt-5 min-h-0 flex-1 overflow-y-auto overscroll-contain px-5">{children}</div>
         </DrawerPrimitive.Content>
       </DrawerPrimitive.Portal>
     </DrawerPrimitive.Root>

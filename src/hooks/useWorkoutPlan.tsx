@@ -36,6 +36,8 @@ export interface WorkoutPlanExercise {
   reps_min: number;
   reps_max: number;
   rest_seconds: number;
+  /** A workout the trainee built: this exercise is done for a time per set, not reps. */
+  target_seconds?: number | null;
   notes: string | null;
   sort_order: number;
   exercises: Exercise;

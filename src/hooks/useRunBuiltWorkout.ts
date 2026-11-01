@@ -29,7 +29,8 @@ export function useRunBuiltWorkout(onDone?: () => void) {
       reps_min: it.reps,
       reps_max: it.reps,
       rest_seconds: 60,
-      notes: it.weightKg != null ? `${it.weightKg} ק"ג` : null,
+      target_seconds: it.seconds,
+      notes: it.seconds == null && it.weightKg != null ? `${it.weightKg} ק"ג` : null,
       sort_order: i,
       exercises: it.exercise,
     })) as WorkoutPlanExercise[];

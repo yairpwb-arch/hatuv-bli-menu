@@ -18,12 +18,29 @@ export interface BuiltExercise {
   sets: number;
   reps: number;
   weightKg: number | null;
+  /** Set = done for a time (seconds per set) instead of reps, e.g. running or a plank. */
+  seconds: number | null;
 }
+
+/* Exercises done for time, not reps, start in "זמן" mode: cardio as one long
+   stretch, holds (plank, jump rope) as a few short sets. */
+const CARDIO = /running|run|ריצה|הליכה|הליכון|אופניים|אליפטי|סטפר|cardio|קרדיו/i;
+const HOLD = /פלאנק|plank|חבל/i;
+const DEFAULT_SECONDS = 60;
+function startingPoint(e: Exercise): Pick<BuiltExercise, 'sets' | 'reps' | 'weightKg' | 'seconds'> {
+  if (CARDIO.test(e.name)) return { sets: 1, reps: 10, weightKg: null, seconds: 10 * 60 };
+  if (HOLD.test(e.name)) return { sets: 3, reps: 10, weightKg: null, seconds: DEFAULT_SECONDS };
+  return { sets: 3, reps: 10, weightKg: null, seconds: null };
+}
+const SECONDS_STEP = 15;
+
+/** 45 → "45 שנ׳", 90 → "1:30 דק׳". */
+const clock = (sec: number) => (sec < 60 ? `${sec} שנ׳` : `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')} דק׳`);
 
 interface MyWorkout {
   id: string;
   name: string;
-  my_workout_exercises: { exercise_id: string; position: number; sets: number; reps: number | null; weight_kg: number | null }[];
+  my_workout_exercises: { exercise_id: string; position: number; sets: number; reps: number | null; weight_kg: number | null; duration_seconds?: number | null }[];
 }
 
 /**
@@ -45,7 +62,7 @@ export function WorkoutBuilder({ userId, onRun }: { userId: string; onRun: (name
     (async () => {
       const [ex, my] = await Promise.all([
         db.from('exercises').select('id, name, description, muscle_groups, equipment, media_url, difficulty').order('name'),
-        db.from('my_workouts').select('id, name, my_workout_exercises(exercise_id, position, sets, reps, weight_kg)').eq('user_id', userId).order('created_at', { ascending: false }),
+        db.from('my_workouts').select('id, name, my_workout_exercises(*)').eq('user_id', userId).order('created_at', { ascending: false }),
       ]);
       setLibrary((ex.data ?? []) as Exercise[]);
       setMine((my.data ?? []) as MyWorkout[]);
@@ -58,7 +75,7 @@ export function WorkoutBuilder({ userId, onRun }: { userId: string; onRun: (name
   );
   const chosen = new Set(items.map((i) => i.exercise.id));
 
-  const add = (e: Exercise) => setItems((list) => (chosen.has(e.id) ? list : [...list, { exercise: e, sets: 3, reps: 10, weightKg: null }]));
+  const add = (e: Exercise) => setItems((list) => (chosen.has(e.id) ? list : [...list, { exercise: e, ...startingPoint(e) }]));
   const patch = (id: string, p: Partial<BuiltExercise>) => setItems((list) => list.map((i) => (i.exercise.id === id ? { ...i, ...p } : i)));
 
   const loadMine = (w: MyWorkout) => {
@@ -67,7 +84,7 @@ export function WorkoutBuilder({ userId, onRun }: { userId: string; onRun: (name
       [...w.my_workout_exercises]
         .sort((a, b) => a.position - b.position)
         .filter((x) => byId.has(x.exercise_id))
-        .map((x) => ({ exercise: byId.get(x.exercise_id)!, sets: x.sets, reps: x.reps ?? 10, weightKg: x.weight_kg })),
+        .map((x) => ({ exercise: byId.get(x.exercise_id)!, sets: x.sets, reps: x.reps ?? 10, weightKg: x.weight_kg, seconds: x.duration_seconds ?? null })),
     );
     setName(w.name);
     setSavedId(w.id);
@@ -83,20 +100,28 @@ export function WorkoutBuilder({ userId, onRun }: { userId: string; onRun: (name
     const id = data.id as string;
     await db.from('my_workout_exercises').delete().eq('workout_id', id);
     const ins = await db.from('my_workout_exercises').insert(
-      items.map((i, position) => ({ workout_id: id, exercise_id: i.exercise.id, position, sets: i.sets, reps: i.reps, weight_kg: i.weightKg })),
+      items.map((i, position) => ({
+        workout_id: id,
+        exercise_id: i.exercise.id,
+        position,
+        sets: i.sets,
+        reps: i.seconds != null ? null : i.reps,
+        weight_kg: i.seconds != null ? null : i.weightKg,
+        duration_seconds: i.seconds,
+      })),
     );
     if (ins.error) return toast.error('לא נשמר, נסו שוב');
     setSavedId(id);
     toast('נשמר ב"האימונים שלי"');
   };
 
-  const stepper = (value: number, onChange: (v: number) => void, label: string, min = 1) => (
+  const stepper = (value: number, onChange: (v: number) => void, label: string, min = 1, step = 1, show: (v: number) => string = String) => (
     <div className="flex items-center gap-1" aria-label={label}>
-      <button type="button" aria-label={`פחות ${label}`} onClick={() => onChange(Math.max(min, value - 1))} className="flex h-11 w-9 items-center justify-center rounded-inner bg-card text-muted-foreground">
+      <button type="button" aria-label={`פחות ${label}`} onClick={() => onChange(Math.max(min, value - step))} className="flex h-11 w-9 items-center justify-center rounded-inner bg-card text-muted-foreground">
         <Minus className="h-4 w-4" strokeWidth={2} />
       </button>
-      <span className="w-7 text-center text-body font-bold tabular-nums">{value}</span>
-      <button type="button" aria-label={`עוד ${label}`} onClick={() => onChange(value + 1)} className="flex h-11 w-9 items-center justify-center rounded-inner bg-card text-muted-foreground">
+      <span className="min-w-7 px-1 text-center text-body font-bold tabular-nums">{show(value)}</span>
+      <button type="button" aria-label={`עוד ${label}`} onClick={() => onChange(value + step)} className="flex h-11 w-9 items-center justify-center rounded-inner bg-card text-muted-foreground">
         <Plus className="h-4 w-4" strokeWidth={2} />
       </button>
     </div>
@@ -128,9 +153,36 @@ export function WorkoutBuilder({ userId, onRun }: { userId: string; onRun: (name
                   <X className="h-4 w-4" strokeWidth={2} />
                 </button>
               </div>
+              {/* Reps or time: running or a plank is done for time. */}
+              <div role="radiogroup" aria-label={`איך סופרים את ${i.exercise.name}`} className="flex gap-2">
+                {([['reps', 'חזרות'], ['time', 'זמן']] as const).map(([mode, label]) => {
+                  const on = mode === 'time' ? i.seconds != null : i.seconds == null;
+                  return (
+                    <button
+                      key={mode}
+                      type="button"
+                      role="radio"
+                      aria-checked={on}
+                      onClick={() => patch(i.exercise.id, { seconds: mode === 'time' ? i.seconds ?? DEFAULT_SECONDS : null })}
+                      className={cn('h-9 rounded-pill px-4 text-label font-semibold', on ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground')}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
               <div className="flex flex-wrap items-center gap-3 text-label text-muted-foreground">
                 <span className="flex items-center gap-1">סטים {stepper(i.sets, (v) => patch(i.exercise.id, { sets: v }), 'סטים')}</span>
-                <span className="flex items-center gap-1">חזרות {stepper(i.reps, (v) => patch(i.exercise.id, { reps: v }), 'חזרות')}</span>
+                {i.seconds != null ? (
+                  <span className="flex items-center gap-1">
+                    זמן לסט {stepper(i.seconds, (v) => patch(i.exercise.id, { seconds: v }), 'זמן', SECONDS_STEP, i.seconds >= 300 ? 60 : SECONDS_STEP, clock)}
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1">חזרות {stepper(i.reps, (v) => patch(i.exercise.id, { reps: v }), 'חזרות')}</span>
+                )}
+              </div>
+              {i.seconds == null && (
+              <div className="flex flex-wrap items-center gap-3 text-label text-muted-foreground">
                 <label className="flex items-center gap-1">
                   ק״ג
                   <Input
@@ -146,6 +198,7 @@ export function WorkoutBuilder({ userId, onRun }: { userId: string; onRun: (name
                   />
                 </label>
               </div>
+              )}
             </li>
           ))}
         </ul>
