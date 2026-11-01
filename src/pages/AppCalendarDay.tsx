@@ -187,6 +187,8 @@ export default function AppCalendarDay() {
 
   const tap = (e: CalEvent) => {
     if (e.source === 'custom') setEditor({ open: true, event: e });
+    // A meal opens the meals guide on that meal's page.
+    else if (e.source === 'habit' && e.type === 'meal') navigate(`/app/guides/meals?meal=${encodeURIComponent(e.title)}`);
     else if (e.explanation) toast(e.title, { description: e.explanation });
   };
 

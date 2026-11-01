@@ -183,6 +183,8 @@ export default function AppCalendar() {
         onEdit={
           e.source === 'custom'
             ? () => openEditor(e)
+            : e.source === 'habit' && e.type === 'meal'
+            ? () => navigate(`/app/guides/meals?meal=${encodeURIComponent(e.title)}`)
             : e.source === 'habit' && e.explanation
             ? () => toast(e.title, { description: e.explanation ?? undefined })
             : undefined

@@ -24,6 +24,7 @@ import { StepsCard } from '@/components/progress/StepsCard';
 import { BeforeNowCard, ProgressPhoto } from '@/components/progress/BeforeNowCard';
 import { withSignedUrls } from '@/lib/bodyPhotos';
 import { guideBody } from '@/lib/guideBlocks';
+import { openExternalLink } from '@/lib/externalLink';
 import {
   WeightEntry, formatKg, formatNumber, parseDay, sortWeights, weightOnOrBefore,
 } from '@/components/progress/format';
@@ -32,18 +33,6 @@ interface ProfileData {
   start_date: string | null;
   initial_weight: number | null;
   target_weight: number | null;
-}
-
-function openExternalLink(raw: string) {
-  const trimmed = raw.trim();
-  // Bare email → mailto:, otherwise assume it needs https:// (and leave
-  // anything that already has a scheme, e.g. mailto:/tel:, as-is).
-  const url = /^[a-z][a-z0-9+.-]*:/i.test(trimmed)
-    ? trimmed
-    : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)
-    ? `mailto:${trimmed}`
-    : `https://${trimmed}`;
-  window.open(url, Capacitor.isNativePlatform() ? '_system' : '_blank');
 }
 
 export default function AppProgress() {

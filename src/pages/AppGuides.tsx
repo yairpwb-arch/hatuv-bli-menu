@@ -12,7 +12,7 @@ import { GUIDE_CATEGORIES, GuideCategory, bareTitle, guideCategory, guideIcon } 
 import { selectionHaptic } from '@/lib/native';
 import { cn } from '@/lib/utils';
 import { inDays } from '@/lib/hebrewDays';
-import { guideBody } from '@/lib/guideBlocks';
+import { guideBody, shoppingList } from '@/lib/guideBlocks';
 
 type Guide = ContentItem & { category?: string | null };
 
@@ -76,6 +76,7 @@ export default function AppGuides() {
   const open = (g: Guide) => {
     if (!g.isUnlocked) return;
     selectionHaptic();
+    if (shoppingList(g.body)) return navigate('/app/shopping-list');
     if (guideBody(g.body)) return navigate(`/app/guides/${g.id}`); // an in-app guide
     const url = g.resource_link || g.video_url;
     if (url) window.open(url, Capacitor.isNativePlatform() ? '_system' : '_blank');

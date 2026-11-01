@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { BookText, Check, FileText, Lock, Play, Star } from 'lucide-react';
+import { BookText, Check, FileText, Lock, Play, ShoppingCart, Star } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
@@ -21,7 +21,8 @@ import ContentCards, { CardsFilter } from '@/components/content/ContentCards';
 import { VideoLauncher } from '@/components/content/VideoLauncher';
 import { BunnyEmbed } from '@/components/content/BunnyPlayer';
 import { bunnyId } from '@/lib/bunny';
-import { guideBody } from '@/lib/guideBlocks';
+import { guideBody, shoppingList } from '@/lib/guideBlocks';
+import { openExternalLink } from '@/lib/externalLink';
 import { useContentView, ContentView } from '@/hooks/useContentView';
 import { useUnlockReveal } from '@/hooks/useUnlockReveal';
 
@@ -200,11 +201,13 @@ export default function AppContent() {
 
   // An in-app guide opens its own screen; anything else, the details window.
   const selectItem = (item: ContentItem) => {
-    if (guideBody(item.body)) navigate(`/app/guides/${item.id}`);
+    if (shoppingList(item.body)) navigate('/app/shopping-list');
+    else if (guideBody(item.body)) navigate(`/app/guides/${item.id}`);
     else setSelectedContent(item);
   };
 
   const openItem = (item: ContentItem) => {
+    if (shoppingList(item.body)) return navigate('/app/shopping-list');
     if (guideBody(item.body)) return navigate(`/app/guides/${item.id}`);
     if (bunnyId(item.video_url)) return setSelectedContent(item); // the video plays in the window
     if (!openLink(item)) setSelectedContent(item);
@@ -234,19 +237,20 @@ export default function AppContent() {
     else if (selectedContent?.id === contentId) setSelectedContent(null);
   };
 
+  // The button above the map: the same stage, so it opens when that stage does.
+  const handleShoppingListClick = () => {
+    const item = allContent.find((i) => shoppingList(i.body));
+    if (!item) return toast('רשימת הקניות תעלה בקרוב');
+    if (!item.isUnlocked) return toast(`רשימת הקניות נפתחת ${item.daysUntilUnlock > 0 ? inDays(item.daysUntilUnlock) : 'אחרי השלב הנוכחי'}`);
+    navigate('/app/shopping-list');
+  };
+
   const handleSnacksBookClick = () => {
     if (!snacksBookLink) {
       toast('הקישור לספר הנשנושים לא הוגדר עדיין');
       return;
     }
-    const trimmed = snacksBookLink.trim();
-    // Already has a scheme → as-is; a bare email → mailto: (not a domain).
-    const url = /^[a-z][a-z0-9+.-]*:/i.test(trimmed)
-      ? trimmed
-      : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)
-      ? `mailto:${trimmed}`
-      : `https://${trimmed}`;
-    window.open(url, Capacitor.isNativePlatform() ? '_system' : '_blank');
+    openExternalLink(snacksBookLink);
   };
 
   if (isLoading) {
@@ -304,7 +308,11 @@ export default function AppContent() {
             <BookText strokeWidth={2} />
             ספר נשנושים
           </Button>
-          <Button variant="outline" onClick={() => navigate('/app/guides')}>
+          <Button variant="outline" onClick={handleShoppingListClick}>
+            <ShoppingCart strokeWidth={2} />
+            רשימת קניות
+          </Button>
+          <Button variant="outline" className="col-span-2" onClick={() => navigate('/app/guides')}>
             <FileText strokeWidth={2} />
             ספריית מדריכים
           </Button>

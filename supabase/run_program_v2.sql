@@ -107,8 +107,10 @@ INSERT INTO v2_content VALUES
   (55, 2, 'שבועות 5–6', 29, 'video', false, 'חלק 2: מוסיפים ומשפרים', 'פותחים את החלק השני: מה מחכה לכם בשבועות 5–12.', NULL),
   (63, 2, 'שבועות 5–6', 29, 'video', false, 'שבועות 5–6: סידור ארוחות, אימון וחלבון',
       'סידור ארוחות: 2 גדולות, ביניים ומתוקה · אימון אחד בשבוע · חלבון בכל ארוחה.', NULL),
-  (61, 2, 'שבועות 5–6', 29, 'guide', false, 'מדריך: ארוחות שישי, מסעדות ואירועים', 'איך נהנים בלי לצאת מהמסלול.', 'events'),
-  (62, 2, 'שבועות 5–6', 29, 'guide', false, 'מדריך: רגעים לא צפויים', 'מה עושים כשהתוכנית משתבשת.', 'events'),
+  (56, 2, 'שבועות 5–6', 29, 'guide', false, 'מדריך: סופ"שים, אירועים ומסעדות', 'מדריך פשוט ובגובה העיניים, כדי להרגיש קלילים יותר גם בסופ"שים, במסעדות ובאירועים.', 'events'),
+  (57, 2, 'שבועות 5–6', 29, 'guide', false, 'מדריך: על האש עם חברים', 'בלי רגשות אשם.', 'events'),
+  (64, 2, 'שבועות 5–6', 29, 'guide', false, 'מדריך: רגעים לא צפויים', 'איך לא לאבד שליטה.', 'events'),
+  (65, 2, 'שבועות 5–6', 29, 'guide', false, 'מדריך: סידור הארוחות בצורה נכונה', 'בצורה נכונה: 2 ארוחות גדולות ו-2 ארוחות קטנות.', 'nutrition'),
   (70, 2, 'שבועות 7–8', 43, 'video', false, 'שבועות 7–8: צעדים ומים',
       '6,000 צעדים ביום בממוצע · 2 עד 3 ליטר מים ביום.', NULL),
   (71, 2, 'שבועות 7–8', 43, 'guide', false, 'מדריך: העלאת צעדים', 'דרכים פשוטות להוסיף צעדים ליום.', 'training'),
@@ -119,7 +121,7 @@ INSERT INTO v2_content VALUES
   (90, 2, 'שבועות 11–12', 71, 'video', false, 'שבועות 11–12: הצלחת המחולקת ודילול',
       'לחלק את הצלחת לשליש חלבון / פחמימה / ירק · בחירת רוטב אחד פעם אחת ביום · דילול מאכלים עתירי קלוריות 80%.', NULL),
   (91, 2, 'שבועות 11–12', 71, 'guide', false, 'מדריך: תזונה בריאה', 'עקרונות לאוכל בריא בלי תפריט.', 'nutrition'),
-  (92, 2, 'שבועות 11–12', 71, 'guide', false, 'מדריך: רשימת קניות', 'מה שמים בעגלה כדי שיהיה קל לאכול טוב.', 'nutrition'),
+  (92, 2, 'שבועות 11–12', 71, 'guide', false, 'מדריך: רשימת קניות', 'מאכלים בנפח גדול ודלי קלוריות, שכדאי שיהיו תמיד בבית.', 'nutrition'),
   -- Part 3 · a video every three weeks
   (95, 3, 'שבועות 13–15', 85, 'video', false, 'חלק 3: מדייקים את ההרגלים', 'פותחים את החלק השלישי: מה מחכה לכם בשבועות 13–24.', NULL),
   (100, 3, 'שבועות 13–15', 85, 'video', false, 'שבועות 13–15: משפרים את מה שכבר קיים',
@@ -135,7 +137,7 @@ INSERT INTO v2_content VALUES
   (140, 4, 'שבועות 25–28', 169, 'video', false, 'שבועות 25–28: מדרגים ומשפרים',
       'עוד כלים לאורח חיים בריא, ולומדים לבנות תוכניות לעצמכם. מדרגים כל הרגל באחוזים · משפרים את ההרגל החלש עד 100% · מתעדפים את אורח החיים בלו"ז.', NULL),
   (150, 4, 'שבועות 29–32', 197, 'video', false, 'שבועות 29–32: בונים אימונים לבד', 'קוראים את המסמך של בניית האימונים.', NULL),
-  (151, 4, 'שבועות 29–32', 197, 'guide', false, 'מסמך בניית האימונים', 'איך בונים לעצמכם תוכנית אימונים.', 'training'),
+  (151, 4, 'שבועות 29–32', 197, 'guide', false, 'מדריך: איך להיות המאמן של עצמכם', 'המאמן של עצמכם.', 'training'),
   (160, 4, 'שבועות 33–36', 225, 'video', false, 'שבועות 33–36: 2 ארוחות ויותר מים',
       '2 ארוחות גדולות ביום · 2.5 עד 3.5 ליטר מים ביום.', NULL);
 
@@ -304,7 +306,7 @@ WHERE h.name = v.name AND h.user_id IS NULL;
 -- בדיקה: 15. תוכנית v2: תכנים והרגלים מחדש
 SELECT '15' AS section, 'program_content.archived_at' AS "check", (EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'program_content' AND column_name = 'archived_at')) AS ok
 UNION ALL
-SELECT '15' AS section, '33 תכנים פעילים' AS "check", ((SELECT count(*) FROM public.program_content WHERE archived_at IS NULL) = 33) AS ok
+SELECT '15' AS section, '35 תכנים פעילים' AS "check", ((SELECT count(*) FROM public.program_content WHERE archived_at IS NULL) = 35) AS ok
 UNION ALL
 SELECT '15' AS section, 'ברוכים הבאים ביום 1' AS "check", (EXISTS (SELECT 1 FROM public.program_content WHERE title = 'ברוכים הבאים: סוויץ'' במוח' AND unlock_day = 1 AND archived_at IS NULL)) AS ok
 UNION ALL
@@ -332,7 +334,7 @@ SELECT '0' AS section, 'weight_log קיימת' AS "check", (to_regclass('public.
 UNION ALL
 SELECT '15' AS section, 'program_content.archived_at' AS "check", (EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'program_content' AND column_name = 'archived_at')) AS ok
 UNION ALL
-SELECT '15' AS section, '33 תכנים פעילים' AS "check", ((SELECT count(*) FROM public.program_content WHERE archived_at IS NULL) = 33) AS ok
+SELECT '15' AS section, '35 תכנים פעילים' AS "check", ((SELECT count(*) FROM public.program_content WHERE archived_at IS NULL) = 35) AS ok
 UNION ALL
 SELECT '15' AS section, 'ברוכים הבאים ביום 1' AS "check", (EXISTS (SELECT 1 FROM public.program_content WHERE title = 'ברוכים הבאים: סוויץ'' במוח' AND unlock_day = 1 AND archived_at IS NULL)) AS ok
 UNION ALL

@@ -174,6 +174,7 @@ const AppHome = lazy(() => import("./pages/AppHome"));
 const AppContent = lazy(() => import("./pages/AppContent"));
 const AppGuides = lazy(() => import("./pages/AppGuides"));
 const AppGuide = lazy(() => import("./pages/AppGuide"));
+const AppShoppingList = lazy(() => import("./pages/AppShoppingList"));
 const AppCalendarDay = lazy(() => import("./pages/AppCalendarDay"));
 const AppWalk = lazy(() => import("./pages/AppWalk"));
 const AppNutrition = lazy(() => import("./pages/AppNutrition"));
@@ -349,6 +350,7 @@ const App = () => (
               <Route path="content" element={<AppContent />} />
               <Route path="guides" element={<AppGuides />} />
               <Route path="guides/:id" element={<AppGuide />} />
+              <Route path="shopping-list" element={<AppShoppingList />} />
               <Route path="nutrition" element={<AppNutrition />} />
               <Route path="tracker" element={<AppTracker />} />
               <Route path="progress" element={<AppProgress />} />
