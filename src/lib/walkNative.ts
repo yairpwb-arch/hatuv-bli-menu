@@ -26,7 +26,11 @@ export async function watchLocation(onPoint: (p: TrackPoint) => void, onError: (
         backgroundTitle: 'הליכה פעילה',
         backgroundMessage: 'מודדים את המסלול והמרחק — חזרו לאפליקציה כדי לראות',
         requestPermissions: true,
-        stale: false,
+        // iOS's first fix is usually a cached one, and with the distance filter
+        // the next comes only after moving 5 m: refusing stale fixes left someone
+        // standing still on "מחפש GPS" with an uncentred map. The walk itself
+        // ignores fixes from before its start (AppWalk).
+        stale: true,
         distanceFilter: 5,
       },
       (location?: Location, error?: { code?: string }) => {

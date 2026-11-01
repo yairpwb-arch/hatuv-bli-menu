@@ -99,6 +99,8 @@ export default function AppWalk() {
     setGpsError(null);
     setFix(p);
     if (phaseRef.current !== 'active') return;
+    // A cached fix from before the start shows where we are, but isn't part of the walk.
+    if (p.t < startedAt.current) return;
     const kept = ptsRef.current;
     if (!accept(kept[kept.length - 1], p)) return;
     // Auto-resume once moving again.
