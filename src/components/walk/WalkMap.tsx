@@ -97,7 +97,9 @@ export function WalkMap({
     if (!m || !current || summary) return;
     if (!me.current) {
       const el = document.createElement('div');
-      el.style.cssText = 'width:22px;height:22px;position:relative';
+      // No inline position: MapLibre's own position:absolute is what places a marker
+      // (position:relative started it from the right edge in RTL, off the map).
+      el.style.cssText = 'width:22px;height:22px';
       el.innerHTML =
         '<div style="position:absolute;inset:3px;border-radius:50%;background:#3B82F6;border:3px solid #fff"></div>';
       const a = document.createElement('div');
