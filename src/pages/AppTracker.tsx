@@ -128,7 +128,7 @@ export default function AppTracker() {
 
       // Filter out walk/workout habit IDs
       const staticHabitIds = (habitsResult.data || [])
-        .filter(h => !h.name.includes('הליכה') && !h.name.includes('אימון'))
+        .filter(h => !h.name.includes('הליכ') && !h.name.includes('אימון'))
         .map(h => h.id);
       setAllHabitIds(staticHabitIds);
 
