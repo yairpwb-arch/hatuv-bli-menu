@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { useActivityUnlocks } from '@/hooks/useActivityUnlocks';
 
 export interface WorkoutPlan {
   id: string;
@@ -16,6 +17,8 @@ export interface WorkoutPlanDay {
   name: string;
   description: string | null;
   notes: string | null;
+  /** Built ahead, waiting for this video to be watched; none = open from the start. */
+  unlocks_with?: string | null;
 }
 
 export interface Exercise {
@@ -78,6 +81,7 @@ export function useWorkoutPlan() {
     enabled: !!user,
   });
 
+  const unlocks = useActivityUnlocks(user?.id);
   const assignment = assignmentQuery.data ?? null;
   const plan = assignment?.workout_plans ?? null;
 
@@ -102,7 +106,8 @@ export function useWorkoutPlan() {
     enabled: !!plan?.id,
   });
 
-  const planDays = planDaysQuery.data ?? [];
+  // A day built ahead stays out of sight until its video is watched.
+  const planDays = (planDaysQuery.data ?? []).filter((d) => !d.unlocks_with || unlocks.unlocked.has(d.unlocks_with));
 
   const totalDaysInPlan = planDays.length;
   const todayPlanDay: WorkoutPlanDay | null =
@@ -133,7 +138,7 @@ export function useWorkoutPlan() {
   });
 
   const todayExercises = exercisesQuery.data ?? [];
-  const isLoading = assignmentQuery.isLoading || planDaysQuery.isLoading;
+  const isLoading = assignmentQuery.isLoading || planDaysQuery.isLoading || unlocks.isLoading;
 
   return {
     assignment,

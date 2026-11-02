@@ -3,9 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { showUndo } from '@/lib/undoToast';
 import { deleteWorkoutSession } from '@/lib/activityMarks';
-import { Dumbbell } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Card, EmptyState } from '@/components/ds';
 import { format } from 'date-fns';
 import type { WorkoutPlanDay, WorkoutPlanExercise } from '@/hooks/useWorkoutPlan';
 import { cn } from '@/lib/utils';
@@ -36,8 +34,8 @@ const VIEWS: { value: View; label: string }[] = [
 ];
 
 export default function AppWorkouts() {
-  const { user, currentWeek } = useAuth();
-  const { assignment, plan, planDays, isLoading } = useWorkoutPlan();
+  const { user, currentWeek, currentDay } = useAuth();
+  const { plan, planDays, isLoading } = useWorkoutPlan();
   const { sessions, logSession, deleteSession, isLoading: isSessionsLoading } = useWorkoutSession();
   const { start } = useActiveWorkout();
   const queryClient = useQueryClient();
@@ -74,16 +72,6 @@ export default function AppWorkouts() {
     );
   }
 
-  if (!assignment || !plan) {
-    return (
-      <div className="flex min-h-screen items-center px-4 pb-24 pt-4">
-        <Card className="w-full">
-          <EmptyState icon={Dumbbell} title="אין תוכנית אימון פעילה" description="פנו למאמן כדי להתחיל תוכנית" />
-        </Card>
-      </div>
-    );
-  }
-
   const handleStartSession = (planDay: WorkoutPlanDay, exercises: WorkoutPlanExercise[]) => {
     start({
       planDay,
@@ -116,7 +104,7 @@ export default function AppWorkouts() {
     <div className="min-h-screen space-y-card-gap px-4 pb-24 pt-4" dir="rtl">
       <header>
         <h1 className="text-screen-title">אימונים</h1>
-        <p className="text-body text-muted-foreground">{plan.name}</p>
+        {plan && <p className="text-body text-muted-foreground">{plan.name}</p>}
       </header>
 
       {/* One switch for the whole page */}
@@ -167,6 +155,9 @@ export default function AppWorkouts() {
             activityDays={activityDays}
             onAddActivity={(day) => setSheet({ open: true, date: new Date(`${day}T12:00:00`) })}
             onStartWalk={() => navigate('/app/walk')}
+            activities={acts.activities}
+            onOpenActivity={(a) => setSheet({ open: true, existing: a })}
+            canRemoveWalks={currentDay >= 43}
           />
           <WatchConnectCard connected={watch.connected} isBusy={watch.isBusy} onConnect={watch.connect} />
         </>

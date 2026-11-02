@@ -16,7 +16,7 @@ import { useStepLogs } from '@/hooks/useStepLogs';
 import { useStepCounter } from '@/hooks/useStepCounter';
 import { useStreak } from '@/hooks/useStreak';
 import { successHaptic } from '@/lib/native';
-import { DEFAULT_STEP_GOAL } from '@/lib/stepGoal';
+import { useStepGoal } from '@/hooks/useStepGoal';
 import { Pill, StatTile } from '@/components/ds';
 import { WeightHeroCard } from '@/components/progress/WeightHeroCard';
 import { WeightTrendCard } from '@/components/progress/WeightTrendCard';
@@ -65,6 +65,7 @@ export default function AppProgress() {
 
   // Steps — DB logs for history, live counter for today on device
   const { logs: stepLogs, todaySteps, weeklyAverage } = useStepLogs();
+  const { goal: stepGoal } = useStepGoal();
   const { stepData } = useStepCounter(user?.id);
   const liveSteps = Capacitor.isNativePlatform() ? stepData.steps : todaySteps;
 
@@ -263,7 +264,7 @@ export default function AppProgress() {
 
       <StepsCard
         todaySteps={liveSteps}
-        goal={DEFAULT_STEP_GOAL}
+        goal={stepGoal}
         logs={stepLogs}
         weeklyAverage={weeklyAverage}
         fromStartAverage={fromStartAverage}

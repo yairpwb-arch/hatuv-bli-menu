@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -8,26 +9,24 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
-import { Flame, Footprints, Moon, Play, Scale } from 'lucide-react';
+import { ClipboardList, Flame, Footprints, Play, Scale } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useHabits } from '@/hooks/useHabits';
 import { useStreak } from '@/hooks/useStreak';
 import { useStepCounter } from '@/hooks/useStepCounter';
-import { DEFAULT_STEP_GOAL } from '@/lib/stepGoal';
+import { useStepGoal } from '@/hooks/useStepGoal';
 import { Capacitor } from '@capacitor/core';
 import { format } from 'date-fns';
 import { successHaptic } from '@/lib/native';
 import { Card, Pill } from '@/components/ds';
 import { HabitTable } from '@/components/home/HabitTable';
-import { DailySummary } from '@/components/home/DailySummary';
+import WeeklySurveyModal from '@/components/WeeklySurveyModal';
 import { NightScreen } from '@/components/home/NightScreen';
-import { useDailySummary } from '@/hooks/useDailySummary';
 import { useSleepSchedule } from '@/hooks/useSleepSchedule';
-import { isTableKey, shortLabel, summaryHabitsOf } from '@/lib/habitVisuals';
+import { isTableKey, shortLabel } from '@/lib/habitVisuals';
 import { showUndo } from '@/lib/undoToast';
 import type { Habit } from '@/hooks/useHabits';
-import { isNight, openSummaryDay } from '@/lib/sleepSchedule';
-import { scheduleBedtimeReminders } from '@/lib/localReminders';
+import { isNight } from '@/lib/sleepSchedule';
 import { TodayAgenda } from '@/components/home/TodayAgenda';
 import { formatNumber } from '@/components/progress/format';
 
@@ -94,7 +93,7 @@ export default function AppHome() {
 
   const { habits, isLoading: isLoadingHabits, toggleHabit, refetch: refetchHabits } =
     useHabits(user?.id, currentDay, today, planDays);
-  // Food habits sit on the table; the rest are asked in the bedtime summary.
+  // Food habits sit on the table.
   const tableHabits = habits.filter((h) => isTableKey(h.visual_key));
 
   // Empty table: say when the first habit opens.
@@ -121,7 +120,6 @@ export default function AppHome() {
       cancelled = true;
     };
   }, [isLoadingHabits, tableHabits.length, user, currentDay]);
-  const summaryHabits = summaryHabitsOf(habits);
 
   // Ticking a habit offers a 5-second undo; either way the streak is recounted.
   const toggleOnTable = async (h: Habit) => {
@@ -134,25 +132,34 @@ export default function AppHome() {
     });
   };
 
-  // Sleep hours drive the bedtime summary window and night mode.
-  const { schedule: sleep, isReady: sleepReady } = useSleepSchedule(user?.id);
+  // Sleep hours drive night mode.
+  const { schedule: sleep } = useSleepSchedule(user?.id);
+  const { goal: stepGoal } = useStepGoal();
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const id = window.setInterval(() => setNow(new Date()), 60_000);
     return () => window.clearInterval(id);
   }, []);
-  const summaryDay = openSummaryDay(sleep, now);
-  const { summary, isLoading: isLoadingSummary, submit: submitSummary } = useDailySummary(user?.id, summaryDay);
-  const summaryPending = !!summaryDay && !isLoadingSummary && !summary;
-
+  // The weekly survey: Fridays, until it's filled in (a card here; the reminders open it with ?survey=1).
+  const isFriday = now.getDay() === 5;
+  const surveyQuery = useQuery({
+    queryKey: ['weekly-checkin', user?.id, currentWeek],
+    enabled: !!user && isFriday,
+    queryFn: async () => {
+      // weekly_checkin isn't in the generated types yet.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data } = await (supabase as any).from('weekly_checkin').select('id').eq('user_id', user!.id).eq('week_number', currentWeek).maybeSingle();
+      return !!data;
+    },
+  });
+  const surveyPending = isFriday && surveyQuery.data === false;
   const [searchParams, setSearchParams] = useSearchParams();
-  const [summaryOpen, setSummaryOpen] = useState(false);
-  // The bedtime notification opens /app?summary=1 straight into the summary.
+  const [surveyOpen, setSurveyOpen] = useState(false);
   useEffect(() => {
-    if (searchParams.get('summary') !== '1' || !sleepReady) return;
-    if (summaryPending) setSummaryOpen(true);
-    if (!summaryDay || !isLoadingSummary) setSearchParams({}, { replace: true });
-  }, [searchParams, sleepReady, summaryPending, summaryDay, isLoadingSummary, setSearchParams]);
+    if (searchParams.get('survey') !== '1') return;
+    setSurveyOpen(true);
+    setSearchParams({}, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   // Night mode: the trainee can step past it once per night.
   const nightKey = `nightDismissed:${format(new Date(now.getTime() - 12 * 3600_000), 'yyyy-MM-dd')}`;
@@ -171,7 +178,7 @@ export default function AppHome() {
     }
     setNightDismissed(true);
   };
-  const showNight = isNight(sleep, now) && !nightDismissed && !summaryOpen && searchParams.get('summary') !== '1';
+  const showNight = isNight(sleep, now) && !nightDismissed && !surveyOpen;
 
   useEffect(() => {
     if (!user) return;
@@ -225,40 +232,30 @@ export default function AppHome() {
         </Pill>
       </header>
 
-      {/* Bedtime summary — only in its window (an hour either side of bedtime), until sent */}
-      {summaryPending && (
+      {/* The weekly survey, on Fridays until it's filled in */}
+      {surveyPending && (
         <button
           type="button"
-          onClick={() => setSummaryOpen(true)}
-          className="flex min-h-[56px] w-full items-center gap-3 rounded-card border border-primary/40 bg-card px-4 py-3 text-right"
+          onClick={() => setSurveyOpen(true)}
+          className="flex min-h-[56px] w-full items-center gap-3 rounded-card border border-primary/40 bg-card px-4 text-right"
         >
-          <Moon className="h-5 w-5 shrink-0 text-primary" strokeWidth={2} aria-hidden />
-          <span className="flex-1 text-body font-semibold">סיכום היום מחכה לך</span>
-          <span className="text-label font-semibold text-primary-soft">20 שניות</span>
+          <ClipboardList className="h-5 w-5 shrink-0 text-primary" strokeWidth={2} aria-hidden />
+          <span className="flex-1 text-body font-semibold">השאלון השבועי מחכה לך</span>
+          <span className="text-label font-semibold text-primary-soft">למילוי</span>
         </button>
       )}
-      {summaryOpen && summaryDay && (
-        <DailySummary
-          day={summaryDay}
-          habits={summaryHabits}
-          firstName={firstName}
-          onSubmit={async (input) => {
-            const n = await submitSummary(input);
-            if (n !== null) {
-              refetchHabits();
-              refetchStreak();
-              scheduleBedtimeReminders(sleep, { enabled: true, skipDay: summaryDay });
-            }
-            return n;
-          }}
-          onClose={() => setSummaryOpen(false)}
-        />
-      )}
+      <WeeklySurveyModal
+        open={surveyOpen}
+        onClose={() => {
+          setSurveyOpen(false);
+          surveyQuery.refetch();
+        }}
+        currentWeek={currentWeek}
+      />
       {showNight && (
         <NightScreen
           wake={sleep.wake}
           onEnter={dismissNight}
-          onOpenSummary={summaryPending ? () => setSummaryOpen(true) : undefined}
         />
       )}
 
@@ -275,7 +272,7 @@ export default function AppHome() {
       )}
 
       {/* 3. Steps */}
-      <StepsCompact steps={todaySteps ?? 0} goal={DEFAULT_STEP_GOAL} onStartWalk={() => navigate('/app/walk')} />
+      <StepsCompact steps={todaySteps ?? 0} goal={stepGoal} onStartWalk={() => navigate('/app/walk')} />
 
       {/* Weigh-in day */}
       {isWeighInDay && (

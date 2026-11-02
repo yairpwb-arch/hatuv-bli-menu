@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { addDays, format, startOfDay } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
+import { ActivityKind, kindInfo } from '@/lib/activityKinds';
 import { fetchSleepSchedule } from '@/hooks/useSleepSchedule';
 import { fetchHabitSchedule } from '@/hooks/useHabitSchedule';
 import { planDay, programDay } from '@/lib/habitSchedule';
@@ -16,7 +17,7 @@ export interface CalEvent {
   /** Stable key: the row id for custom events, "<source>:<yyyy-MM-dd>" for recurring ones. */
   key: string;
   /** 'habit' = a timed habit (eating window, meal layout), worked out at display time. */
-  source: 'custom' | 'walk' | 'workout' | 'sleep' | 'habit';
+  source: 'custom' | 'walk' | 'workout' | 'sleep' | 'habit' | 'activity';
   /** yyyy-MM-dd the event belongs to, when it differs from start (a 00:30 bedtime is the evening before). */
   day?: string;
   /** calendar_events.id — only for custom events. */
@@ -184,6 +185,30 @@ export function useCalendar(userId: string | undefined, from: Date, to: Date) {
       doneSet.add(`workout:${dayKey(new Date(s.completed_at))}`);
     }
     const list: CalEvent[] = [];
+
+    // What the trainee logged themselves, on the day it happened. Plan workouts already have their own entry.
+    const logged = await db
+      .from('activities')
+      .select('id, kind, custom_name, started_at, duration_min, workout_session_logs(plan_day_id)')
+      .eq('user_id', userId)
+      .eq('status', 'done')
+      .gte('started_at', start.toISOString())
+      .lt('started_at', endExclusive.toISOString());
+    for (const a of (logged.data ?? []) as { id: string; kind: ActivityKind; custom_name: string | null; started_at: string; duration_min: number | null; workout_session_logs: { plan_day_id: string | null } | null }[]) {
+      if (a.workout_session_logs?.plan_day_id) continue;
+      const begins = new Date(a.started_at);
+      list.push({
+        key: `activity:${a.id}`,
+        source: 'activity',
+        type: a.kind === 'walk' || a.kind === 'hike' ? 'walk' : a.kind === 'other' ? 'other' : 'workout',
+        title: a.custom_name ?? kindInfo(a.kind).label,
+        start: begins,
+        end: a.duration_min ? new Date(begins.getTime() + a.duration_min * 60_000) : undefined,
+        hasTime: true,
+        done: true,
+        readOnly: true,
+      });
+    }
 
     for (const e of customRes.data || []) {
       if (e.repeat_rule) continue; // a series' first day comes from the expansion below

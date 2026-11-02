@@ -20,10 +20,15 @@ function getUserTimezone(): string {
 // Navigate to the right screen based on notification type
 function handleNotificationTap(type: string) {
   const routes: Record<string, string> = {
-    phase_check: '/app',
-    new_habits: '/app',
+    new_stage: '/app/content',
+    new_stage_nudge: '/app/content',
+    new_stage_nudge_2: '/app/content',
     // Friday morning weigh-in opens the add-weight dialog directly.
-    weigh_reminder: '/app/progress?weigh=1',
+    weigh_survey: '/app/progress?weigh=1',
+    weigh_reminder: '/app/progress',
+    survey_nudge: '/app?survey=1',
+    survey_nudge_2: '/app?survey=1',
+    steps_behind: '/app/progress',
   };
   requestNavigate(routes[type] ?? '/app');
 }

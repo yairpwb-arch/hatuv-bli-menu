@@ -29,7 +29,6 @@ import { TextSize, getTextSize, setTextSize } from '@/lib/textSize';
 import { connectWatch, isWatchConnected, syncWatchWorkouts } from '@/lib/watchWorkouts';
 import { useSleepSchedule } from '@/hooks/useSleepSchedule';
 import { resyncSleepToDevice } from '@/lib/deviceCalendar';
-import { scheduleBedtimeReminders } from '@/lib/localReminders';
 import type { SleepSchedule } from '@/lib/sleepSchedule';
 
 // ── Grouped card with divided rows ────────────────────────────────────────────
@@ -72,14 +71,14 @@ function Row({
   );
 }
 
-type PrefKey = 'habits' | 'daily_summary' | 'weigh' | 'workout_walk' | 'weekly_summary' | 'new_content';
+type PrefKey = 'habits' | 'steps' | 'weigh' | 'workout_walk' | 'weekly_summary' | 'new_content';
 const PREF_ROWS: { key: PrefKey; label: string; description?: string }[] = [
   { key: 'habits', label: 'תזכורת הרגלים יומית' },
-  { key: 'daily_summary', label: 'תזכורת סיכום היום', description: 'חצי שעה לפני השינה' },
+  { key: 'workout_walk', label: 'תזכורות אימון והליכה', description: 'שעתיים לפני השעה ביומן' },
+  { key: 'steps', label: 'תזכורת צעדים', description: '4 שעות לפני השינה, כשחסר ליעד' },
   { key: 'weigh', label: 'תזכורת שקילה', description: 'יום שישי בבוקר' },
-  { key: 'workout_walk', label: 'תזכורות אימון והליכה' },
-  { key: 'weekly_summary', label: 'סיכום שבועי' },
-  { key: 'new_content', label: 'תוכן חדש שנפתח' },
+  { key: 'weekly_summary', label: 'שאלון שבועי', description: 'יום שישי' },
+  { key: 'new_content', label: 'שבוע או חלק חדש', description: 'כשנפתח תוכן חדש' },
 ];
 
 const TEXT_SIZES: { value: TextSize; label: string }[] = [
@@ -328,7 +327,6 @@ export default function AppSettings() {
     const next = { ...prefs, [key]: on };
     setPrefs(next);
     savePrefs({ prefs: next });
-    if (key === 'daily_summary') scheduleBedtimeReminders(sleep.schedule, { enabled: on });
   };
 
   // ── Sleep hours (profiles.sleep_time / wake_time) ──────────────────────────

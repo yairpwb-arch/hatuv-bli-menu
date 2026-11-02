@@ -20,7 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { PhotoGallery } from '@/components/profile/PhotoGallery';
 import { initials } from '@/lib/initials';
 import { opensIn } from '@/lib/hebrewDays';
-import { DEFAULT_STEP_GOAL } from '@/lib/stepGoal';
+import { useStepGoal } from '@/hooks/useStepGoal';
 import { formatKg, formatNumber } from '@/components/progress/format';
 import { cn } from '@/lib/utils';
 
@@ -66,6 +66,7 @@ function DetailRow({ label, value, onEdit }: { label: string; value: string; onE
 
 export default function AppProfile() {
   const { user, currentDay, currentWeek, planDays, refreshProfile } = useAuth();
+  const { goal: stepGoal } = useStepGoal();
   const navigate = useNavigate();
   const { currentStreak, perfectDaysThisMonth } = useStreak(user?.id, currentWeek);
   const today = format(new Date(), 'yyyy-MM-dd');
@@ -263,7 +264,7 @@ export default function AppProfile() {
           {[
             { icon: Dumbbell, label: 'ימי אימון', value: plan.workoutDays ? `${plan.workoutDays} בשבוע` : 'עוד לא נקבעו' },
             { icon: Footprints, label: 'ימי הליכה', value: plan.walkDays ? `${plan.walkDays} בשבוע` : 'עוד לא נקבעו' },
-            { icon: TrendingUp, label: 'יעד צעדים', value: formatNumber(DEFAULT_STEP_GOAL) },
+            { icon: TrendingUp, label: 'יעד צעדים', value: formatNumber(stepGoal) },
             { icon: Droplets, label: 'יעד מים', value: water ?? 'לפי השלב הבא' },
           ].map(({ icon: Icon, label, value }) => (
             <div key={label} className="flex min-h-[52px] items-center gap-3 px-1">

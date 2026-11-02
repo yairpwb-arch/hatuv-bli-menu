@@ -43,15 +43,6 @@ export function resolveVisualKey(stored: string | null | undefined): VisualKey |
   return stored && ALL_KEYS.includes(stored) ? (stored as VisualKey) : null;
 }
 
-/** The habits the bedtime summary asks about: everything that isn't on the table or hidden, max 4. */
-export function summaryHabitsOf<T extends { visual_key: VisualKey | null; is_bonus?: boolean }>(habits: T[], max = 4): T[] {
-  const rank = (h: T) => (isSummaryKey(h.visual_key) ? SUMMARY_KEYS.indexOf(h.visual_key) : SUMMARY_KEYS.length);
-  return habits
-    .filter((h) => !isTableKey(h.visual_key) && !isHiddenKey(h.visual_key) && !h.is_bonus)
-    .sort((a, b) => rank(a) - rank(b))
-    .slice(0, max);
-}
-
 /** Short tag names (up to 3 words) so 2–3 fit per row; the full name shows on long press. */
 const SHORT_LABELS: Record<TableKey, string> = {
   water_before_meal: '2 כוסות מים',

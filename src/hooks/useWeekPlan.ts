@@ -2,7 +2,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { addDays, format, startOfWeek } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import type { WorkoutPlanDay, WorkoutPlanExercise } from '@/hooks/useWorkoutPlan';
+import { useActivityUnlocks } from '@/hooks/useActivityUnlocks';
 import { deleteWorkoutSession, unmarkActivity } from '@/lib/activityMarks';
+import { CALENDAR_CHANGED } from '@/lib/localReminders';
 
 // These tables aren't all in the generated types yet.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -28,6 +30,7 @@ export function currentWeekDates(today = new Date()): string[] {
 export function useWeekPlan(userId: string | undefined, currentWeek: number, planDays: WorkoutPlanDay[]) {
   const queryClient = useQueryClient();
   const week = currentWeekDates();
+  const { unlocked, isLoading: unlocksLoading } = useActivityUnlocks(userId);
 
   const schedule = useQuery({
     queryKey: ['workout-day-schedule', userId],
@@ -39,23 +42,25 @@ export function useWeekPlan(userId: string | undefined, currentWeek: number, pla
   });
 
   const walks = useQuery({
-    queryKey: ['walking-schedule', userId, currentWeek],
-    enabled: !!userId,
+    queryKey: ['walking-schedule', userId, currentWeek, [...unlocked].sort().join()],
+    enabled: !!userId && !unlocksLoading,
     queryFn: async () => {
       const { data: existing } = await db.from('user_walking_schedule').select('*').eq('user_id', userId).order('walk_number');
       let list = (existing || []) as WalkEntry[];
 
-      // Walk 1 from the start, walk 2 joins from week 4 (same rule as before).
-      if (!list.find((w) => w.walk_number === 1)) {
-        const { data: w1 } = await db.from('user_walking_schedule').insert({ user_id: userId, walk_number: 1, week_start: 1 }).select().single();
-        if (w1) list = [...list, w1 as WalkEntry];
+      // A walk opens when its video is watched (week 1, week 4).
+      for (const [number, weekStart] of [[1, 1], [2, 4]] as const) {
+        if (!unlocked.has(`walk_${number}`) || list.find((w) => w.walk_number === number)) continue;
+        const { data } = await db.from('user_walking_schedule').insert({ user_id: userId, walk_number: number, week_start: weekStart }).select().single();
+        if (data) list = [...list, data as WalkEntry];
       }
-      const walk1 = list.find((w) => w.walk_number === 1);
-      if (!list.find((w) => w.walk_number === 2) && currentWeek >= 4 && walk1?.is_active) {
-        const { data: w2 } = await db.from('user_walking_schedule').insert({ user_id: userId, walk_number: 2, week_start: 4 }).select().single();
-        if (w2) list = [...list, w2 as WalkEntry];
-      }
-      return list.filter((w) => w.is_active).sort((a, b) => a.walk_number - b.walk_number);
+      // One with a day already chosen stays; one without waits for its video.
+      return {
+        active: list
+          .filter((w) => w.is_active && (w.day_of_week !== null || unlocked.has(`walk_${w.walk_number}`)))
+          .sort((a, b) => a.walk_number - b.walk_number),
+        removed: list.filter((w) => !w.is_active),
+      };
     },
   });
 
@@ -125,6 +130,17 @@ export function useWeekPlan(userId: string | undefined, currentWeek: number, pla
     return ok;
   };
 
+  /** Takes a walk out of the plan, or puts it back (its day is kept). */
+  const setWalkActive = async (id: string, active: boolean) => {
+    const { error } = await db.from('user_walking_schedule').update({ is_active: active }).eq('id', id);
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['walking-schedule', userId] }),
+      queryClient.invalidateQueries({ queryKey: ['walk-days', userId] }),
+    ]);
+    window.dispatchEvent(new Event(CALENDAR_CHANGED));
+    return !error;
+  };
+
   /** Saves the weekday of every workout and walk at once (null = no day). */
   const saveDays = async (workoutDays: Map<string, number | null>, walkDays: Map<string, number | null>) => {
     if (!userId) return;
@@ -143,15 +159,18 @@ export function useWeekPlan(userId: string | undefined, currentWeek: number, pla
       queryClient.invalidateQueries({ queryKey: ['today-workout', userId] }),
       queryClient.invalidateQueries({ queryKey: ['walk-days', userId] }),
     ]);
+    window.dispatchEvent(new Event(CALENDAR_CHANGED));
   };
 
   return {
     week,
     schedule: schedule.data ?? [],
-    walks: walks.data ?? [],
+    walks: walks.data?.active ?? [],
+    removedWalks: walks.data?.removed ?? [],
+    setWalkActive,
     logs: logs.data ?? [],
     exercisesByDay: exercises.data ?? {},
-    isLoading: schedule.isLoading || walks.isLoading || logs.isLoading || (dayIds.length > 0 && exercises.isLoading),
+    isLoading: schedule.isLoading || walks.isLoading || unlocksLoading || logs.isLoading || (dayIds.length > 0 && exercises.isLoading),
     markActivity,
     unmark,
     unmarkWorkoutSession,

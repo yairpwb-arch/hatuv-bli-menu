@@ -90,6 +90,7 @@ interface WorkoutPlanDay {
   day_number: number;
   name: string;
   notes: string | null;
+  unlocks_with?: string | null;
 }
 
 interface Exercise {
@@ -725,6 +726,12 @@ export default function AdminUsers() {
       toast({ title: 'הצלחה', description: 'תוכנית האימון הושבתה' });
     }
     setIsTogglingPlan(false);
+  };
+
+  const handleDayUnlock = async (dayId: string, unlocksWith: string | null) => {
+    const { error } = await (supabase as any).from('workout_plan_days').update({ unlocks_with: unlocksWith }).eq('id', dayId);
+    if (error) return toast({ title: 'לא נשמר, נסו שוב', variant: 'destructive' });
+    setPlanDays(prev => prev.map(d => (d.id === dayId ? { ...d, unlocks_with: unlocksWith } : d)));
   };
 
   const handleAddDay = async () => {
@@ -1481,6 +1488,18 @@ export default function AdminUsers() {
                             {day.day_number}
                           </span>
                           <span className="font-medium text-sm">{day.name}</span>
+                          {/* Built ahead: when the trainee gets this day (and picks its weekday). */}
+                          <select
+                            aria-label="מתי האימון נפתח"
+                            value={day.unlocks_with ?? ''}
+                            onClick={e => e.stopPropagation()}
+                            onChange={e => handleDayUnlock(day.id, e.target.value || null)}
+                            className="h-8 rounded-md border border-border bg-background px-1 text-xs"
+                          >
+                            <option value="">נפתח מיד</option>
+                            <option value="workout_1">אחרי סרטון 5–6</option>
+                            <option value="workout_2">אחרי סרטון 9–10</option>
+                          </select>
                           <Badge variant="secondary" className="text-xs">
                             {(planExercisesMap[day.id] || []).length} תרגילים
                           </Badge>

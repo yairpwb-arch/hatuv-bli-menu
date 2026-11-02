@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { format } from 'date-fns';
-import { Check, ClipboardCheck, Dumbbell, Eye, Footprints, Play, Watch } from 'lucide-react';
+import { Check, ClipboardCheck, Dumbbell, Eye, Footprints, Play, Watch, Clock } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, Pill, PrimaryButton, SecondaryButton } from '@/components/ds';
 import type { WorkoutPlanDay, WorkoutPlanExercise } from '@/hooks/useWorkoutPlan';
@@ -36,7 +36,7 @@ const exerciseCount = (n: number) => (n === 1 ? 'תרגיל אחד' : `${n} תר
 // ── Workout ───────────────────────────────────────────────────────────────────
 
 export function WorkoutCard({
-  day, weekday, exercises, status, doneAt, onStart, onManual, onViewSummary, onDoneTap,
+  day, weekday, exercises, status, doneAt, onStart, onManual, onViewSummary, onDoneTap, time, onTime,
 }: {
   day: WorkoutPlanDay;
   weekday: number;
@@ -48,6 +48,9 @@ export function WorkoutCard({
   onManual?: () => void;
   onViewSummary?: () => void;
   onDoneTap?: () => void;
+  /** "HH:mm" from the calendar, and choosing another. */
+  time?: string;
+  onTime?: () => void;
 }) {
   const meta = exercises
     ? exercises.length > 0
@@ -72,6 +75,7 @@ export function WorkoutCard({
         {status === 'planned' && <Pill>מתוכנן</Pill>}
         {status === 'missed' && <Pill>לא בוצע</Pill>}
       </div>
+      {time && status !== 'done' && <TimeChip time={time} onTap={onTime} />}
 
       {exercises === undefined ? (
         <Skeleton className="h-24 rounded-inner" />
@@ -104,10 +108,26 @@ export function WorkoutCard({
   );
 }
 
+/** The time from the calendar: tap to choose another. */
+function TimeChip({ time, onTap }: { time: string; onTap?: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onTap}
+      aria-label={`השעה ${time}. לחיצה לשינוי`}
+      className="flex min-h-[48px] w-full items-center gap-2 rounded-inner bg-primary-tint px-3 text-right"
+    >
+      <Clock className="h-5 w-5 shrink-0 text-primary" strokeWidth={2} aria-hidden />
+      <span className="text-card-title font-bold tabular-nums text-foreground" dir="ltr">{time}</span>
+      <span className="flex-1 text-left text-label font-semibold text-primary-soft">שינוי שעה</span>
+    </button>
+  );
+}
+
 // ── Walk ──────────────────────────────────────────────────────────────────────
 
 export function WalkCard({
-  weekday, status, watchWalk, onMark, onManual, onStartGps, onDoneTap,
+  weekday, status, watchWalk, onMark, onManual, onStartGps, onDoneTap, time, onTime, onRemove,
 }: {
   weekday: number;
   status: DayStatus;
@@ -119,6 +139,11 @@ export function WalkCard({
   /** Starts a GPS-tracked walk. */
   onStartGps?: () => void;
   onDoneTap?: () => void;
+  /** "HH:mm" from the calendar, and choosing another. */
+  time?: string;
+  onTime?: () => void;
+  /** Takes the walk out of the plan (from weeks 7–8, when steps are what counts). */
+  onRemove?: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const mark = async (source: 'manual' | 'late' | 'watch') => {
@@ -143,6 +168,7 @@ export function WalkCard({
         {status === 'planned' && <Pill>מתוכננת</Pill>}
         {missed && <Pill>פוספס</Pill>}
       </div>
+      {time && status !== 'done' && <TimeChip time={time} onTap={onTime} />}
 
       {watchWalk && (status === 'today' || missed) && (
         <div className="space-y-3 rounded-inner bg-primary-tint p-3">
@@ -163,6 +189,11 @@ export function WalkCard({
       )}
       {missed && !watchWalk && onManual && (
         <SecondaryButton icon={Footprints} className="w-full" disabled={busy} onClick={onManual}>ביצעתי הליכה</SecondaryButton>
+      )}
+      {onRemove && (
+        <button type="button" onClick={onRemove} className="min-h-[44px] w-full text-label font-semibold text-muted-foreground">
+          הסרת ההליכה מהתוכנית
+        </button>
       )}
     </Card>
   );

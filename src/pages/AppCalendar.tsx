@@ -165,7 +165,7 @@ export default function AppCalendar() {
   const sync = async () => {
     if (!user) return;
     setIsSyncing(true);
-    const upcoming = cal.events.filter((e) => e.start.getTime() >= new Date().setHours(0, 0, 0, 0));
+    const upcoming = cal.events.filter((e) => e.source !== 'activity' && e.start.getTime() >= new Date().setHours(0, 0, 0, 0));
     const res = await syncToDeviceCalendar(user.id, upcoming);
     setIsSyncing(false);
     if (res.status === 'ok') toast.success(res.added ? `נוספו ${res.added} אירועים ליומן של הטלפון` : 'היומן של הטלפון כבר מעודכן');
@@ -191,9 +191,11 @@ export default function AppCalendar() {
         }
         onDone={() => cal.markDone(e)}
         onUndo={() =>
-          toast(`${e.title} · בוצע`, {
-            action: { label: 'בטל סימון', onClick: () => cal.unmarkDone(e) },
-          })
+          e.source === 'activity'
+            ? toast(`${e.title} · נרשם`, { description: 'אפשר לערוך או למחוק בהיסטוריה בדף האימונים' })
+            : toast(`${e.title} · בוצע`, {
+                action: { label: 'בטל סימון', onClick: () => cal.unmarkDone(e) },
+              })
         }
       />
     ));

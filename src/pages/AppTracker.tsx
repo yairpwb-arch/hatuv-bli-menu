@@ -22,7 +22,7 @@ import { cn } from '@/lib/utils';
 import { MonthlyCalendar } from '@/components/MonthlyCalendar';
 import { useHabits, iconMap } from '@/hooks/useHabits';
 import { useStepCounter } from '@/hooks/useStepCounter';
-import { DEFAULT_STEP_GOAL } from '@/lib/stepGoal';
+import { useStepGoal } from '@/hooks/useStepGoal';
 
 interface ScheduledActivity {
   activity_type: 'walk' | 'workout';
@@ -40,7 +40,7 @@ interface DayCompletionData {
 export default function AppTracker() {
   const { user, currentDay, currentWeek, planDays } = useAuth();
   const { stepData, isAvailable, isNative, hasPermission, requestPermission } = useStepCounter(user?.id);
-  const stepGoal = DEFAULT_STEP_GOAL;
+  const { goal: stepGoal } = useStepGoal();
   const stepPct = isNative && hasPermission ? Math.min(100, Math.round((stepData.steps / stepGoal) * 100)) : 0;
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [allHabitIds, setAllHabitIds] = useState<string[]>([]);

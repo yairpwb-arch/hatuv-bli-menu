@@ -1,50 +1,60 @@
 /**
- * On-device reminders (@capacitor/local-notifications). Bedtime differs per
- * trainee, so the "daily summary" nudge is scheduled on the phone itself:
- * one notification per night for the coming week, 30 minutes before bedtime,
- * rebuilt whenever the app opens or the sleep hours change.
+ * On-device reminders (@capacitor/local-notifications). The calendar works out
+ * each trainee's workout and walk times on the phone, so those reminders are
+ * scheduled there: two hours before each, for the coming week, rebuilt whenever
+ * the app opens or a time changes.
  */
 import { Capacitor } from '@capacitor/core';
-import { addDays, format } from 'date-fns';
-import { SleepSchedule, bedtimeOf } from '@/lib/sleepSchedule';
+import { format } from 'date-fns';
+import type { CalEvent } from '@/hooks/useCalendar';
 import { requestNavigate } from '@/lib/appNavigate';
 
+/** Fired after a change that moves a workout or walk, to rebuild the reminders. */
+export const CALENDAR_CHANGED = 'calendar-changed';
+
 const BEDTIME_IDS = Array.from({ length: 8 }, (_, i) => 7000 + i);
-export const SUMMARY_ROUTE = '/app?summary=1';
+const ACTIVITY_IDS = Array.from({ length: 24 }, (_, i) => 7100 + i);
+const LEAD_MS = 2 * 60 * 60_000;
 
 async function plugin() {
   return (await import('@capacitor/local-notifications')).LocalNotifications;
 }
 
-/**
- * Replaces the upcoming bedtime reminders. Never asks for permission: if
- * notifications aren't allowed yet, nothing is scheduled. `skipDay` is a day
- * whose summary is already filled in.
- */
-export async function scheduleBedtimeReminders(s: SleepSchedule, opts: { enabled: boolean; skipDay?: string | null }) {
+/** The bedtime "daily summary" reminders older versions left scheduled. */
+export async function cancelBedtimeReminders() {
   if (!Capacitor.isNativePlatform()) return;
   try {
     const ln = await plugin();
     await ln.cancel({ notifications: BEDTIME_IDS.map((id) => ({ id })) });
-    if (!opts.enabled) return;
+  } catch (err) {
+    console.warn('[reminders] could not cancel', err);
+  }
+}
+
+/**
+ * Replaces the upcoming workout and walk reminders. Never asks for permission:
+ * if notifications aren't allowed yet, nothing is scheduled.
+ */
+export async function scheduleActivityReminders(events: CalEvent[], enabled: boolean) {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    const ln = await plugin();
+    await ln.cancel({ notifications: ACTIVITY_IDS.map((id) => ({ id })) });
+    if (!enabled) return;
     const { display } = await ln.checkPermissions();
     if (display !== 'granted') return;
-
     const now = Date.now();
-    const notifications = [];
-    for (let d = 0; d < 7; d++) {
-      const day = addDays(new Date(), d);
-      if (format(day, 'yyyy-MM-dd') === opts.skipDay) continue;
-      const at = new Date(bedtimeOf(day, s).getTime() - 30 * 60_000);
-      if (at.getTime() <= now) continue;
-      notifications.push({
-        id: BEDTIME_IDS[d],
-        title: 'סיכום היום',
-        body: 'רגע לפני השינה, איך היה היום? (20 שניות)',
-        schedule: { at, allowWhileIdle: true },
-        extra: { route: SUMMARY_ROUTE },
-      });
-    }
+    const upcoming = events
+      .filter((e) => (e.source === 'workout' || e.source === 'walk') && !e.done && e.start.getTime() - LEAD_MS > now)
+      .sort((a, b) => a.start.getTime() - b.start.getTime())
+      .slice(0, ACTIVITY_IDS.length);
+    const notifications = upcoming.map((e, i) => ({
+      id: ACTIVITY_IDS[i],
+      title: e.source === 'walk' ? 'יש לך הליכה היום' : `יש לך אימון היום: ${e.title}`,
+      body: `בעוד שעתיים, ב-${format(e.start, 'HH:mm')}. אפשר לשנות את השעה בדף האימונים.`,
+      schedule: { at: new Date(e.start.getTime() - LEAD_MS), allowWhileIdle: true },
+      extra: { route: '/app/workouts' },
+    }));
     if (notifications.length) await ln.schedule({ notifications });
   } catch (err) {
     console.warn('[reminders] could not schedule', err);

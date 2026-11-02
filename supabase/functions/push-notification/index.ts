@@ -322,141 +322,135 @@ async function fetchEligibleUsers(includeStartDate = false, pref?: string) {
 
 // ── Notification handlers ─────────────────────────────────────────────────────
 
-async function handlePhaseCheck() {
-  const users = await fetchEligibleUsers(true, 'new_content');
-  const eligible: (TokenRecord & { userId: string })[] = [];
+// One cron every 15 minutes ('tick'): each notification's time is checked in the
+// trainee's own clock, so the fixed times hold through daylight saving, and
+// notification_logs keeps each one to once a day.
+const TICK_WINDOW_MIN = 20;
+const SATURDAY = 6;
+const SUNDAY = 0;
+const THURSDAY = 4;
+const FRIDAY = 5;
+// The step goal, as in the app (src/lib/stepGoal.ts): from day 44, 6,000, or
+// for whoever already averages that, their average plus 2,000.
+const STEPS_FROM_DAY = 44;
+const STEP_FLOOR = 6000;
+const STEP_RAISE = 2000;
+const stepGoalFor = (average: number | null) =>
+  average != null && average >= STEP_FLOOR ? Math.round((average + STEP_RAISE) / 100) * 100 : STEP_FLOOR;
+const HOURS_BEFORE_BED = 4;
 
-  for (const u of users as any[]) {
-    if (getUserLocalHour(u.timezone) !== 19) continue;
-    if (await alreadySentToday(u.user_id, 'phase_check')) continue;
+type Local = { weekday: number; minutes: number; date: string; yesterday: string };
 
-    const startDate = u.profiles?.start_date;
-    if (!startDate) continue;
-    const currentWeek = getWeekNumber(startDate);
-    const nextWeek = currentWeek + 1;
-
-    const [{ data: nextHabits }, { data: currentHabits }] = await Promise.all([
-      supabase.from('habit_definitions').select('id').eq('week_start', nextWeek).is('user_id', null).limit(1),
-      supabase.from('habit_definitions').select('id').eq('week_start', currentWeek).is('user_id', null).limit(1),
-    ]);
-
-    const nextPhaseExists = (nextHabits?.length ?? 0) > 0;
-    const currentIsPhaseStart = (currentHabits?.length ?? 0) > 0;
-
-    if (nextPhaseExists && !currentIsPhaseStart) {
-      eligible.push({ userId: u.user_id, token: u.player_id, platform: u.device_platform });
-    }
-  }
-
-  if (eligible.length === 0) return;
-  await sendPush(
-    eligible,
-    '🎉 שלב חדש מחכה לך!',
-    'השלמת את השלב הנוכחי! מחר מתחילים הרגלים חדשים — תמשיך כך!',
-    { type: 'phase_check' },
-  );
-  await logSent(eligible.map((u) => u.userId), 'phase_check');
+function localNow(timezone: string | null): Local {
+  const tz = timezone || 'Asia/Jerusalem';
+  const local = new Date(new Date().toLocaleString('en-US', { timeZone: tz }));
+  const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const before = new Date(local);
+  before.setDate(before.getDate() - 1);
+  return { weekday: local.getDay(), minutes: local.getHours() * 60 + local.getMinutes(), date: iso(local), yesterday: iso(before) };
 }
 
-async function handleNewHabits() {
-  const users = await fetchEligibleUsers(true, 'habits');
-  const eligible: (TokenRecord & { userId: string })[] = [];
+const isAt = (now: Local, weekday: number, hour: number, minute = 0) => {
+  const t = hour * 60 + minute;
+  return now.weekday === weekday && now.minutes >= t && now.minutes < t + TICK_WINDOW_MIN;
+};
+
+interface StageVideo { id: string; unlock_day: number; part_number: number; week_range: string; title: string }
+
+async function handleTick() {
+  const users = await fetchEligibleUsers(true);
+  const { data: videoRows } = await supabase
+    .from('program_content')
+    .select('id, unlock_day, part_number, week_range, title, is_bonus')
+    .eq('content_type', 'video')
+    .is('archived_at', null)
+    .order('sort_order', { ascending: true });
+  const videos = ((videoRows ?? []) as (StageVideo & { is_bonus: boolean })[]).filter((v) => !v.is_bonus);
+
+  const send = async (u: any, type: string, title: string, body: string) => {
+    if (await alreadySentToday(u.user_id, type)) return;
+    await sendPush([{ userId: u.user_id, token: u.player_id, platform: u.device_platform } as any], title, body, { type });
+    await logSent([u.user_id], type);
+  };
 
   for (const u of users as any[]) {
-    if (getUserLocalHour(u.timezone) !== 9) continue;
-    if (await alreadySentToday(u.user_id, 'new_habits')) continue;
-
     const startDate = u.profiles?.start_date;
     if (!startDate) continue;
-    const dayInProgram = getDayInProgram(startDate);
-    // Habits unlock on Sunday (day 2 of each program week): days 2, 9, 16, 23...
-    // The cron fires on Sunday; check if today is a habit-unlock Sunday (day >= 9).
-    const isHabitUnlockDay = dayInProgram >= 9 && (dayInProgram - 2) % 7 === 0;
-    if (!isHabitUnlockDay) continue;
+    const now = localNow(u.timezone);
+    const day = getDayInProgram(startDate);
+    const prefOn = (key: string) => u.prefs?.[key] !== false;
 
-    const currentWeek = getWeekNumber(startDate);
-    const { data: newHabits } = await supabase
-      .from('habit_definitions')
-      .select('id')
-      .eq('week_start', currentWeek)
-      .is('user_id', null)
-      .limit(1);
+    // ── A new week / part: what opened in the last week, and whether it was watched ──
+    const stageTime = isAt(now, SATURDAY, 17, 30) || isAt(now, SATURDAY, 21) || isAt(now, SUNDAY, 10);
+    if (stageTime && prefOn('new_content')) {
+      const newest = videos.filter((v) => v.unlock_day <= day && v.unlock_day > day - 7);
+      if (newest.length > 0) {
+        const { data: seen } = await supabase
+          .from('content_progress')
+          .select('content_id')
+          .eq('user_id', u.user_id)
+          .in('content_id', newest.map((v) => v.id));
+        const seenIds = new Set((seen ?? []).map((r: { content_id: string }) => r.content_id));
+        const unwatched = newest.filter((v) => !seenIds.has(v.id));
+        const first = newest[0];
+        const isPart = first.title.startsWith('חלק ');
+        if (isAt(now, SATURDAY, 17, 30)) {
+          await send(u, 'new_stage', isPart ? 'נפתח לך חלק חדש' : 'נפתח לך שבוע חדש', `הסרטון של ${first.week_range} מחכה לך בתכנים.`);
+        } else if (unwatched.length > 0 && isAt(now, SATURDAY, 21)) {
+          await send(u, 'new_stage_nudge', 'הסרטון החדש עוד מחכה לך', 'כמה דקות עכשיו, ומחר מתחילים את ההרגלים החדשים.');
+        } else if (unwatched.length > 0 && isAt(now, SUNDAY, 10)) {
+          await send(u, 'new_stage_nudge_2', 'היום מתחילים הרגלים חדשים', `עוד לא ראית את הסרטון של ${first.week_range}. כדאי לראות אותו לפני שממשיכים.`);
+        }
+      }
+    }
 
-    if (newHabits && newHabits.length > 0) {
-      eligible.push({ userId: u.user_id, token: u.player_id, platform: u.device_platform });
+    // ── Thursday evening: tomorrow is weigh-in day (kept from the old schedule) ──
+    if (isAt(now, THURSDAY, 20) && prefOn('weigh')) {
+      await send(u, 'weigh_reminder', 'מחר בבוקר שקילה', 'שישי בבוקר, לפני האוכל ואחרי השירותים.');
+    }
+
+    // ── Friday: weighing, and the weekly survey for whoever hasn't filled it in ──
+    if (isAt(now, FRIDAY, 8) && prefOn('weigh')) {
+      await send(u, 'weigh_survey', 'בוקר של שקילה', 'לפני האוכל ואחרי השירותים. ובהמשך היום מחכה לך גם השאלון השבועי.');
+    }
+    const surveyNudge = isAt(now, FRIDAY, 12) ? 1 : isAt(now, FRIDAY, 14) ? 2 : 0;
+    if (surveyNudge && prefOn('weekly_summary')) {
+      const { data: filled } = await supabase
+        .from('weekly_checkin')
+        .select('id')
+        .eq('user_id', u.user_id)
+        .gte('submitted_at', new Date(Date.now() - 24 * 3600_000).toISOString())
+        .limit(1);
+      if (!filled?.length) {
+        if (surveyNudge === 1) await send(u, 'survey_nudge', 'השאלון השבועי מחכה לך', '2 דקות, וזה עוזר לנו לכוון אותך.');
+        else await send(u, 'survey_nudge_2', 'עוד לא מילאת את השאלון השבועי', 'נשאר רק היום. 2 דקות וזה מאחוריך.');
+      }
+    }
+
+    // ── Steps: 4 hours before bedtime, behind today and also yesterday ──
+    if (day >= STEPS_FROM_DAY && prefOn('steps')) {
+      const bed = toMinutes(u.profiles?.sleep_time, '23:00');
+      const at = (bed - HOURS_BEFORE_BED * 60 + 1440) % 1440;
+      if (now.minutes >= at && now.minutes < at + TICK_WINDOW_MIN) {
+        const { data: logs } = await supabase
+          .from('steps_log')
+          .select('date, steps')
+          .eq('user_id', u.user_id)
+          .gte('date', startDate)
+          .gt('steps', 0);
+        const rows = (logs ?? []) as { date: string; steps: number }[];
+        const whole = rows.filter((l) => l.date < now.date);
+        const average = whole.length ? whole.reduce((sum, l) => sum + l.steps, 0) / whole.length : null;
+        const goal = stepGoalFor(average);
+        const stepsOn = (date: string) => rows.find((l) => l.date === date)?.steps ?? 0;
+        const today = stepsOn(now.date);
+        if (today < goal && stepsOn(now.yesterday) < goal) {
+          await send(u, 'steps_behind', 'עוד קצת צעדים היום', `עוד ${(goal - today).toLocaleString('he-IL')} צעדים ליעד של ${goal.toLocaleString('he-IL')}. יש לך עוד 4 שעות.`);
+        }
+      }
     }
   }
-
-  if (eligible.length === 0) return;
-  await sendPush(
-    eligible,
-    '🔥 שבוע חדש — הרגלים חדשים!',
-    'היום מתחיל שבוע חדש עם הרגלים חדשים — פתח את האפליקציה לראות מה מחכה לך!',
-    { type: 'new_habits' },
-  );
-  await logSent(eligible.map((u) => u.userId), 'new_habits');
-}
-
-async function handleWeighReminder() {
-  const users = await fetchEligibleUsers(false, 'weigh');
-  const eligible: (TokenRecord & { userId: string })[] = [];
-
-  // Friday morning, from 8:00 — or the first hour after the trainee wakes up
-  // (quiet hours are filtered above), at most once.
-  for (const u of users as any[]) {
-    const hour = getUserLocalHour(u.timezone);
-    const local = new Date(new Date().toLocaleString('en-US', { timeZone: u.timezone || 'Asia/Jerusalem' }));
-    if (local.getDay() !== 5 || hour < 8 || hour >= 12) continue;
-    if (await alreadySentToday(u.user_id, 'weigh_reminder')) continue;
-    eligible.push({ userId: u.user_id, token: u.player_id, platform: u.device_platform });
-  }
-
-  if (eligible.length === 0) return;
-  await sendPush(
-    eligible,
-    'בוקר של שקילה',
-    'לפני האוכל ואחרי השירותים. לחיצה פותחת את הוספת השקילה',
-    { type: 'weigh_reminder' },
-  );
-  await logSent(eligible.map((u) => u.userId), 'weigh_reminder');
-}
-
-// The weekly survey was replaced by the bedtime daily summary; nothing to chase.
-async function handleSurveyFollowup() {
-  return;
-  const users = await fetchEligibleUsers(true, 'weekly_summary');
-  const eligible: (TokenRecord & { userId: string })[] = [];
-
-  for (const u of users as any[]) {
-    const localHour = getUserLocalHour(u.timezone);
-    const now = new Date(new Date().toLocaleString('en-US', { timeZone: u.timezone || 'Asia/Jerusalem' }));
-    const isValidTime = (localHour === 12 && now.getDay() === 5) || (localHour === 16 && now.getDay() === 6);
-    if (!isValidTime) continue;
-    if (await alreadySentToday(u.user_id, 'survey_followup')) continue;
-
-    const startDate = u.profiles?.start_date;
-    if (!startDate) continue;
-    const week = getWeekNumber(startDate);
-    const { data: checkin } = await supabase
-      .from('weekly_checkin')
-      .select('id')
-      .eq('user_id', u.user_id)
-      .eq('week_number', week)
-      .maybeSingle();
-
-    if (!checkin) {
-      eligible.push({ userId: u.user_id, token: u.player_id, platform: u.device_platform });
-    }
-  }
-
-  if (eligible.length === 0) return;
-  await sendPush(
-    eligible,
-    '📋 שאלון שבועי ממתין',
-    'עוד לא מילאת את השאלון השבועי שלך — לוקח רק 2 דקות! פתח את האפליקציה ✅',
-    { type: 'survey_followup' },
-  );
-  await logSent(eligible.map((u) => u.userId), 'survey_followup');
+  return 'ok';
 }
 
 // ── Server ────────────────────────────────────────────────────────────────────
@@ -484,12 +478,13 @@ serve(async (req) => {
 
     let result: unknown;
     switch (type) {
-      // Daily quotes were removed; the old cron job may still call this.
-      case 'daily_quote':     result = 'skipped';                    break;
-      case 'phase_check':     result = await handlePhaseCheck();     break;
-      case 'new_habits':      result = await handleNewHabits();      break;
-      case 'weigh_reminder':  result = await handleWeighReminder();  break;
-      case 'survey_followup': result = await handleSurveyFollowup(); break;
+      case 'tick': result = await handleTick(); break;
+      // The old cron jobs, until they're unscheduled (run_push_tick.sql).
+      case 'daily_quote':
+      case 'phase_check':
+      case 'new_habits':
+      case 'weigh_reminder':
+      case 'survey_followup': result = 'skipped'; break;
 
       case 'send_test': {
         let pushToken: string;
