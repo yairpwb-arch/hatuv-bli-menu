@@ -154,9 +154,10 @@ export function WeekView({
   const walksOn = (wd: number) => plan.walks.filter((w) => w.day_of_week === wd);
   const unscheduled = planDays.filter((d) => !weekdayOf.has(d.id));
 
-  // Just opened by a watched video, with no day yet: walks first, then workouts built ahead.
+  // A walk or workout with no weekday yet (just opened by a video, or open from the
+  // start): ask for one, walks first, so it's in the calendar and gets its reminder.
   const pendingWalk = plan.walks.find((w) => w.day_of_week === null);
-  const pendingWorkout = unscheduled.find((d) => d.unlocks_with);
+  const pendingWorkout = unscheduled[0];
   const pendingDay: PendingDay | null = plan.isLoading
     ? null
     : pendingWalk

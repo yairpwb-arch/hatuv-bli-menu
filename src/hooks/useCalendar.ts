@@ -6,6 +6,7 @@ import { fetchSleepSchedule } from '@/hooks/useSleepSchedule';
 import { fetchHabitSchedule } from '@/hooks/useHabitSchedule';
 import { planDay, programDay } from '@/lib/habitSchedule';
 import { fetchPlacements, placementFor, savePlacements } from '@/hooks/usePlacements';
+import { CALENDAR_CHANGED } from '@/lib/localReminders';
 import { toMinutes } from '@/lib/sleepSchedule';
 import { bedtimeOf, scheduleOn, sleepEventKey, wakeEventKey, wakeOf } from '@/lib/sleepSchedule';
 
@@ -393,9 +394,15 @@ export function useCalendar(userId: string | undefined, from: Date, to: Date) {
     load();
   }, [load]);
 
+  // After an edit: reload, and let the workout / walk reminders follow.
+  const changed = async () => {
+    await load();
+    window.dispatchEvent(new Event(CALENDAR_CHANGED));
+  };
+
   const create = async (input: EventInput) => {
     const { error } = await db.from('calendar_events').insert({ ...input, user_id: userId });
-    if (!error) await load();
+    if (!error) await changed();
     return !error;
   };
 
@@ -404,13 +411,13 @@ export function useCalendar(userId: string | undefined, from: Date, to: Date) {
       .from('calendar_events')
       .update({ ...input, updated_at: new Date().toISOString() })
       .eq('id', id);
-    if (!error) await load();
+    if (!error) await changed();
     return !error;
   };
 
   const remove = async (id: string) => {
     const { error } = await db.from('calendar_events').delete().eq('id', id);
-    if (!error) await load();
+    if (!error) await changed();
     return !error;
   };
 
@@ -452,7 +459,7 @@ export function useCalendar(userId: string | undefined, from: Date, to: Date) {
       }
     }
     if (error) console.error('[calendar] save failed:', error.message);
-    else await load();
+    else await changed();
     return !error;
   };
 
@@ -471,7 +478,7 @@ export function useCalendar(userId: string | undefined, from: Date, to: Date) {
           : await db.from('calendar_events').update({ repeat_until: dayBefore(event.occurrenceDay!) }).eq('id', event.seriesId));
     }
     if (error) console.error('[calendar] delete failed:', error.message);
-    else await load();
+    else await changed();
     return !error;
   };
 
@@ -504,7 +511,7 @@ export function useCalendar(userId: string | undefined, from: Date, to: Date) {
     }
     const itemKey = kind === 'walk' ? 'walk' : `workout:${planDayId}`;
     await savePlacements(userId, weekdays.map((wd) => ({ item_key: itemKey, scope: 'weekday' as const, day: null, weekday: wd, start_time: time, duration_min: minutes || null })));
-    await load();
+    await changed();
     return true;
   };
 

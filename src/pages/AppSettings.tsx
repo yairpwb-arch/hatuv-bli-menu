@@ -23,6 +23,7 @@ import { useNotificationSetup } from '@/hooks/useNotificationSetup';
 import { useAppLinks } from '@/hooks/useAppLinks';
 import { toast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { CALENDAR_CHANGED } from '@/lib/localReminders';
 import { cn } from '@/lib/utils';
 import { openAppSystemSettings, openExternal } from '@/lib/systemSettings';
 import { TextSize, getTextSize, setTextSize } from '@/lib/textSize';
@@ -71,14 +72,14 @@ function Row({
   );
 }
 
-type PrefKey = 'habits' | 'steps' | 'weigh' | 'workout_walk' | 'weekly_summary' | 'new_content';
+// (The daily habit reminder is gone: nothing sends it any more.)
+type PrefKey = 'steps' | 'weigh' | 'workout_walk' | 'weekly_summary' | 'new_content';
 const PREF_ROWS: { key: PrefKey; label: string; description?: string }[] = [
-  { key: 'habits', label: 'תזכורת הרגלים יומית' },
   { key: 'workout_walk', label: 'תזכורות אימון והליכה', description: 'שעתיים לפני השעה ביומן' },
   { key: 'steps', label: 'תזכורת צעדים', description: '4 שעות לפני השינה, כשחסר ליעד' },
-  { key: 'weigh', label: 'תזכורת שקילה', description: 'יום שישי בבוקר' },
-  { key: 'weekly_summary', label: 'שאלון שבועי', description: 'יום שישי' },
-  { key: 'new_content', label: 'שבוע או חלק חדש', description: 'כשנפתח תוכן חדש' },
+  { key: 'weigh', label: 'תזכורת שקילה', description: 'חמישי בערב ושישי בבוקר' },
+  { key: 'weekly_summary', label: 'שאלון שבועי', description: 'יום שישי בצהריים, אם עוד לא מילאת' },
+  { key: 'new_content', label: 'שבוע או חלק חדש', description: 'שבת בערב, ותזכורת אם הסרטון עוד לא נצפה' },
 ];
 
 const TEXT_SIZES: { value: TextSize; label: string }[] = [
@@ -177,6 +178,7 @@ export default function AppSettings() {
       const success = await enableNotifications(user.id);
       if (success) {
         setNotifEnabled(true);
+        window.dispatchEvent(new Event(CALENDAR_CHANGED));
         await refreshProfile();
         toast({ title: 'התראות הופעלו', description: 'תקבל תזכורות יומיות ושבועיות מהאפליקציה' });
       } else {
@@ -199,6 +201,8 @@ export default function AppSettings() {
       const success = await disableNotifications(user.id);
       if (success) {
         setNotifEnabled(false);
+        // The workout / walk reminders on the phone go too.
+        window.dispatchEvent(new Event(CALENDAR_CHANGED));
         await refreshProfile();
         toast({ title: 'התראות כובו', description: 'לא תקבל יותר התראות מהאפליקציה' });
       }
@@ -300,33 +304,33 @@ export default function AppSettings() {
 
   // ── Per-type notification switches (notification_settings.prefs) ──────────
   const [prefs, setPrefs] = useState<Partial<Record<PrefKey, boolean>>>({});
-  const [habitTime, setHabitTime] = useState('20:00');
   useEffect(() => {
     if (!user) return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any)
       .from('notification_settings')
-      .select('prefs, habit_reminder_time')
+      .select('prefs')
       .eq('user_id', user.id)
       .maybeSingle()
-      .then(({ data }: { data: { prefs?: Record<PrefKey, boolean>; habit_reminder_time?: string } | null }) => {
-        setPrefs(data?.prefs ?? {});
-        if (data?.habit_reminder_time) setHabitTime(data.habit_reminder_time.slice(0, 5));
-      });
+      .then(({ data }: { data: { prefs?: Record<PrefKey, boolean> } | null }) => setPrefs(data?.prefs ?? {}));
   }, [user?.id]);
 
-  const savePrefs = async (patch: { prefs?: Partial<Record<PrefKey, boolean>>; habit_reminder_time?: string }) => {
+  const savePrefs = async (patch: { prefs: Partial<Record<PrefKey, boolean>> }) => {
     if (!user) return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error } = await (supabase as any)
       .from('notification_settings')
       .upsert({ user_id: user.id, ...patch }, { onConflict: 'user_id' });
     if (error) toast({ title: 'לא נשמר', description: 'נסו שוב', variant: 'destructive' });
+    // The workout / walk reminders live on the phone: rebuild them with the new switch.
+    else window.dispatchEvent(new Event(CALENDAR_CHANGED));
+    return !error;
   };
-  const togglePref = (key: PrefKey, on: boolean) => {
+  const togglePref = async (key: PrefKey, on: boolean) => {
+    const before = prefs;
     const next = { ...prefs, [key]: on };
     setPrefs(next);
-    savePrefs({ prefs: next });
+    if (!(await savePrefs({ prefs: next }))) setPrefs(before);
   };
 
   // ── Sleep hours (profiles.sleep_time / wake_time) ──────────────────────────
@@ -502,7 +506,7 @@ export default function AppSettings() {
             />
           ))}
           <p className="px-4 py-3 text-label text-muted-foreground">
-            לפי השעות האלה: סיכום היום נפתח שעה לפני השינה, ובלילה אין התראות.
+            לפי השעות האלה: תזכורת הצעדים מגיעה 4 שעות לפני השינה, ובלילה אין התראות.
           </p>
           {todayPlan?.noWindow && (
             <p className="flex items-start gap-2 bg-primary-tint px-4 py-3 text-label font-semibold text-primary-soft">
@@ -539,16 +543,6 @@ export default function AppSettings() {
                 <p className="text-body">{p.label}</p>
                 {p.description && <p className="text-label text-muted-foreground">{p.description}</p>}
               </div>
-              {p.key === 'habits' && prefs.habits !== false && (
-                <input
-                  type="time"
-                  value={habitTime}
-                  aria-label="שעת התזכורת"
-                  onChange={(e) => setHabitTime(e.target.value)}
-                  onBlur={() => savePrefs({ habit_reminder_time: habitTime })}
-                  className="h-11 rounded-button bg-card-inner px-2 text-body tabular-nums"
-                />
-              )}
               <div dir="ltr">
                 <Switch checked={prefs[p.key] !== false} onCheckedChange={(on) => togglePref(p.key, on)} aria-label={p.label} />
               </div>

@@ -45,12 +45,15 @@ export async function scheduleActivityReminders(events: CalEvent[], enabled: boo
     if (display !== 'granted') return;
     const now = Date.now();
     const upcoming = events
-      .filter((e) => (e.source === 'workout' || e.source === 'walk') && !e.done && e.start.getTime() - LEAD_MS > now)
+      // The plan's workouts and walks, and the ones the trainee put in the calendar
+      // (once or on fixed days), which come as custom events typed walk/workout.
+      .filter((e) => (e.type === 'workout' || e.type === 'walk') && e.source !== 'activity')
+      .filter((e) => !e.done && e.start.getTime() - LEAD_MS > now)
       .sort((a, b) => a.start.getTime() - b.start.getTime())
       .slice(0, ACTIVITY_IDS.length);
     const notifications = upcoming.map((e, i) => ({
       id: ACTIVITY_IDS[i],
-      title: e.source === 'walk' ? 'יש לך הליכה היום' : `יש לך אימון היום: ${e.title}`,
+      title: e.type === 'walk' ? 'יש לך הליכה היום' : `יש לך אימון היום: ${e.title}`,
       body: `בעוד שעתיים, ב-${format(e.start, 'HH:mm')}. אפשר לשנות את השעה בדף האימונים.`,
       schedule: { at: new Date(e.start.getTime() - LEAD_MS), allowWhileIdle: true },
       extra: { route: '/app/workouts' },

@@ -1,5 +1,6 @@
 import { format } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
+import { CALENDAR_CHANGED } from '@/lib/localReminders';
 
 // calendar_placements isn't in the generated types yet.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -60,6 +61,8 @@ export async function savePlacements(userId: string, items: Placement[]): Promis
       return false;
     }
   }
+  // The workout / walk reminders follow the new time.
+  window.dispatchEvent(new Event(CALENDAR_CHANGED));
   return true;
 }
 

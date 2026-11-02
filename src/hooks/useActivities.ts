@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { addDays, format } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { tallyType, type ActivityKind } from '@/lib/activityKinds';
+import { CALENDAR_CHANGED } from '@/lib/localReminders';
 
 // activities isn't in the generated types yet.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -138,6 +139,8 @@ export function useActivities(userId: string | undefined) {
         ? { repeat_rule: 'weekly', repeat_days: [...repeat.days].sort(), repeat_until: repeat.until }
         : {}),
     });
+    // Its reminder is scheduled with the others.
+    if (!error) window.dispatchEvent(new Event(CALENDAR_CHANGED));
     return !error;
   };
 
