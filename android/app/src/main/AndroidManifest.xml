@@ -103,15 +103,14 @@
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" tools:node="remove" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" tools:node="remove" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove" />
-    <!-- Health Connect: ONLY what the smartwatch-workouts feature reads (workout
-         sessions, their active calories and heart rate). These three must match
-         the Health Connect declaration in Play Console exactly — Play rejects
-         apps that declare anything they don't use (minimum-scope policy). -->
+    <!-- Health Connect: ONLY the workout sessions (the smartwatch-workouts list).
+         Must match the Health Connect declaration in Play Console exactly: Play
+         rejected active calories and heart rate (2 Nov 2026) as not visibly used. -->
     <uses-permission android:name="android.permission.health.READ_EXERCISE" />
-    <uses-permission android:name="android.permission.health.READ_ACTIVE_CALORIES_BURNED" />
-    <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
     <!-- The rest of what capacitor-health pulls in stays stripped: steps come
          from the device step sensor, and distance/route/total calories are unused. -->
+    <uses-permission android:name="android.permission.health.READ_ACTIVE_CALORIES_BURNED" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE" tools:node="remove" />
     <uses-permission android:name="android.permission.health.READ_STEPS" tools:node="remove" />
     <uses-permission android:name="android.permission.health.READ_DISTANCE" tools:node="remove" />
     <uses-permission android:name="android.permission.health.READ_TOTAL_CALORIES_BURNED" tools:node="remove" />

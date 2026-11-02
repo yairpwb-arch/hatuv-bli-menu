@@ -23,9 +23,12 @@ export interface WatchWorkout {
   source_name: string | null;
 }
 
-// Exactly what's declared in the Health Connect form in Play Console:
-// workouts, active calories, heart rate. Nothing else.
-const PERMISSIONS = ['READ_WORKOUTS', 'READ_ACTIVE_CALORIES', 'READ_HEART_RATE'] as const;
+// Android: exactly what's declared in the Health Connect form in Play Console,
+// the workouts only (Play turned down calories and heart rate). Apple Health
+// also gives calories and heart rate, shown on the workout card when present.
+const PERMISSIONS = Capacitor.getPlatform() === 'android'
+  ? (['READ_WORKOUTS'] as const)
+  : (['READ_WORKOUTS', 'READ_ACTIVE_CALORIES', 'READ_HEART_RATE'] as const);
 const LOOKBACK_DAYS = 30;
 
 const connectedKey = (userId: string) => `watchConnected:${userId}`;
@@ -103,7 +106,7 @@ export async function syncWatchWorkouts(userId: string): Promise<number> {
   const { workouts } = await Health.queryWorkouts({
     startDate: subDays(end, LOOKBACK_DAYS).toISOString(),
     endDate: end.toISOString(),
-    includeHeartRate: true,
+    includeHeartRate: Capacitor.getPlatform() !== 'android',
     includeRoute: false,
     includeSteps: false,
   });
