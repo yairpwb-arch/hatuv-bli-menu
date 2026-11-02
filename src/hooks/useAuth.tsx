@@ -45,7 +45,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   
-  const planDays = profile?.plan_duration_days ?? 168;
+  const planDays = profile?.plan_duration_days ?? 252;
 
   const currentDay = profile?.start_date
     ? Math.max(1, Math.floor((Date.now() - new Date(profile.start_date).getTime()) / (1000 * 60 * 60 * 24)) + 1)

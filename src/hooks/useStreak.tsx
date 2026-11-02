@@ -61,7 +61,7 @@ export function useStreak(userId: string | undefined, currentWeek: number): Stre
     // A perfect day = everything on the table + the habits the bedtime summary asks about.
     // Walk/workout habits (activity system), bonus, hidden and retired habits don't count.
     const defs = ((habitDefsResult.data || []) as { id: string; name: string; is_bonus?: boolean; visual_key?: string | null; day_end?: number | null }[])
-      .filter((h) => !h.name.includes('הליכה') && !h.name.includes('אימון') && !h.is_bonus && h.day_end !== 0)
+      .filter((h) => !h.name.includes('הליכ') && !h.name.includes('אימון') && !h.is_bonus && h.day_end !== 0)
       .map((h) => ({ ...h, visual_key: resolveVisualKey(h.visual_key) }))
       .filter((h) => !isHiddenKey(h.visual_key));
     const staticHabits = [...defs.filter((h) => isTableKey(h.visual_key)), ...summaryHabitsOf(defs)];

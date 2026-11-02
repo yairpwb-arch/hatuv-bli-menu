@@ -103,7 +103,7 @@ export function useHabits(
     // Also drop habits that are part of the plan but never ticked (slow eating,
     // the four meals) and ones retired with day_end = 0.
     const isStatic = (h: HabitDefRow) =>
-      !h.name.includes('הליכה') && !h.name.includes('אימון') &&
+      !h.name.includes('הליכ') && !h.name.includes('אימון') &&
       h.day_end !== 0 && !isHiddenKey(resolveVisualKey(h.visual_key));
     const toHabit = (h: HabitDefRow): Habit => ({
       id: h.id,
