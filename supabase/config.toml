@@ -7,3 +7,7 @@ verify_jwt = false
 # The function enforces its own auth via x-cron-secret / service_role key.
 [functions.push-notification]
 verify_jwt = false
+
+# whatsapp-webhook is called by Green API (no Supabase JWT); it checks WEBHOOK_TOKEN itself.
+[functions.whatsapp-webhook]
+verify_jwt = false

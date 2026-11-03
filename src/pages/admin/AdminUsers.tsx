@@ -46,6 +46,7 @@ import { format, differenceInDays, startOfWeek, addDays } from 'date-fns';
 import { he } from 'date-fns/locale';
 import { Moon } from 'lucide-react';
 import { DailySummariesTab } from '@/components/admin/DailySummariesTab';
+import { WhatsAppGroupCard } from '@/components/admin/WhatsAppGroupCard';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1197,6 +1198,9 @@ export default function AdminUsers() {
                 <Button variant="outline" onClick={handleResetStartDate} className="gap-1.5">
                   <RefreshCw className="h-3.5 w-3.5" />אפס יום התחלה
                 </Button>
+              </div>
+              <div className="pt-2">
+                <WhatsAppGroupCard userId={editingUser.id} />
               </div>
             </TabsContent>
 

@@ -30,3 +30,6 @@ backups/
 
 # Copied from maplibre-gl on every dev / build (scripts/copy-maplibre-worker.mjs)
 public/maplibre-gl-worker.js
+
+# Client WhatsApp exports and other private data: never committed
+private/

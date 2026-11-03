@@ -341,13 +341,17 @@ const STEP_STAGES = [
 const STEPS_FROM_DAY = STEP_STAGES[0].fromDay;
 const STEP_RAISE = 2000;
 function stepGoalFor(day: number, startDate: string, rows: { date: string; steps: number }[]): number {
-  const stage = [...STEP_STAGES].reverse().find((s) => day >= s.fromDay)!;
-  const opens = new Date(startDate + 'T12:00:00Z');
-  opens.setUTCDate(opens.getUTCDate() + stage.fromDay - 1);
-  const cutoff = opens.toISOString().slice(0, 10);
-  const before = rows.filter((l) => l.steps > 0 && l.date < cutoff);
-  const baseline = before.length ? before.reduce((sum, l) => sum + l.steps, 0) / before.length : null;
-  return baseline != null && baseline >= stage.floor ? Math.round((baseline + STEP_RAISE) / 100) * 100 : stage.floor;
+  // Each habit opened so far sets a goal; the goal never goes down, so the highest one holds.
+  return Math.max(
+    ...STEP_STAGES.filter((s) => day >= s.fromDay).map((stage) => {
+      const opens = new Date(startDate + 'T12:00:00Z');
+      opens.setUTCDate(opens.getUTCDate() + stage.fromDay - 1);
+      const cutoff = opens.toISOString().slice(0, 10);
+      const before = rows.filter((l) => l.steps > 0 && l.date < cutoff);
+      const baseline = before.length ? before.reduce((sum, l) => sum + l.steps, 0) / before.length : null;
+      return baseline != null && baseline >= stage.floor ? Math.round((baseline + STEP_RAISE) / 100) * 100 : stage.floor;
+    }),
+  );
 }
 const HOURS_BEFORE_BED = 4;
 

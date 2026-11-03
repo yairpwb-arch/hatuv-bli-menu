@@ -53,6 +53,11 @@ export function stepGoalFor(programDay: number, startDate: string, days: StepDay
     const average = averageBefore(days, today);
     return average ? round100(average) : DEFAULT_STEP_GOAL;
   }
-  const baseline = averageBefore(days, dateOfProgramDay(startDate, stage.fromDay));
-  return baseline != null && baseline >= stage.floor ? round100(baseline + STEP_RAISE) : stage.floor;
+  // Each habit opened so far sets a goal; the goal never goes down, so the highest one holds.
+  return Math.max(
+    ...STEP_STAGES.filter((s) => programDay >= s.fromDay).map((s) => {
+      const baseline = averageBefore(days, dateOfProgramDay(startDate, s.fromDay));
+      return baseline != null && baseline >= s.floor ? round100(baseline + STEP_RAISE) : s.floor;
+    }),
+  );
 }
