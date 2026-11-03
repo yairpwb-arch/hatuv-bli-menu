@@ -12,7 +12,7 @@ import { OnboardingFrame } from './OnboardingFrame';
 import { NumberField, OptionList } from './inputs';
 import { Angle, MeasureKey, MeasurementsStep, PhotosStep } from './BodySteps';
 
-const NUMBER_DEFAULTS: Record<string, number> = { age: 30, height: 170, weight: 75 };
+const NUMBER_DEFAULTS: Record<string, number> = { age: 30, height: 170, weight: 75, max_pullups: 0, max_pushups: 0, max_squats: 0 };
 
 interface QuestionnaireProps {
   userId: string;
@@ -185,7 +185,7 @@ export function Questionnaire({ userId, initialName, row, save, onDone }: Questi
               autoFocus
               value={(answers[otherKey(q.id)] as string) ?? ''}
               onChange={(e) => setAnswers((a) => ({ ...a, [otherKey(q.id)]: e.target.value }))}
-              placeholder={q.id === 'occupation' ? 'במה את/ה עוסק/ת?' : 'מה בדיוק?'}
+              placeholder={q.details && answers[q.id] === q.details.value ? q.details.placeholder : q.id === 'occupation' ? 'במה את/ה עוסק/ת?' : 'מה בדיוק?'}
               aria-label="פירוט"
               className="mt-3 h-14 rounded-inner text-lg"
               enterKeyHint="next"

@@ -149,7 +149,7 @@ export function EventEditor({ open, onOpenChange, event, defaultDate, actions }:
             <Input id="ev-title" value={title} onChange={(e) => setTitle(e.target.value)} className="h-12" />
           </div>
 
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-3 gap-2 [&>*]:min-w-0">
             <div className="col-span-3 space-y-1.5">
               <Label htmlFor="ev-date">{repeating ? 'החל מ-' : 'תאריך'}</Label>
               <Input id="ev-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-12" />

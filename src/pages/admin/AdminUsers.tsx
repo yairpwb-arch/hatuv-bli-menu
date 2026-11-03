@@ -290,6 +290,8 @@ interface CheckinRow {
   proud_of: string | null;
   to_improve: string | null;
   met_last_goal: boolean | null;
+  /** Survey v2: the questions as asked, with their answers. */
+  answers: { version: number; workouts?: boolean; items: { key: string; question: string; answer: string | number }[] } | null;
 }
 
 interface AdminWorkoutSession {
@@ -1981,8 +1983,25 @@ export default function AdminUsers() {
                         </div>
                       </AccordionTrigger>
                       <AccordionContent>
+                        {ci.answers?.items?.length ? (
+                          // Survey v2: the questions as asked, with their answers.
+                          <div className="space-y-2 pb-2 text-sm">
+                            {ci.answers.workouts && <Badge variant="secondary">כולל שאלות התקדמות באימונים</Badge>}
+                            {ci.answers.items.map((it) => {
+                              const habit = it.key.startsWith('habit:');
+                              return (
+                                <div key={it.key} className="rounded-lg bg-muted/40 px-3 py-2">
+                                  <p className="text-muted-foreground">{it.question}</p>
+                                  <p className={`mt-0.5 font-medium ${habit ? scoreColor(Number(it.answer)) : ''}`}>
+                                    {it.key === 'weight' ? `${it.answer} ק"ג` : habit ? `${it.answer}/10` : it.answer}
+                                  </p>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
                         <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm pb-2">
-                          {ci.last_weigh_in && <div><span className="text-muted-foreground">שקילה קודמת:</span> {ci.last_weigh_in} ק"ג</div>}
+                          {ci.last_weigh_in &&<div><span className="text-muted-foreground">שקילה קודמת:</span> {ci.last_weigh_in} ק"ג</div>}
                           {ci.weight_today && <div><span className="text-muted-foreground">משקל היום:</span> {ci.weight_today} ק"ג</div>}
                           {ci.sleep_hours != null && <div><span className="text-muted-foreground">שינה:</span> {ci.sleep_hours} שעות</div>}
                           {ci.had_bowel_issues != null && <div><span className="text-muted-foreground">תקיעות:</span> {ci.had_bowel_issues ? 'כן' : 'לא'}</div>}
@@ -2015,6 +2034,7 @@ export default function AdminUsers() {
                             </div>
                           )}
                         </div>
+                        )}
                       </AccordionContent>
                     </AccordionItem>
                   ))}

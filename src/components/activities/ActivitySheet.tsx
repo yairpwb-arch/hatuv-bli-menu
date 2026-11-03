@@ -4,7 +4,8 @@ import { ChevronRight, MapPin } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
-import { BottomSheet, PrimaryButton } from '@/components/ds';
+import { BottomSheet, PrimaryButton, SheetActions } from '@/components/ds';
+import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
 import { ActivityRow, useActivities } from '@/hooks/useActivities';
 import { ACTIVITY_KINDS, INTENSITY, kindInfo, tallyType, type ActivityKind } from '@/lib/activityKinds';
@@ -57,6 +58,7 @@ export function ActivitySheet({
   const [distance, setDistance] = useState('');
   const [note, setNote] = useState('');
   const [replaces, setReplaces] = useState<'workout' | 'walk' | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [strengthMode, setStrengthMode] = useState<'log' | 'build'>('log');
   // A planned activity on fixed weekdays (0 = Sunday), for some weeks or with no end.
   const [repeat, setRepeat] = useState(false);
@@ -88,6 +90,7 @@ export function ActivitySheet({
     setRepeat(false);
     setRepeatDays([]);
     setRepeatWeeks(8);
+    setConfirmDelete(false);
   }, [open, existing, defaultDate, initialKind, today]);
 
   const info = kindInfo(kind);
@@ -244,7 +247,7 @@ export function ActivitySheet({
               ))}
             </div>
             {when !== 'now' && (
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-2 [&>*]:min-w-0">
                 {(when === 'date' || when === 'planned') && (
                   <Input
                     type="date"
@@ -405,6 +408,33 @@ export function ActivitySheet({
           <PrimaryButton onClick={submit} disabled={!valid || busy}>
             {busy ? 'שומר...' : when === 'planned' ? 'הוסף ליומן' : 'שמור'}
           </PrimaryButton>
+          {existing && !confirmDelete && (
+            <button type="button" onClick={() => setConfirmDelete(true)} className="min-h-[44px] w-full text-body font-semibold text-destructive">
+              מחיקת הפעילות
+            </button>
+          )}
+          {existing && confirmDelete && (
+            <div className="space-y-2">
+              <p className="text-center text-body">למחוק את {title || 'הפעילות'}?</p>
+              <SheetActions>
+                <Button
+                  variant="outline"
+                  disabled={busy}
+                  onClick={async () => {
+                    setBusy(true);
+                    const ok = await remove(existing);
+                    setBusy(false);
+                    if (!ok) return toast.error('לא נמחק, נסו שוב');
+                    toast('נמחק');
+                    onOpenChange(false);
+                  }}
+                >
+                  מחיקה
+                </Button>
+                <Button onClick={() => setConfirmDelete(false)}>השארה</Button>
+              </SheetActions>
+            </div>
+          )}
         </div>
       )}
     </BottomSheet>

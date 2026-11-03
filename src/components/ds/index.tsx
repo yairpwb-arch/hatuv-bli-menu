@@ -198,7 +198,8 @@ export function BottomSheet({ open, onOpenChange, title, description, children }
           {description && (
             <DrawerPrimitive.Description className="mt-1 text-body text-muted-foreground">{description}</DrawerPrimitive.Description>
           )}
-          <div className="-mx-5 mt-5 min-h-0 flex-1 overflow-y-auto overscroll-contain px-5">{children}</div>
+          {/* Up and down only: nothing in a sheet should pan sideways. */}
+          <div className="-mx-5 mt-5 min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-5">{children}</div>
         </DrawerPrimitive.Content>
       </DrawerPrimitive.Portal>
     </DrawerPrimitive.Root>

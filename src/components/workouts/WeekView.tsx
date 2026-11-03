@@ -1,12 +1,13 @@
-import { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { he } from 'date-fns/locale';
-import { CalendarDays, Check, Pencil } from 'lucide-react';
+import { CalendarDays, Check, ChevronLeft, Dumbbell, Footprints, Pencil } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { BottomSheet, EmptyState, PrimaryButton, SecondaryButton, SectionHeader, SheetActions } from '@/components/ds';
 import type { ActivityRow } from '@/hooks/useActivities';
-import { CalEvent, useCalendar } from '@/hooks/useCalendar';
+import { CalEvent, SeriesScope, useCalendar } from '@/hooks/useCalendar';
 import { savePlacement } from '@/hooks/usePlacements';
 import { kindInfo } from '@/lib/activityKinds';
 import { CALENDAR_CHANGED } from '@/lib/localReminders';
@@ -66,8 +67,17 @@ export function WeekView({
   // This week's times, the ones the calendar shows.
   const [weekFrom, weekTo] = useMemo(() => [new Date(`${plan.week[0]}T12:00:00`), new Date(`${plan.week[6]}T12:00:00`)], [plan.week[0]]); // eslint-disable-line react-hooks/exhaustive-deps
   const cal = useCalendar(userId, weekFrom, weekTo);
+  // Something added or moved elsewhere (the activity sheet, the calendar): show it here too.
+  const { reload: reloadCal } = cal;
+  useEffect(() => {
+    const onChange = () => void reloadCal();
+    window.addEventListener(CALENDAR_CHANGED, onChange);
+    return () => window.removeEventListener(CALENDAR_CHANGED, onChange);
+  }, [reloadCal]);
   const [timeFor, setTimeFor] = useState<CalEvent | null>(null);
   const [removeWalk, setRemoveWalk] = useState<WalkEntry | null>(null);
+  const [plannedOpen, setPlannedOpen] = useState<CalEvent | null>(null);
+  const [cancelStep, setCancelStep] = useState<'scope' | 'confirm' | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [summaryId, setSummaryId] = useState<string | null>(null);
   // The "done" sheet: what's shown, and how to undo it.
@@ -194,6 +204,13 @@ export function WeekView({
   };
 
   // Logged by the trainee on this day. A plan workout already has its own card.
+  // Walks and workouts the trainee put in the calendar themselves (once or on fixed days).
+  const navigate = useNavigate();
+  const plannedOn = (date: string) =>
+    cal.events
+      .filter((e) => e.source === 'custom' && (e.type === 'walk' || e.type === 'workout') && format(e.start, 'yyyy-MM-dd') === date)
+      .sort((a, b) => a.start.getTime() - b.start.getTime());
+
   const selActivities = (activities ?? []).filter(
     (a) => a.status === 'done' && a.day === selected && !sessions.some((s) => s.id === a.session_id && s.plan_day_id),
   );
@@ -215,13 +232,162 @@ export function WeekView({
       ws.length + wk.length > 0 &&
       ws.every((d) => workoutDone(d.id, date, ws.length === 1)) &&
       (wk.length === 0 || loggedAs('walk', date));
-    return { hasWorkout: ws.length > 0, hasWalk: wk.length > 0, allDone };
+    const own = plannedOn(date);
+    return {
+      hasWorkout: ws.length > 0 || own.some((e) => e.type === 'workout'),
+      hasWalk: wk.length > 0 || own.some((e) => e.type === 'walk'),
+      // Dots: orange for each program workout / walk, green for what the trainee added.
+      planCount: ws.length + wk.length,
+      ownCount: own.length,
+      allDone,
+    };
   };
 
   const selWd = new Date(`${selected}T12:00:00`).getDay();
   const selWorkouts = daysOn(selWd);
   const selWalks = walksOn(selWd);
+  const selPlanned = plannedOn(selected);
   const watchWalk = watchWorkouts.find((w) => w.kind === 'walk' && localDay(w.started_at) === selected);
+
+  // ── The day's cards, in one list ordered by time (earliest on top) ──
+  const NO_TIME = Number.MAX_SAFE_INTEGER;
+  const dayItems: { at: number; key: string; el: React.ReactNode }[] = [
+    ...selWorkouts.map((d) => {
+      const session = sessionFor(d.id, selected);
+      const done = workoutDone(d.id, selected, selWorkouts.length === 1);
+      const ev = eventFor(`workout:${d.id}`);
+      return {
+        at: ev?.start.getTime() ?? NO_TIME,
+        key: `w:${d.id}`,
+        el: (
+          <WorkoutCard
+            key={d.id}
+            day={d}
+            weekday={selWd}
+            exercises={plan.exercisesByDay[d.id] ?? []}
+            status={statusOf(selected, done)}
+            doneAt={session?.completed_at ?? (done ? selected : undefined)}
+            onStart={() => onStart(d, plan.exercisesByDay[d.id] ?? [])}
+            onManual={canUndo(selected) ? () => setManual({ kind: 'workout', day: selected, planDayId: d.id }) : undefined}
+            onViewSummary={session ? () => setSummaryId(session.id) : undefined}
+            onDoneTap={() => openWorkoutDone(d.id, selected)}
+            time={timeOf(ev)}
+            onTime={() => setTimeFor(ev ?? null)}
+          />
+        ),
+      };
+    }),
+    ...selWalks.map((w) => {
+      const ev = eventFor('walk');
+      return {
+        at: ev?.start.getTime() ?? NO_TIME,
+        key: `k:${w.id}`,
+        el: (
+          <WalkCard
+            key={w.id}
+            weekday={selWd}
+            status={statusOf(selected, loggedAs('walk', selected))}
+            watchWalk={watchWalk}
+            onDoneTap={() => openWalkDone(selected)}
+            onManual={canUndo(selected) ? () => setManual({ kind: 'walk', day: selected }) : undefined}
+            onStartGps={onStartWalk ? () => onStartWalk(selected) : undefined}
+            time={timeOf(ev)}
+            onTime={() => setTimeFor(ev ?? null)}
+            onRemove={canRemoveWalks ? () => setRemoveWalk(w) : undefined}
+            onMark={async (source) => {
+              const day = selected;
+              const ok = await plan.markActivity('walk', day, source);
+              if (ok) {
+                successHaptic();
+                onChanged?.();
+                showUndo(source === 'late' ? 'ההליכה סומנה בדיעבד' : 'ההליכה סומנה כבוצעה', async () => {
+                  afterUndo(await plan.unmark('walk', day));
+                });
+              } else {
+                toast.error('לא הצלחנו לסמן, נסו שוב');
+              }
+              return ok;
+            }}
+          />
+        ),
+      };
+    }),
+    // Planned by the trainee in the calendar: tap for start / cancel.
+    ...selPlanned.map((e) => {
+      const Icon = e.type === 'walk' ? Footprints : Dumbbell;
+      const minutes = e.end ? Math.round((e.end.getTime() - e.start.getTime()) / 60_000) : 0;
+      return {
+        at: e.start.getTime(),
+        key: `p:${e.key}`,
+        el: (
+          <button
+            key={e.key}
+            type="button"
+            onClick={() => {
+              setCancelStep(null);
+              setPlannedOpen(e);
+            }}
+            className="flex min-h-[64px] w-full items-center gap-3 rounded-card border border-border bg-card p-3 text-right"
+          >
+            <span className={cn('flex h-11 w-11 shrink-0 items-center justify-center rounded-inner', e.type === 'walk' ? 'bg-success/15 text-success' : 'bg-primary/15 text-primary')}>
+              <Icon className="h-5 w-5" strokeWidth={2} aria-hidden />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-body font-semibold">{e.title}</span>
+              <span className="block text-label text-muted-foreground">
+                <span dir="ltr">{format(e.start, 'HH:mm')}</span>
+                {minutes ? ` · ${minutes} דק'` : ''}
+                {e.repeat ? ' · קבוע' : ''}
+              </span>
+            </span>
+            {e.done ? (
+              <Check className="h-5 w-5 shrink-0 text-success" strokeWidth={2.5} aria-hidden />
+            ) : (
+              <ChevronLeft className="h-5 w-5 shrink-0 text-muted-foreground" strokeWidth={2} aria-hidden />
+            )}
+          </button>
+        ),
+      };
+    }),
+    // Logged by the trainee on this day: tap to edit or delete.
+    ...selActivities.map((a) => {
+      const info = kindInfo(a.kind);
+      return {
+        at: new Date(a.started_at).getTime(),
+        key: `a:${a.id}`,
+        el: (
+          <button
+            key={a.id}
+            type="button"
+            onClick={() => onOpenActivity?.(a)}
+            className="flex min-h-[64px] w-full items-center gap-3 rounded-card border border-border bg-card p-3 text-right"
+          >
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-inner bg-success/15 text-success">
+              <info.Icon className="h-5 w-5" strokeWidth={2} aria-hidden />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-body font-semibold">{a.custom_name ?? info.label}</span>
+              <span className="block text-label text-muted-foreground">
+                <span dir="ltr">{format(new Date(a.started_at), 'HH:mm')}</span>
+                {a.duration_min ? ` · ${a.duration_min} דק'` : ''}
+                {a.distance_m ? ` · ${(a.distance_m / 1000).toFixed(2)} ק"מ` : ''}
+              </span>
+            </span>
+            <Check className="h-5 w-5 shrink-0 text-success" strokeWidth={2.5} aria-hidden />
+          </button>
+        ),
+      };
+    }),
+  ].sort((x, y) => x.at - y.at);
+
+  /** Cancels a walk / workout the trainee planned: that day only, or it and every later one. */
+  const cancelPlanned = async (e: CalEvent, scope: SeriesScope) => {
+    const ok = await cal.deleteEvent(e, scope);
+    setPlannedOpen(null);
+    setCancelStep(null);
+    if (ok) toast(scope === 'following' && e.repeat ? 'בוטל מהיום והלאה' : 'בוטל');
+    else toast.error('לא הצלחנו לבטל, נסו שוב');
+  };
 
   return (
     <div className="space-y-card-gap">
@@ -251,8 +417,9 @@ export function WeekView({
               <span className={cn('text-body font-bold', isSel || isToday ? 'text-foreground' : 'text-muted-foreground')}>{WEEKDAY_SHORT[wd]}</span>
               <span className="text-[0.7rem] tabular-nums text-muted-foreground">{format(new Date(`${date}T12:00:00`), 'd')}</span>
               <span className="flex h-2 items-center gap-1" aria-hidden>
-                {info.hasWorkout && <span className="h-1.5 w-1.5 rounded-pill bg-primary" />}
-                {info.hasWalk && <span className="h-1.5 w-1.5 rounded-pill bg-muted-foreground" />}
+                {info.planCount > 0 && <span className="h-1.5 w-1.5 rounded-pill bg-primary" />}
+                {info.planCount > 1 && <span className="h-1.5 w-1.5 rounded-pill bg-primary" />}
+                {info.ownCount > 0 && <span className="h-1.5 w-1.5 rounded-pill bg-success" />}
                 {activityDays?.has(date) && <span className="h-1.5 w-1.5 rounded-pill bg-sky-400" />}
               </span>
               {info.allDone && (
@@ -273,103 +440,24 @@ export function WeekView({
           <Skeleton className="h-48 rounded-card" />
           <Skeleton className="h-24 rounded-card" />
         </div>
-      ) : selWorkouts.length + selWalks.length === 0 ? (
-        <div>
-          {selActivities.length === 0 && (
+      ) : (
+        <>
+          {dayItems.length === 0 && (
             <EmptyState
               icon={CalendarDays}
               title="אין אימון או הליכה ביום הזה"
               description="יום מנוחה. אפשר לשבץ אימונים והליכות בעריכת הימים"
             />
           )}
-          {(onStartWalk || onAddActivity) && selected <= today && (
+          {/* Everything on the day, earliest first */}
+          {dayItems.length > 0 && <div className="space-y-card-gap">{dayItems.map((i) => i.el)}</div>}
+          {selWorkouts.length + selWalks.length === 0 && (onStartWalk || onAddActivity) && selected <= today && (
             <div className="grid grid-cols-2 gap-3">
               {onStartWalk && <PrimaryButton onClick={() => onStartWalk(selected)}>התחל הליכה</PrimaryButton>}
               {onAddActivity && <SecondaryButton onClick={() => onAddActivity(selected)}>הוסף פעילות</SecondaryButton>}
             </div>
           )}
-        </div>
-      ) : (
-        <div className="space-y-card-gap">
-          {selWorkouts.map((d) => {
-            const session = sessionFor(d.id, selected);
-            const done = workoutDone(d.id, selected, selWorkouts.length === 1);
-            return (
-              <WorkoutCard
-                key={d.id}
-                day={d}
-                weekday={selWd}
-                exercises={plan.exercisesByDay[d.id] ?? []}
-                status={statusOf(selected, done)}
-                doneAt={session?.completed_at ?? (done ? selected : undefined)}
-                onStart={() => onStart(d, plan.exercisesByDay[d.id] ?? [])}
-                onManual={canUndo(selected) ? () => setManual({ kind: 'workout', day: selected, planDayId: d.id }) : undefined}
-                onViewSummary={session ? () => setSummaryId(session.id) : undefined}
-                onDoneTap={() => openWorkoutDone(d.id, selected)}
-                time={timeOf(eventFor(`workout:${d.id}`))}
-                onTime={() => setTimeFor(eventFor(`workout:${d.id}`) ?? null)}
-              />
-            );
-          })}
-          {selWalks.map((w) => (
-            <WalkCard
-              key={w.id}
-              weekday={selWd}
-              status={statusOf(selected, loggedAs('walk', selected))}
-              watchWalk={watchWalk}
-              onDoneTap={() => openWalkDone(selected)}
-              onManual={canUndo(selected) ? () => setManual({ kind: 'walk', day: selected }) : undefined}
-              onStartGps={onStartWalk ? () => onStartWalk(selected) : undefined}
-              time={timeOf(eventFor('walk'))}
-              onTime={() => setTimeFor(eventFor('walk') ?? null)}
-              onRemove={canRemoveWalks ? () => setRemoveWalk(w) : undefined}
-              onMark={async (source) => {
-                const day = selected;
-                const ok = await plan.markActivity('walk', day, source);
-                if (ok) {
-                  successHaptic();
-                  onChanged?.();
-                  showUndo(source === 'late' ? 'ההליכה סומנה בדיעבד' : 'ההליכה סומנה כבוצעה', async () => {
-                    afterUndo(await plan.unmark('walk', day));
-                  });
-                } else {
-                  toast.error('לא הצלחנו לסמן, נסו שוב');
-                }
-                return ok;
-              }}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* What was logged on this day */}
-      {!plan.isLoading && selActivities.length > 0 && (
-        <div className="space-y-2">
-          {selActivities.map((a) => {
-            const info = kindInfo(a.kind);
-            return (
-              <button
-                key={a.id}
-                type="button"
-                onClick={() => onOpenActivity?.(a)}
-                className="flex min-h-[64px] w-full items-center gap-3 rounded-card border border-border bg-card p-3 text-right"
-              >
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-inner bg-success/15 text-success">
-                  <info.Icon className="h-5 w-5" strokeWidth={2} aria-hidden />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-body font-semibold">{a.custom_name ?? info.label}</span>
-                  <span className="block text-label text-muted-foreground">
-                    <span dir="ltr">{format(new Date(a.started_at), 'HH:mm')}</span>
-                    {a.duration_min ? ` · ${a.duration_min} דק'` : ''}
-                    {a.distance_m ? ` · ${(a.distance_m / 1000).toFixed(2)} ק"מ` : ''}
-                  </span>
-                </span>
-                <Check className="h-5 w-5 shrink-0 text-success" strokeWidth={2.5} aria-hidden />
-              </button>
-            );
-          })}
-        </div>
+        </>
       )}
 
       {!plan.isLoading && plan.removedWalks.length > 0 && (
@@ -433,6 +521,75 @@ export function WeekView({
           </Button>
           <Button onClick={() => setRemoveWalk(null)}>השארה</Button>
         </SheetActions>
+      </BottomSheet>
+      {/* A walk / workout the trainee planned: start it, open it in the calendar, or cancel it */}
+      <BottomSheet
+        open={!!plannedOpen}
+        onOpenChange={(o) => {
+          if (!o) {
+            setPlannedOpen(null);
+            setCancelStep(null);
+          }
+        }}
+        title={plannedOpen ? `${plannedOpen.title} · ${format(plannedOpen.start, 'HH:mm')}` : ''}
+        description={
+          cancelStep === 'scope'
+            ? 'זו פעילות קבועה. לבטל רק את זו, או גם את כל הפעמים הבאות?'
+            : cancelStep === 'confirm'
+            ? `לבטל את ${plannedOpen?.type === 'walk' ? 'ההליכה' : 'האימון'}?`
+            : plannedOpen?.repeat
+            ? 'פעילות קבועה שהוספת ליומן'
+            : 'פעילות שהוספת ליומן'
+        }
+      >
+        {plannedOpen && cancelStep === null && (
+          <div className="space-y-3">
+            {plannedOpen.type === 'walk' && onStartWalk && selected === today && !plannedOpen.done && (
+              <PrimaryButton
+                className="w-full"
+                onClick={() => {
+                  setPlannedOpen(null);
+                  onStartWalk(selected);
+                }}
+              >
+                התחל הליכה
+              </PrimaryButton>
+            )}
+            <SecondaryButton className="w-full" onClick={() => navigate(`/app/calendar/day/${selected}`)}>
+              פתיחה ביומן
+            </SecondaryButton>
+            <button
+              type="button"
+              onClick={() => setCancelStep(plannedOpen.repeat ? 'scope' : 'confirm')}
+              className="min-h-[44px] w-full text-body font-semibold text-destructive"
+            >
+              {plannedOpen.type === 'walk' ? 'ביטול ההליכה' : 'ביטול האימון'}
+            </button>
+          </div>
+        )}
+        {plannedOpen && cancelStep === 'scope' && (
+          <div className="space-y-3">
+            <SecondaryButton className="w-full" onClick={() => cancelPlanned(plannedOpen, 'one')}>
+              רק את זו
+            </SecondaryButton>
+            <SecondaryButton className="w-full text-destructive" onClick={() => cancelPlanned(plannedOpen, 'following')}>
+              את זו וכל הפעמים הבאות
+            </SecondaryButton>
+            <button type="button" onClick={() => setCancelStep(null)} className="min-h-[44px] w-full text-body font-semibold text-muted-foreground">
+              חזרה
+            </button>
+          </div>
+        )}
+        {plannedOpen && cancelStep === 'confirm' && (
+          <SheetActions>
+            <Button variant="outline" onClick={() => cancelPlanned(plannedOpen, 'one')}>
+              ביטול
+            </Button>
+            <Button onClick={() => setCancelStep(null)}>
+              השארה
+            </Button>
+          </SheetActions>
+        )}
       </BottomSheet>
       <StageDayPrompt
         pending={pendingDay}

@@ -20,6 +20,8 @@ interface BaseQuestion {
   when?: (a: Answers) => boolean;
   /** A title built from earlier answers (e.g. the trainee's own "other" text). */
   dynamicTitle?: (a: Answers) => string;
+  /** Picking this option opens a text field for the details (like "other"). */
+  details?: { value: string; placeholder: string };
 }
 
 export type Question =
@@ -194,6 +196,27 @@ export const QUESTIONS: Question[] = [
       { value: 'gt60', label: 'יותר משעה' },
     ],
   },
+  // ── Everyone: what the body can do today, injuries, where to train ──
+  { id: 'max_pullups', kind: 'number', title: 'כמה מתח את/ה מצליח/ה לעשות?', unit: 'חזרות', min: 0, max: 50, step: 1 },
+  { id: 'max_pushups', kind: 'number', title: 'כמה שכיבות סמיכה את/ה מצליח/ה לעשות?', unit: 'חזרות', min: 0, max: 150, step: 1 },
+  { id: 'max_squats', kind: 'number', title: 'כמה סקוואטים את/ה מצליח/ה לעשות?', unit: 'חזרות', min: 0, max: 300, step: 1 },
+  {
+    id: 'injuries', kind: 'single', title: 'האם יש פציעות?',
+    subtitle: 'פריקות כתף, או דברים שאנחנו צריכים לדעת שיכולים לפגוע באימון שלך',
+    options: [
+      { value: 'no', label: 'לא' },
+      { value: 'yes', label: 'כן' },
+    ],
+    details: { value: 'yes', placeholder: 'מה חשוב שנדע?' },
+  },
+  {
+    id: 'preferred_location', kind: 'single', title: 'איפה את/ה מעדיף/ה להתאמן?',
+    options: [
+      { value: 'gym', label: 'בחדר כושר' },
+      { value: 'home_equipment', label: 'בבית עם ציוד' },
+      { value: 'park', label: 'בפארק' },
+    ],
+  },
   {
     id: 'goal', kind: 'multi', title: 'מה המטרה הגופנית שלך?', subtitle: 'אפשר לבחור כמה',
     options: [
@@ -224,7 +247,9 @@ export function activeQuestions(a: Answers): Question[] {
 export const otherKey = (id: string) => `${id}_other`;
 export function picksOther(q: Question, a: Answers): boolean {
   const v = a[q.id];
-  return (q.kind === 'single' || q.kind === 'multi') && (v === 'other' || (Array.isArray(v) && v.includes('other')));
+  if (q.kind !== 'single' && q.kind !== 'multi') return false;
+  const asks = ['other', ...(q.details ? [q.details.value] : [])];
+  return asks.some((x) => v === x || (Array.isArray(v) && v.includes(x)));
 }
 
 export function isAnswered(q: Question, a: Answers): boolean {

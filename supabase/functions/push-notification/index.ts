@@ -330,13 +330,25 @@ const SATURDAY = 6;
 const SUNDAY = 0;
 const THURSDAY = 4;
 const FRIDAY = 5;
-// The step goal, as in the app (src/lib/stepGoal.ts): from day 44, 6,000, or
-// for whoever already averages that, their average plus 2,000.
-const STEPS_FROM_DAY = 44;
-const STEP_FLOOR = 6000;
+// The step goal, as in the app (src/lib/stepGoal.ts): each steps habit sets a
+// floor from the day it opens (6,000 from day 44, 8,000 from day 86). The
+// average since the start, taken up to that day, is the baseline: at the floor
+// already → baseline + 2,000, else the floor. It stays until the next habit.
+const STEP_STAGES = [
+  { fromDay: 44, floor: 6000 },
+  { fromDay: 86, floor: 8000 },
+];
+const STEPS_FROM_DAY = STEP_STAGES[0].fromDay;
 const STEP_RAISE = 2000;
-const stepGoalFor = (average: number | null) =>
-  average != null && average >= STEP_FLOOR ? Math.round((average + STEP_RAISE) / 100) * 100 : STEP_FLOOR;
+function stepGoalFor(day: number, startDate: string, rows: { date: string; steps: number }[]): number {
+  const stage = [...STEP_STAGES].reverse().find((s) => day >= s.fromDay)!;
+  const opens = new Date(startDate + 'T12:00:00Z');
+  opens.setUTCDate(opens.getUTCDate() + stage.fromDay - 1);
+  const cutoff = opens.toISOString().slice(0, 10);
+  const before = rows.filter((l) => l.steps > 0 && l.date < cutoff);
+  const baseline = before.length ? before.reduce((sum, l) => sum + l.steps, 0) / before.length : null;
+  return baseline != null && baseline >= stage.floor ? Math.round((baseline + STEP_RAISE) / 100) * 100 : stage.floor;
+}
 const HOURS_BEFORE_BED = 4;
 
 type Local = { weekday: number; minutes: number; date: string; yesterday: string };
@@ -439,9 +451,7 @@ async function handleTick() {
           .gte('date', startDate)
           .gt('steps', 0);
         const rows = (logs ?? []) as { date: string; steps: number }[];
-        const whole = rows.filter((l) => l.date < now.date);
-        const average = whole.length ? whole.reduce((sum, l) => sum + l.steps, 0) / whole.length : null;
-        const goal = stepGoalFor(average);
+        const goal = stepGoalFor(day, startDate, rows);
         const stepsOn = (date: string) => rows.find((l) => l.date === date)?.steps ?? 0;
         const today = stepsOn(now.date);
         if (today < goal && stepsOn(now.yesterday) < goal) {
