@@ -1,9 +1,10 @@
 // Supabase Edge Function: whatsapp-webhook
 //
 // Green API (unofficial WhatsApp, the bot's own number) posts every message
-// here. Stage 1: every message in a known group is saved with who sent it
-// (client / coach / bot). The bot doesn't answer in real groups yet; in the test
-// group only it still answers "קיבלתי", to check the line end to end.
+// here. Every message in a known group is saved with who sent it (client /
+// coach / bot). The bot doesn't answer in real groups yet. In the test group it
+// answers with Claude (brain.ts), as if everyone there were the client; without
+// ANTHROPIC_API_KEY it only answers "קיבלתי".
 //
 // The bot lives only in WhatsApp. The app is just its data source.
 //
@@ -18,6 +19,7 @@
 // Supabase JWT. It's checked by WEBHOOK_TOKEN instead.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
+import { brainReady, composeReply } from './brain.ts';
 
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
 
@@ -155,11 +157,33 @@ async function handle(body: any) {
     ...(at ? { created_at: at } : {}),
   });
 
-  // Stage 1: answers only in the test group, and never to itself.
+  // Answers only in the test group for now, and never to itself.
   if (isTest && type === 'incomingMessageReceived' && msg.text) {
-    await sendAndLog(chatId, userId, `קיבלתי (${sender === 'coach' ? 'מאמן' : 'לקוח'}): ${msg.text}`);
+    if (!brainReady()) {
+      await sendAndLog(chatId, userId, `קיבלתי (${sender === 'coach' ? 'מאמן' : 'לקוח'}): ${msg.text}`);
+      return;
+    }
+    // Messages in a row get one answer: wait a little, and if another one came in, that one answers.
+    await new Promise((r) => setTimeout(r, BURST_WAIT_MS));
+    const { data: newer } = await supabase
+      .from('whatsapp_messages')
+      .select('id')
+      .eq('chat_id', chatId)
+      .neq('sender', 'bot')
+      .gte('created_at', at ?? new Date(Date.now() - BURST_WAIT_MS).toISOString())
+      .neq('wa_message_id', waId ?? '')
+      .limit(1);
+    if (newer?.length) return;
+    // In the test group everyone plays the client.
+    const parts = await composeReply(supabase, chatId, userId, msg.text, true);
+    for (const [i, part] of parts.entries()) {
+      if (i) await new Promise((r) => setTimeout(r, 1500));
+      await sendAndLog(chatId, userId, part);
+    }
   }
 }
+
+const BURST_WAIT_MS = 15_000;
 
 Deno.serve(async (req) => {
   // Green API sends webhookUrlToken in the Authorization header (taken with or without "Bearer ").
