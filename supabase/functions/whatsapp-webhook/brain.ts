@@ -5,7 +5,8 @@
 import Anthropic from 'npm:@anthropic-ai/sdk';
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 
-const MODEL = 'claude-sonnet-5-5';
+// The cheapest current model while testing (Sonnet 5.5 / Opus 5.5 for more quality).
+const MODEL = 'claude-haiku-5-5';
 const anthropic = Deno.env.get('ANTHROPIC_API_KEY') ? new Anthropic() : null;
 export const brainReady = () => !!anthropic;
 
@@ -145,12 +146,11 @@ export async function composeReply(
     .join('\n\n');
   const now = new Date().toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', weekday: 'long', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
 
-  const response = await anthropic.beta.messages.create({
+  // (Haiku has no server-side refusal fallback; a refusal is just silence.)
+  const response = await anthropic.messages.create({
     model: MODEL,
     max_tokens: 4000,
     output_config: { effort: 'low' },
-    betas: ['server-side-fallback-2026-07-01'],
-    fallbacks: 'default',
     system: [{ type: 'text', text: `${RULES}\n\n# תדריך הסגנון של המאמנים\n${guide}`, cache_control: { type: 'ephemeral' } }],
     messages: [
       {
