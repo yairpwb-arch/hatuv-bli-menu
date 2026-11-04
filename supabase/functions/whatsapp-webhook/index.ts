@@ -49,6 +49,55 @@ async function sendMessage(chatId: string, message: string): Promise<string | nu
   return (data as { idMessage?: string }).idMessage ?? null;
 }
 
+// ── Voice notes → text (OpenAI; Claude doesn't take audio) ─────────────────────
+
+const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY') ?? '';
+
+/** The voice note's words, or null if it couldn't be transcribed. */
+async function transcribe(url: string, mime: string | undefined): Promise<string | null> {
+  if (!OPENAI_API_KEY) return null;
+  const audio = await fetch(url).then((r) => (r.ok ? r.blob() : null)).catch(() => null);
+  if (!audio) return null;
+  for (const model of ['gpt-4o-transcribe', 'whisper-1']) {
+    const form = new FormData();
+    form.append('file', new File([audio], 'voice.ogg', { type: mime || 'audio/ogg' }));
+    form.append('model', model);
+    form.append('language', 'he');
+    const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
+      body: form,
+    }).catch(() => null);
+    if (res?.ok) {
+      const { text } = (await res.json()) as { text?: string };
+      return text?.trim() || null;
+    }
+    console.error('[wa] transcribe failed', model, res?.status, res ? await res.text() : '');
+  }
+  return null;
+}
+
+/** Marks the chat's messages as read (blue ticks). */
+async function readChat(chatId: string) {
+  const res = await fetch(`${GREEN_API_URL}/waInstance${ID_INSTANCE}/readChat/${API_TOKEN}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chatId }),
+  }).catch(() => null);
+  if (!res?.ok) console.error('[wa] readChat failed', res?.status);
+}
+
+/** Shows "typing…" in the chat for `ms` (Green API takes 1–20 s). */
+async function sendTyping(chatId: string, ms: number) {
+  const typingTime = Math.min(Math.max(Math.round(ms), 1000), 20000);
+  const res = await fetch(`${GREEN_API_URL}/waInstance${ID_INSTANCE}/sendTyping/${API_TOKEN}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chatId, typingTime }),
+  }).catch(() => null);
+  if (!res?.ok) console.error('[wa] sendTyping failed', res?.status);
+}
+
 /** Sends from the bot and saves it as the bot's message. */
 async function sendAndLog(chatId: string, userId: string | null, text: string) {
   const id = await sendMessage(chatId, text);
@@ -70,6 +119,9 @@ function readMessage(m: any): { text: string | null; type: Kind; mediaUrl: strin
       return { text: m.extendedTextMessageData?.text ?? null, type: 'text', mediaUrl: null };
     case 'imageMessage':
       return { text: m.fileMessageData?.caption || null, type: 'image', mediaUrl: m.fileMessageData?.downloadUrl ?? null };
+    case 'audioMessage':
+      // A voice note: its text comes from transcribe() below.
+      return { text: null, type: 'other', mediaUrl: m.fileMessageData?.downloadUrl ?? null };
     default:
       // Voice, video, sticker, document, poll…: kept with their kind and any caption.
       return {
@@ -138,6 +190,12 @@ async function handle(body: any) {
   if (!group && !isTest) return;
   const userId: string | null = group?.user_id ?? null;
 
+  // A voice note is kept (and answered) as its words.
+  if (body.messageData?.typeMessage === 'audioMessage' && msg.mediaUrl) {
+    const words = await transcribe(msg.mediaUrl, body.messageData?.fileMessageData?.mimeType);
+    msg.text = words ? `[הודעה קולית] ${words}` : '[הודעה קולית שלא הצלחנו לתמלל]';
+  }
+
   // Who wrote it.
   let sender: MessageRow['sender'];
   if (type === 'outgoingAPIMessageReceived') sender = 'bot'; // sent through the API (normally saved when sent; a duplicate is skipped)
@@ -163,27 +221,52 @@ async function handle(body: any) {
       await sendAndLog(chatId, userId, `קיבלתי (${sender === 'coach' ? 'מאמן' : 'לקוח'}): ${msg.text}`);
       return;
     }
-    // Messages in a row get one answer: wait a little, and if another one came in, that one answers.
-    await new Promise((r) => setTimeout(r, BURST_WAIT_MS));
+    // A conversation already going (the client wrote within 20 s of the bot's last
+    // message) gets a quick answer; a new one waits, like a person picking up the phone.
+    const { data: lastBot } = await supabase
+      .from('whatsapp_messages')
+      .select('created_at')
+      .eq('chat_id', chatId)
+      .eq('sender', 'bot')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const sentAt = at ? new Date(at).getTime() : Date.now();
+    const live = !!lastBot && sentAt - new Date(lastBot.created_at).getTime() <= LIVE_GAP_MS;
+    const wait = live ? LIVE_WAIT_MS : BURST_WAIT_MS;
+
+    // Messages in a row get one answer: wait, and if another one came in, that one answers.
+    await sleep(wait);
     const { data: newer } = await supabase
       .from('whatsapp_messages')
       .select('id')
       .eq('chat_id', chatId)
       .neq('sender', 'bot')
-      .gte('created_at', at ?? new Date(Date.now() - BURST_WAIT_MS).toISOString())
+      .gte('created_at', at ?? new Date(Date.now() - wait).toISOString())
       .neq('wa_message_id', waId ?? '')
       .limit(1);
     if (newer?.length) return;
+
+    // Seen (blue ticks), then "typing…" while the answer is written.
+    await readChat(chatId);
+    await sendTyping(chatId, 8000);
     // In the test group everyone plays the client.
     const parts = await composeReply(supabase, chatId, userId, msg.text, true);
     for (const [i, part] of parts.entries()) {
-      if (i) await new Promise((r) => setTimeout(r, 1500));
+      // Each message is "typed" for about as long as it would take a person (10 characters a second).
+      const typing = Math.min(Math.max(part.length * 100, 1500), live ? 4000 : 8000);
+      if (i) await sleep(1200);
+      await sendTyping(chatId, typing);
+      await sleep(i ? typing : Math.min(typing, 2500)); // the first one was already "being typed" while composing
       await sendAndLog(chatId, userId, part);
     }
   }
 }
 
-const BURST_WAIT_MS = 15_000;
+const BURST_WAIT_MS = 15_000; // a new conversation
+const LIVE_GAP_MS = 20_000; // the client answered the bot within this → the conversation is live
+const LIVE_WAIT_MS = 3_000; // … and gets an answer within about 10 s
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 Deno.serve(async (req) => {
   // Green API sends webhookUrlToken in the Authorization header (taken with or without "Bearer ").
