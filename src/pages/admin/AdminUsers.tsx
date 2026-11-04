@@ -1200,7 +1200,7 @@ export default function AdminUsers() {
                 </Button>
               </div>
               <div className="pt-2">
-                <WhatsAppGroupCard userId={editingUser.id} />
+                {editingUser && <WhatsAppGroupCard userId={editingUser.id} />}
               </div>
             </TabsContent>
 
