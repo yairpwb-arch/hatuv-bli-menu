@@ -95,8 +95,8 @@ export function Plate({ thirds, veggies, protein, rim, onTap, onExplain, classNa
       </defs>
 
       {/* Plate body — always there */}
-      <circle cx={C} cy={C} r={RIM_OUT} fill="#24242A" stroke="#34343C" strokeWidth="1" />
-      <circle cx={C} cy={C} r={RIM_IN} fill="#2A2A31" stroke="#34343C" strokeWidth="0.8" />
+      <circle cx={C} cy={C} r={RIM_OUT} style={{ fill: 'hsl(var(--plate-rim))', stroke: 'hsl(var(--plate-line))' }} strokeWidth="1" />
+      <circle cx={C} cy={C} r={RIM_IN} style={{ fill: 'hsl(var(--plate-face))', stroke: 'hsl(var(--plate-line))' }} strokeWidth="0.8" />
 
       {rim && (
         <Region habit={rim} label={rim.name} onTap={onTap} onExplain={onExplain}>
@@ -115,7 +115,7 @@ export function Plate({ thirds, veggies, protein, rim, onTap, onExplain, classNa
       {proteinHabit && (
         <Region habit={proteinHabit} label={protein ? protein.name : `${proteinHabit.name}: חלבון`} onTap={onTap} onExplain={onExplain}>
           <g style={fade(proteinDone)}>
-            <path d={PROTEIN} fill={p[0]} stroke="#141418" strokeWidth="1.2" style={fade(true)} />
+            <path d={PROTEIN} fill={p[0]} strokeWidth="1.2" style={{ ...fade(true), stroke: 'hsl(var(--table))' }} />
             <g clipPath={`url(#${id}-p)`} stroke={p[1]} strokeWidth="2.2" strokeLinecap="round" style={fade(true)}>
               <path d="M56 26 L74 34" /><path d="M54 34 L76 44" /><path d="M54 42 L74 52" />
             </g>
@@ -126,7 +126,7 @@ export function Plate({ thirds, veggies, protein, rim, onTap, onExplain, classNa
       {thirds && (
         <Region habit={thirds} label={`${thirds.name}: פחמימה`} onTap={onTap} onExplain={onExplain}>
           <g style={fade(carbsDone)}>
-            <path d={CARBS} fill={c[0]} stroke="#141418" strokeWidth="1.2" style={fade(true)} />
+            <path d={CARBS} fill={c[0]} strokeWidth="1.2" style={{ ...fade(true), stroke: 'hsl(var(--table))' }} />
             <g clipPath={`url(#${id}-c)`} fill={c[1]} style={fade(true)}>
               {[[30, 34], [38, 28], [34, 42], [24, 44], [42, 38], [28, 26], [44, 46]].map(([x, y]) => (
                 <ellipse key={`${x}-${y}`} cx={x} cy={y} rx="2.4" ry="1.2" transform={`rotate(${x * 7} ${x} ${y})`} />
@@ -139,7 +139,7 @@ export function Plate({ thirds, veggies, protein, rim, onTap, onExplain, classNa
       {vegHabit && (
         <Region habit={vegHabit} label={veggies ? veggies.name : `${vegHabit.name}: ירקות`} onTap={onTap} onExplain={onExplain}>
           <g style={fade(vegDone)}>
-            <path d={VEG} fill={v[0]} stroke="#141418" strokeWidth="1.2" style={fade(true)} />
+            <path d={VEG} fill={v[0]} strokeWidth="1.2" style={{ ...fade(true), stroke: 'hsl(var(--table))' }} />
             <g clipPath={`url(#${id}-v)`}>
               {[[40, 66], [52, 72], [60, 62], [46, 58], [56, 78]].map(([x, y]) => (
                 <circle key={`${x}-${y}`} cx={x} cy={y} r="4.5" fill={v[1]} style={fade(true)} />

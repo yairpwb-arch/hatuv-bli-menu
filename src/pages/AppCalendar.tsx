@@ -208,8 +208,8 @@ export default function AppCalendar() {
       <div
         ref={stickyRef}
         className={cn(
-          'sticky z-30 -mx-4 space-y-3 border-b bg-[#0E0E11] px-4 pb-3 pt-4 transition-colors duration-150',
-          scrolled ? 'border-[#26262D]' : 'border-transparent',
+          'sticky z-30 -mx-4 space-y-3 border-b bg-background px-4 pb-3 pt-4 transition-colors duration-150',
+          scrolled ? 'border-line' : 'border-transparent',
         )}
         style={{ top: HEADER_TOP }}
       >

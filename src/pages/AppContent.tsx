@@ -351,7 +351,7 @@ export default function AppContent() {
       <div
         aria-hidden={!collapsed}
         className={cn(
-          'fixed inset-x-0 z-30 border-b border-[#26262D] bg-[#17171C]/95 backdrop-blur-md will-change-transform transition-[transform,opacity] duration-200 ease-out',
+          'fixed inset-x-0 z-30 border-b border-line bg-surface-raised/95 backdrop-blur-md will-change-transform transition-[transform,opacity] duration-200 ease-out',
           collapsed ? 'translate-y-0 opacity-100' : 'pointer-events-none -translate-y-3 opacity-0',
         )}
         style={{ top: HEADER_TOP }}

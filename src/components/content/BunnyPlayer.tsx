@@ -98,6 +98,10 @@ export function BunnyEmbed({ videoId, userId, title, autoplay = true, onEnded, c
           className="absolute inset-0 h-full w-full border-0"
           allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture; fullscreen"
           allowFullScreen
+          // Android's WebView sends "https://localhost" as the referrer, which Bunny's
+          // allowed-domains check turns away (the player loads, the video never does).
+          // iOS sends none; this makes Android the same.
+          referrerPolicy="no-referrer"
         />
       ) : (
         <Loader2 className="absolute inset-0 m-auto h-8 w-8 animate-spin text-white/70" aria-label="טוען" />

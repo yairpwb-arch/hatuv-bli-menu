@@ -8,6 +8,26 @@
   /* ── Light Mode ──────────────────────────────────────────────────────────── */
   :root {
     --background: 220 25% 97%;
+    /* Surfaces, lines and dim text for locked / sunken things, and the content map */
+    --surface-raised: 0 0% 100%;
+    --surface-sunken: 220 20% 94%;
+    --surface-locked: 220 16% 90%;
+    --line: 220 15% 86%;
+    --line-strong: 220 12% 76%;
+    --fg-dim: 220 9% 40%;
+    --fg-faint: 220 8% 52%;
+    --map-ground: 220 25% 97%;
+    --map-ground-2: 220 22% 93%;
+    --map-road: 220 14% 82%;
+    --map-edge: 220 13% 72%;
+    --map-dash: 0 0% 100% / 0.95;
+    /* The home table: plate, cutlery slots, glass */
+    --plate-rim: 0 0% 100%;
+    --plate-face: 220 20% 97%;
+    --plate-line: 220 12% 80%;
+    --table: 220 20% 92%;
+    --glass-fill: 205 60% 80% / 0.3;
+    --glass-edge: 210 25% 60% / 0.7;
     --foreground: 224 40% 8%;
 
     --card: 0 0% 100%;
@@ -79,6 +99,24 @@
      primary-soft 10:1, success 11:1; dark text on primary 8:1. */
   .dark {
     --background: 240 10% 6%;
+    --surface-raised: 240 10% 10%;
+    --surface-sunken: 240 9% 8%;
+    --surface-locked: 240 9% 13%;
+    --line: 240 8% 17%;
+    --line-strong: 240 6% 24%;
+    --fg-dim: 240 3% 45%;
+    --fg-faint: 240 5% 37%;
+    --map-ground: 240 10% 6%;
+    --map-ground-2: 240 10% 7%;
+    --map-road: 240 10% 15%;
+    --map-edge: 240 9% 20%;
+    --map-dash: 0 0% 100% / 0.25;
+    --plate-rim: 240 8% 15%;
+    --plate-face: 240 8% 18%;
+    --plate-line: 240 7% 22%;
+    --table: 240 9% 8%;
+    --glass-fill: 0 0% 100% / 0.07;
+    --glass-edge: 210 40% 88% / 0.55;
     --foreground: 43 26% 95%;
 
     --card: 240 10% 10%;

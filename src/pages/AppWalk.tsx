@@ -260,7 +260,7 @@ export default function AppWalk() {
   // ── Screens ──
   if (phase === 'intro') {
     return (
-      <div className="flex min-h-[100dvh] flex-col items-center justify-center gap-5 bg-[#0E0E11] px-6 text-center" dir="rtl">
+      <div className="flex min-h-[100dvh] flex-col items-center justify-center gap-5 bg-background px-6 text-center" dir="rtl">
         <span className="flex h-20 w-20 items-center justify-center rounded-full bg-primary-tint text-primary">
           <MapPin className="h-10 w-10" strokeWidth={1.75} />
         </span>
@@ -284,7 +284,7 @@ export default function AppWalk() {
 
   if (phase === 'summary') {
     return (
-      <div className="min-h-[100dvh] bg-[#0E0E11] pb-[calc(3.5rem+var(--app-safe-bottom)+24px)]" dir="rtl">
+      <div className="min-h-[100dvh] bg-background pb-[calc(3.5rem+var(--app-safe-bottom)+24px)]" dir="rtl">
         <div className="h-72 w-full">
           <WalkMap route={points} summary className="h-full w-full" />
         </div>
@@ -364,7 +364,7 @@ export default function AppWalk() {
   );
 
   return (
-    <div className="fixed inset-0 z-[55] flex flex-col bg-[#0E0E11] safe-top" dir="rtl">
+    <div className="fixed inset-0 z-[55] flex flex-col bg-background safe-top" dir="rtl">
       {/* Map: top half */}
       <div className="relative h-1/2 w-full">
         <WalkMap
@@ -376,7 +376,7 @@ export default function AppWalk() {
           className="h-full w-full"
         />
         {phase !== 'active' && (
-          <button type="button" onClick={() => navigate(-1)} aria-label="סגירה" className="absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-full bg-[#0E0E11]/80">
+          <button type="button" onClick={() => navigate(-1)} aria-label="סגירה" className="absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-full bg-background/80">
             <X className="h-5 w-5" strokeWidth={2} />
           </button>
         )}
@@ -384,7 +384,7 @@ export default function AppWalk() {
           <button
             type="button"
             onClick={() => setFollow(true)}
-            className="absolute bottom-3 left-3 inline-flex h-11 items-center gap-1.5 rounded-pill bg-[#0E0E11]/90 px-4 text-label font-semibold"
+            className="absolute bottom-3 left-3 inline-flex h-11 items-center gap-1.5 rounded-pill bg-background/90 px-4 text-label font-semibold"
           >
             <Crosshair className="h-4 w-4" strokeWidth={2} />
             מרכז

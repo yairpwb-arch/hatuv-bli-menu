@@ -35,7 +35,7 @@ export function Glass3D({ x = 0, full }: { x?: number; full: boolean }) {
       <ellipse cx="33" cy={BASE_Y + 6} rx="21" ry="5" fill="#000" opacity="0.45" filter={`url(#${id}-blur)`} />
 
       {/* Glass body */}
-      <path d={BODY} fill="#FFFFFF" fillOpacity="0.07" />
+      <path d={BODY} style={{ fill: 'hsl(var(--glass-fill))' }} />
 
       {full && (
         <g clipPath={`url(#${id}-in)`}>
@@ -52,7 +52,7 @@ export function Glass3D({ x = 0, full }: { x?: number; full: boolean }) {
       <ellipse cx="30" cy={BASE_Y - 1} rx={BASE_RX - 1} ry="3.2" fill="#FFFFFF" fillOpacity="0.1" />
 
       {/* Outline */}
-      <path d={BODY} fill="none" stroke="#D5E2EE" strokeOpacity="0.55" strokeWidth="1.3" strokeLinejoin="round" />
+      <path d={BODY} fill="none" style={{ stroke: 'hsl(var(--glass-edge))' }} strokeWidth="1.3" strokeLinejoin="round" />
       {/* Front of the rim */}
       <path d={`M${30 - RIM_RX} ${RIM_Y} A${RIM_RX} 5 0 0 0 ${30 + RIM_RX} ${RIM_Y}`} fill="none" stroke="#FFFFFF" strokeOpacity="0.75" strokeWidth="1.4" />
 

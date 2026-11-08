@@ -104,8 +104,8 @@ const ContentCards = forwardRef<ContentMapHandle, Props>(function ContentCards(
     const on = travelled(id);
     return (
       <div className="relative flex w-10 shrink-0 justify-center self-stretch">
-        {!first && <span aria-hidden className={cn('absolute top-0 h-1/2 w-0.5', on ? 'bg-primary' : 'bg-[#2A2A31]')} />}
-        {!last && <span aria-hidden className={cn('absolute bottom-0 h-1/2 w-0.5', on && order.indexOf(id) < reach ? 'bg-primary' : 'bg-[#2A2A31]')} />}
+        {!first && <span aria-hidden className={cn('absolute top-0 h-1/2 w-0.5', on ? 'bg-primary' : 'bg-line')} />}
+        {!last && <span aria-hidden className={cn('absolute bottom-0 h-1/2 w-0.5', on && order.indexOf(id) < reach ? 'bg-primary' : 'bg-line')} />}
         <span className="relative flex items-center">{children}</span>
       </div>
     );
@@ -122,11 +122,11 @@ const ContentCards = forwardRef<ContentMapHandle, Props>(function ContentCards(
       return (
         <li key={item.id} ref={rowRef(item.id)} className="flex gap-2">
           <Rail id={item.id} first={first} last={last}>
-            <span className="flex h-10 w-10 items-center justify-center rounded-full border-[3px] border-primary bg-[#22160C] text-primary">
+            <span className="flex h-10 w-10 items-center justify-center rounded-full border-[3px] border-primary bg-primary-tint text-primary">
               <Icon className="h-5 w-5" strokeWidth={2} />
             </span>
           </Rail>
-          <div className={cn('my-1.5 min-w-0 flex-1 space-y-3 rounded-card border border-primary bg-[#22160C] p-4', spot)}>
+          <div className={cn('my-1.5 min-w-0 flex-1 space-y-3 rounded-card border border-primary bg-primary-tint p-4', spot)}>
             <button type="button" onClick={() => onSelect(item)} className="block w-full text-right">
               <span className="block text-label font-semibold text-primary-soft">{metaLine(item)}</span>
               <span className="mt-0.5 block text-[18px] font-bold leading-snug text-foreground">{item.title}</span>
@@ -164,7 +164,7 @@ const ContentCards = forwardRef<ContentMapHandle, Props>(function ContentCards(
     return (
       <li key={item.id} ref={rowRef(item.id)} className="flex min-h-[64px] gap-2">
         <Rail id={item.id} first={first} last={last}>
-          <span className={cn('flex h-9 w-9 items-center justify-center rounded-full', locked ? 'bg-[#1F1F25] text-[#6E6E76]' : 'border-2 border-primary text-primary')}>
+          <span className={cn('flex h-9 w-9 items-center justify-center rounded-full', locked ? 'bg-surface-locked text-dim' : 'border-2 border-primary text-primary')}>
             {locked ? <Lock className="h-4 w-4" strokeWidth={2} /> : <Icon className="h-4 w-4" strokeWidth={2} />}
           </span>
         </Rail>
@@ -176,7 +176,7 @@ const ContentCards = forwardRef<ContentMapHandle, Props>(function ContentCards(
         >
           {/* Locked: no title yet — only when it opens. */}
           {locked ? (
-            <span className="block text-body text-[#6E6E76]">{opensOn(item)}</span>
+            <span className="block text-body text-dim">{opensOn(item)}</span>
           ) : (
             <>
               <span className="block truncate text-[11px] text-muted-foreground">{metaLine(item)}</span>

@@ -11,7 +11,12 @@ import { RouteThumb } from './RouteThumb';
 maplibregl.setWorkerUrl(`${import.meta.env.BASE_URL}maplibre-gl-worker.js`);
 
 const KEY = import.meta.env.VITE_MAPTILER_KEY as string | undefined;
-const STYLE = KEY ? `https://api.maptiler.com/maps/streets-v2-dark/style.json?key=${KEY}` : null;
+// The map follows the app's theme (light streets on a light screen).
+const styleUrl = () =>
+  KEY
+    ? `https://api.maptiler.com/maps/${document.documentElement.classList.contains('dark') ? 'streets-v2-dark' : 'streets-v2'}/style.json?key=${KEY}`
+    : null;
+const STYLE = styleUrl();
 const ORANGE = '#FF8A2A';
 /** The zoom "מרכז" returns to: close enough to see the street you're on. */
 const CENTER_ZOOM = 17;
@@ -58,7 +63,7 @@ export function WalkMap({
   function createMap(container: HTMLDivElement) {
     const m = new maplibregl.Map({
       container,
-      style: STYLE,
+      style: styleUrl()!,
       center: current ? [current.lng, current.lat] : route[0] ? [route[0].lng, route[0].lat] : [34.78, 32.08],
       zoom: 16,
       attributionControl: { compact: true },
@@ -129,7 +134,7 @@ export function WalkMap({
   if (!STYLE) {
     return (
       <div className={className ?? 'h-full w-full'}>
-        <RouteThumb route={route} className="h-full w-full bg-[#141418]" />
+        <RouteThumb route={route} className="h-full w-full bg-surface-sunken" />
       </div>
     );
   }

@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, X } from 'lucide-react';
+import { Check, X, ChevronLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Illustration } from '@/components/illustrations/Illustration';
 import { StoryDecor } from '@/components/guides/StoryDecor';
@@ -560,7 +560,8 @@ export function GuideStory({ title, pages, avatar, startPage, mealTimes = {}, on
         // A sideways swipe: finger to the right brings in the next page (it waits on the left).
         if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
           s.moved = true;
-          if (dx > 0) next();
+          // On the first page there's nothing behind: any swipe moves on.
+          if (dx > 0 || index === 0) next();
           else prev();
         }
       }}
@@ -590,19 +591,27 @@ export function GuideStory({ title, pages, avatar, startPage, mealTimes = {}, on
         <Finished onBack={onBack} />
       ) : (
         <>
-          {/* Tap zones (under the text): left = next, right = previous. */}
+          {/* Tap zones (under the text): most of the screen = next, the right edge = previous
+              (on the first page, anywhere moves on). */}
           <button
             type="button"
             aria-label="העמוד הבא"
-            className="absolute bottom-0 left-0 top-20 z-10 w-1/2 opacity-0"
+            className="absolute bottom-0 left-0 top-20 z-10 w-[70%] opacity-0"
             onClick={() => !swipe.current?.moved && next()}
           />
           <button
             type="button"
-            aria-label="העמוד הקודם"
-            className="absolute bottom-0 right-0 top-20 z-10 w-1/2 opacity-0"
-            onClick={() => !swipe.current?.moved && prev()}
+            aria-label={index === 0 ? 'העמוד הבא' : 'העמוד הקודם'}
+            className="absolute bottom-0 right-0 top-20 z-10 w-[30%] opacity-0"
+            onClick={() => !swipe.current?.moved && (index === 0 ? next() : prev())}
           />
+          {/* How to move on, until the trainee has done it once */}
+          {index === 0 && (
+            <p className="pointer-events-none absolute inset-x-0 z-20 flex items-center justify-center gap-1.5 text-[15px] font-semibold text-white/70 motion-safe:animate-pulse" style={{ bottom: 'calc(env(safe-area-inset-bottom) + 28px)' }}>
+              הקישו על המסך כדי להמשיך
+              <ChevronLeft className="h-5 w-5" strokeWidth={2.5} aria-hidden />
+            </p>
+          )}
           <div ref={frame} key={index} className="pointer-events-none relative z-20 min-h-0 flex-1 overflow-hidden px-6">
             <div ref={spacer} />
             <div ref={stack}>

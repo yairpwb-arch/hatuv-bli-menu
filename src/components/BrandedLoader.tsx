@@ -43,7 +43,7 @@ export function FullScreenLoader() {
       emit();
     };
   }, []);
-  return <div className="min-h-[100dvh] bg-[#0E0E11]" />;
+  return <div className="min-h-[100dvh] bg-background" />;
 }
 
 const greeting = () => {
@@ -128,7 +128,7 @@ export function BrandedLoaderOverlay() {
       role="status"
       aria-live="polite"
       className={cn(
-        'fixed inset-0 z-[90] flex flex-col items-center justify-center bg-[#0E0E11] px-6 transition-opacity ease-out',
+        'fixed inset-0 z-[90] flex flex-col items-center justify-center bg-background px-6 transition-opacity ease-out',
         phase === 'out' && 'pointer-events-none',
       )}
       style={{ opacity: phase === 'out' ? 0 : 1, transitionDuration: `${FADE_MS}ms` }}
@@ -136,7 +136,7 @@ export function BrandedLoaderOverlay() {
       <div className="relative flex h-[120px] w-[120px] items-center justify-center">
         {!reduced && (
           <svg viewBox="0 0 120 120" className="absolute inset-0 h-full w-full animate-loader-spin" aria-hidden>
-            <circle cx="60" cy="60" r="58" fill="none" stroke="#26262D" strokeWidth="4" />
+            <circle cx="60" cy="60" r="58" fill="none" style={{ stroke: 'hsl(var(--line))' }} strokeWidth="4" />
             <circle
               cx="60"
               cy="60"
@@ -158,24 +158,24 @@ export function BrandedLoaderOverlay() {
       </div>
 
       {reduced && (
-        <div className="mt-4 h-1 w-24 overflow-hidden rounded-pill bg-[#26262D]" aria-hidden>
-          <div className="h-full bg-[#FF8A2A] animate-loader-progress" />
+        <div className="mt-4 h-1 w-24 overflow-hidden rounded-pill bg-line" aria-hidden>
+          <div className="h-full bg-primary animate-loader-progress" />
         </div>
       )}
 
       <p
-        className="mt-6 min-h-[24px] text-center text-[16px] font-medium text-[#F5F3EE] transition-opacity duration-200"
+        className="mt-6 min-h-[24px] text-center text-[16px] font-medium text-foreground transition-opacity duration-200"
         style={{ opacity: lineVisible || slow ? 1 : 0 }}
       >
         {line}
       </p>
-      <p className="mt-1 text-[14px] text-[#A9A7AE]">חטוב בלי תפריט</p>
+      <p className="mt-1 text-[14px] text-muted-foreground">חטוב בלי תפריט</p>
 
       {slow && (
         <button
           type="button"
           onClick={() => window.location.reload()}
-          className="mt-6 inline-flex h-12 items-center gap-2 rounded-button border border-[#26262D] px-6 text-label font-semibold text-[#F5F3EE]"
+          className="mt-6 inline-flex h-12 items-center gap-2 rounded-button border border-line px-6 text-label font-semibold text-foreground"
         >
           <RotateCw className="h-4 w-4" strokeWidth={2} aria-hidden />
           נסה שוב

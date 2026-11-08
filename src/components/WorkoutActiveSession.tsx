@@ -620,7 +620,7 @@ export default function WorkoutActiveSession({ planDay, exercises, onMinimize, o
       {/* ── Main session UI ── */}
       <div className="fixed inset-0 z-[55] flex flex-col overflow-hidden bg-background" dir="rtl">
         {/* Header */}
-        <header className="relative shrink-0 border-b border-[#26262D] bg-[#0E0E11] safe-top">
+        <header className="relative shrink-0 border-b border-line bg-background safe-top">
           <div className="flex h-14 items-center gap-1 px-1">
             <button type="button" onClick={() => setConfirmFinish(true)} aria-label="סגירת האימון" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-pill text-foreground active:bg-card-inner">
               <X className="h-5 w-5" strokeWidth={2} />
@@ -665,7 +665,7 @@ export default function WorkoutActiveSession({ planDay, exercises, onMinimize, o
           <div className="flex-1 overflow-y-auto">
             <div className="space-y-card-gap px-4 py-4">
               {/* Media on a dark card — never a white square */}
-              <div className="rounded-[16px] bg-[#17171C] p-3">
+              <div className="rounded-[16px] bg-surface-raised p-3">
                 {hasMedia ? (
                   isVideo ? (
                     <button type="button" className="relative block w-full" onClick={() => setVideoFullscreen(true)} aria-label="הגדלת הסרטון">

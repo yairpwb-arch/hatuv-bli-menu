@@ -164,7 +164,7 @@ export function HabitTable({ habits, onToggle, onPerfectDay, firstOpens }: Habit
 
       {/* The table, seen from above */}
       <div
-        className={cn('relative mx-auto w-[80%] rounded-inner bg-[#141418] transition-shadow duration-500', celebrate && 'shadow-[0_0_0_3px_hsl(var(--primary))]')}
+        className={cn('relative mx-auto w-[80%] rounded-inner bg-[hsl(var(--table))] transition-shadow duration-500', celebrate && 'shadow-[0_0_0_3px_hsl(var(--primary))]')}
         style={{ aspectRatio: String(1 / TABLE_H) }}
       >
         <div

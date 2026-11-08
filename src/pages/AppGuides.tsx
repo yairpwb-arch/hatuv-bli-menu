@@ -139,7 +139,7 @@ export default function AppGuides() {
                   onClick={() => open(g)}
                   aria-label={locked ? `${LOCKED_TITLE}, ${opensOn(g)}` : `${bareTitle(g.title)}${g.isCompleted ? ', נקרא' : ', חדש'}`}
                   className={cn(
-                    'relative flex aspect-[1/1.1] w-full flex-col items-start rounded-[20px] border border-[#26262D] bg-[#17171C] p-4 text-right',
+                    'relative flex aspect-[1/1.1] w-full flex-col items-start rounded-[20px] border border-line bg-surface-raised p-4 text-right',
                     locked && 'opacity-50',
                   )}
                 >
@@ -151,7 +151,7 @@ export default function AppGuides() {
                       <Check className="h-3.5 w-3.5 text-success" strokeWidth={3} />
                     </span>
                   )}
-                  <span className="flex h-16 w-16 items-center justify-center rounded-full bg-[#22160C] text-primary">
+                  <span className="flex h-16 w-16 items-center justify-center rounded-full bg-primary-tint text-primary">
                     {locked ? <Lock className="h-8 w-8 text-muted-foreground" strokeWidth={2} /> : <Icon className="h-10 w-10" strokeWidth={1.75} />}
                   </span>
                   <span className="mt-auto line-clamp-2 text-[16px] font-bold leading-snug text-foreground">{locked ? LOCKED_TITLE : bareTitle(g.title)}</span>

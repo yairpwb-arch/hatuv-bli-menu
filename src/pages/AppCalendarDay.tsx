@@ -273,7 +273,7 @@ export default function AppCalendarDay() {
   return (
     <div className="min-h-screen pb-24">
       {/* Header stays put; the axis scrolls under it */}
-      <div className="sticky z-30 border-b border-[#26262D] bg-[#0E0E11] px-4 pb-3 pt-3" style={{ top: 'calc(3.5rem + var(--app-safe-top))' }}>
+      <div className="sticky z-30 border-b border-line bg-background px-4 pb-3 pt-3" style={{ top: 'calc(3.5rem + var(--app-safe-top))' }}>
         <div className="flex items-center justify-between gap-2">
           <button type="button" onClick={() => goDay(-1)} aria-label="היום הקודם" className="inline-flex h-11 w-11 items-center justify-center rounded-pill bg-card-inner">
             <ChevronRight className="h-5 w-5" strokeWidth={2} />
@@ -317,7 +317,7 @@ export default function AppCalendarDay() {
                 <span className="w-11 shrink-0 -translate-y-2 text-[11px] tabular-nums text-muted-foreground" dir="ltr">
                   {t.getMinutes() === 0 ? hhmm(t) : ''}
                 </span>
-                <span className={cn('h-px flex-1', t.getMinutes() === 0 ? 'bg-[#26262D]' : 'bg-[#1C1C22]')} />
+                <span className={cn('h-px flex-1', t.getMinutes() === 0 ? 'bg-line' : 'bg-line/50')} />
               </div>
             );
           })}
@@ -325,15 +325,15 @@ export default function AppCalendarDay() {
           {/* Hours without eating (before the kitchen opens, after it closes) sit a shade darker;
               a thin green strip beside the axis marks the eating window. */}
           {eatStart && (
-            <div aria-hidden className="pointer-events-none absolute left-0 top-0 bg-black/25" style={{ right: 52, height: yOf(eatStart) }} />
+            <div aria-hidden className="pointer-events-none absolute left-0 top-0 bg-black/[0.06] dark:bg-black/25" style={{ right: 52, height: yOf(eatStart) }} />
           )}
           {eatStop && (
-            <div aria-hidden className="pointer-events-none absolute bottom-0 left-0 bg-black/25" style={{ right: 52, top: yOf(eatStop) }} />
+            <div aria-hidden className="pointer-events-none absolute bottom-0 left-0 bg-black/[0.06] dark:bg-black/25" style={{ right: 52, top: yOf(eatStop) }} />
           )}
           {eatStart && eatStop && (
             <div
               aria-label="חלון האכילה"
-              className="pointer-events-none absolute w-[3px] rounded-pill bg-[#5BE38F]/30"
+              className="pointer-events-none absolute w-[3px] rounded-pill bg-success/30"
               style={{ right: 47, top: yOf(eatStart), height: yOf(eatStop) - yOf(eatStart) }}
             />
           )}
@@ -356,7 +356,7 @@ export default function AppCalendarDay() {
                   onContextMenu={(p) => p.preventDefault()}
                   className={cn(
                     'absolute select-none overflow-hidden rounded-inner border px-2 py-1 text-right',
-                    e.source === 'workout' ? 'border-primary/50 bg-primary-tint' : e.source === 'walk' ? 'border-success/40 bg-success/10' : 'border-[#2A2A31] bg-[#17171C]',
+                    e.source === 'workout' ? 'border-primary/50 bg-primary-tint' : e.source === 'walk' ? 'border-success/40 bg-success/10' : 'border-line bg-surface-raised',
                     dragging && 'z-30 scale-[1.03] shadow-[0_8px_24px_rgba(0,0,0,0.5)]',
                   )}
                   style={{
@@ -395,7 +395,7 @@ export default function AppCalendarDay() {
                 // On the left: block titles are right-aligned, so the label never hides one.
                 className={cn(
                   'pointer-events-auto absolute -top-3 left-0 inline-flex h-6 items-center gap-1 rounded-pill px-1.5 text-[11px]',
-                  eatStyle(e) ? cn(eatStyle(e)!.card, eatStyle(e)!.tint) : 'bg-[#0E0E11] text-muted-foreground',
+                  eatStyle(e) ? cn(eatStyle(e)!.card, eatStyle(e)!.tint) : 'bg-background text-muted-foreground',
                 )}
               >
                 <Lock className="h-3 w-3" strokeWidth={2} aria-hidden />

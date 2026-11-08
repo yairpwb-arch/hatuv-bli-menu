@@ -10,7 +10,7 @@ export function ProgressRing({ done, total, size = 36, className }: { done: numb
   return (
     <span className={cn('relative inline-flex shrink-0 items-center justify-center', className)} style={{ width: size, height: size }}>
       <svg viewBox="0 0 36 36" className="absolute inset-0 h-full w-full -rotate-90" aria-hidden>
-        <circle cx="18" cy="18" r={r} fill="none" stroke="#2A2A31" strokeWidth="3.5" />
+        <circle cx="18" cy="18" r={r} fill="none" style={{ stroke: 'hsl(var(--line))' }} strokeWidth="3.5" />
         <circle
           cx="18" cy="18" r={r} fill="none" stroke="#FF8A2A" strokeWidth="3.5" strokeLinecap="round"
           strokeDasharray={c} strokeDashoffset={c * (1 - ratio)}
@@ -39,7 +39,7 @@ export function PartBanner({
   const body = (
     <>
       {part.locked ? (
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-pill bg-[#1F1F25]">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-pill bg-surface-locked">
           <Lock className="h-4 w-4 text-muted-foreground" strokeWidth={2} aria-hidden />
         </span>
       ) : (
@@ -56,7 +56,7 @@ export function PartBanner({
   );
   const cls = cn(
     'flex min-h-[64px] w-full items-center gap-3 rounded-inner border px-4 py-2',
-    part.locked ? 'border-[#26262D] bg-[#141418]' : 'border-[#2A2A31] bg-card',
+    part.locked ? 'border-line bg-surface-sunken' : 'border-line bg-card',
     className,
   );
   return collapsible ? (

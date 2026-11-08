@@ -17,8 +17,8 @@ import { PartBanner } from './PartBanner';
  */
 
 const ORANGE = '#FF8A2A';
-const ASPHALT = '#22222A';
-const SHOULDER = '#2E2E37';
+const ASPHALT = 'hsl(var(--map-road))';
+const SHOULDER = 'hsl(var(--map-edge))';
 const ROAD_W = 24;
 const STEP = 124; // between node centres
 const BANNER_H = 64;
@@ -28,7 +28,7 @@ const TOP_PAD = 24;
 const BOTTOM_PAD = 72;
 /** Lane positions (fraction of width): right, centre, left with uneven swings. */
 const LANES = [0.76, 0.46, 0.22, 0.56, 0.8, 0.34, 0.24, 0.62];
-const GROUNDS = ['#0E0E11', '#111115'];
+const GROUNDS = ['hsl(var(--map-ground))', 'hsl(var(--map-ground-2))'];
 const DECOR = [Droplet, UtensilsCrossed, Footprints, Dumbbell, Moon];
 
 type Point =
@@ -116,7 +116,7 @@ function HerePin({ initials }: { initials: string }) {
   return (
     <span aria-hidden className="pointer-events-none absolute bottom-full left-1/2 mb-1.5 flex -translate-x-1/2 flex-col items-center">
       <span className="mb-1 whitespace-nowrap rounded-pill bg-primary px-2 py-0.5 text-[11px] font-bold text-primary-foreground">אתה כאן</span>
-      <span className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-primary bg-[#17171C] text-[12px] font-bold text-foreground">
+      <span className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-primary bg-surface-raised text-[12px] font-bold text-foreground">
         {initials}
       </span>
       <span className="h-0 w-0 border-x-[6px] border-t-[7px] border-x-transparent border-t-primary" />
@@ -151,10 +151,10 @@ function ItemNode({
         className={cn(
           'relative flex items-center justify-center rounded-full',
           state === 'done' && 'bg-primary',
-          state === 'current' && 'border-[4px] border-primary bg-[#22160C]',
+          state === 'current' && 'border-[4px] border-primary bg-primary-tint',
           state === 'open' && 'border-[3px] border-primary bg-card',
-          state === 'soon' && 'border-2 border-[#3A3A42] bg-[#1F1F25]',
-          state === 'locked' && 'border-2 border-[#2E2E37] bg-[#1A1A20]',
+          state === 'soon' && 'border-2 border-line-strong bg-surface-locked',
+          state === 'locked' && 'border-2 border-line bg-surface-locked',
           reveal && 'animate-node-reveal',
         )}
         style={{ width: size, height: size }}
@@ -162,7 +162,7 @@ function ItemNode({
         {state === 'done' && <Icon className="h-5 w-5 text-white" strokeWidth={2} />}
         {state === 'current' && <Icon className="h-7 w-7 text-primary" strokeWidth={2} />}
         {state === 'open' && <Icon className="h-6 w-6 text-primary" strokeWidth={2} />}
-        {(state === 'soon' || state === 'locked') && <Lock className="h-5 w-5 text-[#6E6E76]" strokeWidth={2} />}
+        {(state === 'soon' || state === 'locked') && <Lock className="h-5 w-5 text-dim" strokeWidth={2} />}
         {state === 'done' && (
           <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-background bg-primary">
             <Check className="h-3 w-3 text-white" strokeWidth={3.5} />
@@ -193,12 +193,12 @@ function Label({ p, state, width, onSelect }: { p: Extract<Point, { kind: 'item'
       onClick={onSelect}
       className={cn(
         'absolute -translate-y-1/2 rounded-inner border px-2.5 py-1.5 text-right',
-        state === 'current' ? 'border-primary/50 bg-[#22160C]' : 'border-[#26262D] bg-[#141418]',
+        state === 'current' ? 'border-primary/50 bg-primary-tint' : 'border-line bg-surface-sunken',
       )}
       style={onLeft ? { right: width - p.x + gap, top: p.y, maxWidth: Math.min(190, room) } : { left: p.x + gap, top: p.y, maxWidth: Math.min(190, room) }}
       dir="rtl"
     >
-      <span className={cn('block truncate text-[11px] font-normal', state === 'locked' ? 'text-[#5A5A63]' : state === 'current' ? 'text-primary-soft' : 'text-muted-foreground')}>
+      <span className={cn('block truncate text-[11px] font-normal', state === 'locked' ? 'text-faint' : state === 'current' ? 'text-primary-soft' : 'text-muted-foreground')}>
         {meta}
       </span>
       {/* Locked stages keep their name hidden until they open. */}
@@ -206,7 +206,7 @@ function Label({ p, state, width, onSelect }: { p: Extract<Point, { kind: 'item'
         className={cn(
           // The stage's own name carries the weight; the week / kind line above stays quiet.
           'block text-[14px] font-bold leading-snug line-clamp-2',
-          tappable ? 'text-foreground' : 'font-semibold text-[#6E6E76]',
+          tappable ? 'text-foreground' : 'font-semibold text-dim',
         )}
       >
         {tappable ? p.item.title : countdown(p.item)}
@@ -228,13 +228,13 @@ function EndSign({ p, pop }: { p: Extract<Point, { kind: 'sign' }>; pop: boolean
       <span
         className={cn(
           'flex items-center gap-2 rounded-[10px] border-2 px-3 py-2',
-          done ? 'border-[#FFB27A] bg-primary text-primary-foreground' : 'border-[#3A3A42] bg-[#1F1F25] text-[#8A8A93]',
+          done ? 'border-[#FFB27A] bg-primary text-primary-foreground' : 'border-line-strong bg-surface-locked text-dim',
         )}
       >
         <Trophy className="h-5 w-5" strokeWidth={2} />
         <span className="whitespace-nowrap text-[14px] font-bold">סוף חלק {p.part.number}</span>
       </span>
-      <span className={cn('h-10 w-1 rounded-b', done ? 'bg-[#B35E1C]' : 'bg-[#2E2E37]')} />
+      <span className={cn('h-10 w-1 rounded-b', done ? 'bg-[#B35E1C]' : 'bg-line')} />
     </div>
   );
 }
@@ -358,15 +358,15 @@ const ContentMap = forwardRef<ContentMapHandle, Props>(function ContentMap(
       <svg className="pointer-events-none absolute inset-0" width={width} height={layout.height} aria-hidden>
         {/* Ground: each part a hair lighter or darker than the next */}
         {layout.sections.map((s, i) => (
-          <rect key={s.part.number} x={0} y={s.top} width={width} height={s.bottom - s.top} fill={GROUNDS[i % 2]} />
+          <rect key={s.part.number} x={0} y={s.top} width={width} height={s.bottom - s.top} style={{ fill: GROUNDS[i % 2] }} />
         ))}
         {/* The road: shoulder, asphalt */}
         {roads.map((r) => {
           const d = roadPath(r.pts, r.seed);
           return (
             <g key={r.key}>
-              <path d={d} fill="none" stroke={SHOULDER} strokeWidth={ROAD_W + 4} strokeLinecap="round" strokeLinejoin="round" />
-              <path d={d} fill="none" stroke={ASPHALT} strokeWidth={ROAD_W} strokeLinecap="round" strokeLinejoin="round" />
+              <path d={d} fill="none" style={{ stroke: SHOULDER }} strokeWidth={ROAD_W + 4} strokeLinecap="round" strokeLinejoin="round" />
+              <path d={d} fill="none" style={{ stroke: ASPHALT }} strokeWidth={ROAD_W} strokeLinecap="round" strokeLinejoin="round" />
             </g>
           );
         })}
@@ -388,11 +388,11 @@ const ContentMap = forwardRef<ContentMapHandle, Props>(function ContentMap(
         )}
         {/* Dashed centre line */}
         {roads.map((r) => (
-          <path key={r.key} d={roadPath(r.pts, r.seed)} fill="none" stroke="#FFFFFF" strokeOpacity={0.25} strokeWidth={2} strokeDasharray="10 12" />
+          <path key={r.key} d={roadPath(r.pts, r.seed)} fill="none" style={{ stroke: 'hsl(var(--map-dash))' }} strokeWidth={2} strokeDasharray="10 12" />
         ))}
         {/* Fog over the road ahead */}
         {Array.from({ length: fogBands }, (_, i) => (
-          <rect key={i} x={0} y={fogTop + i * 220} width={width} height={220} fill="#0E0E11" fillOpacity={Math.min(0.5, 0.12 + i * 0.08)} />
+          <rect key={i} x={0} y={fogTop + i * 220} width={width} height={220} style={{ fill: 'hsl(var(--map-ground))' }} fillOpacity={Math.min(0.5, 0.12 + i * 0.08)} />
         ))}
       </svg>
 
@@ -440,11 +440,11 @@ const ContentMap = forwardRef<ContentMapHandle, Props>(function ContentMap(
         return (
           <div key={p.id} className="absolute flex flex-col items-center gap-2" style={{ left: p.x, top: p.y, transform: 'translate(-50%, -40px)' }}>
             <div
-              className={cn('flex h-20 w-20 items-center justify-center rounded-full', finalUnlocked ? 'bg-primary' : 'border-2 border-[#3A3A42] bg-[#1F1F25]')}
+              className={cn('flex h-20 w-20 items-center justify-center rounded-full', finalUnlocked ? 'bg-primary' : 'border-2 border-line-strong bg-surface-locked')}
               role="img"
               aria-label={`שלב סיכום${finalUnlocked ? '' : `, ${finalOpensLabel}`}`}
             >
-              <Trophy className={cn('h-9 w-9', finalUnlocked ? 'text-white' : 'text-[#5A5A63]')} strokeWidth={2} />
+              <Trophy className={cn('h-9 w-9', finalUnlocked ? 'text-white' : 'text-faint')} strokeWidth={2} />
             </div>
             <p className="text-body font-bold">שלב סיכום</p>
             <p className="-mt-1.5 text-label text-muted-foreground">{finalUnlocked ? 'סוף התוכנית' : finalOpensLabel}</p>
