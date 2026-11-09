@@ -210,6 +210,15 @@ export const QUESTIONS: Question[] = [
     details: { value: 'yes', placeholder: 'מה חשוב שנדע?' },
   },
   {
+    id: 'medical', kind: 'single', title: 'יש מצב רפואי שחשוב שנדע?',
+    subtitle: 'למשל לחץ דם, סוכרת, בעיות לב, אסתמה, היריון או תרופות קבועות',
+    options: [
+      { value: 'no', label: 'לא' },
+      { value: 'yes', label: 'כן' },
+    ],
+    details: { value: 'yes', placeholder: 'מה חשוב שנדע?' },
+  },
+  {
     id: 'preferred_location', kind: 'single', title: 'איפה את/ה מעדיף/ה להתאמן?',
     options: [
       { value: 'gym', label: 'בחדר כושר' },

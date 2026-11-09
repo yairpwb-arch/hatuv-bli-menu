@@ -14,7 +14,15 @@ type Row = Record<string, any>;
 const MODELS = [
   { id: 'claude-haiku-5-5', label: 'Haiku 5.5' },
   { id: 'claude-sonnet-5-5', label: 'Sonnet 5.5' },
+  { id: 'gpt-6.1-terra', label: 'GPT-6.1 Terra' },
 ];
+/** What the next run asks for. */
+const PICKS = {
+  sonnet: { label: 'רק Sonnet 5.5', models: ['claude-sonnet-5-5'] },
+  terra: { label: 'רק GPT-6.1 Terra', models: ['gpt-6.1-terra'] },
+  both: { label: 'Haiku ו-Sonnet', models: ['claude-haiku-5-5', 'claude-sonnet-5-5'] },
+};
+type Pick = keyof typeof PICKS;
 const usd = (n: number) => `$${n.toFixed(4)}`;
 const PARALLEL = 3;
 
@@ -29,7 +37,9 @@ export function ModelTest() {
   const [results, setResults] = useState<Row[]>([]);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   /** Which models the next run asks for. */
-  const [pick, setPick] = useState<'sonnet' | 'both'>('sonnet');
+  const [pick, setPick] = useState<Pick>('sonnet');
+  /** Which questions the next run asks ("5, 16, 42"); empty = all. */
+  const [only, setOnly] = useState('');
 
   const loadRuns = async () => {
     const { data } = await db.from('bot_eval_results').select('run_id, created_at').order('created_at', { ascending: false }).limit(2000);
@@ -52,28 +62,30 @@ export function ModelTest() {
   }, []);
 
   const run = async () => {
-    if (!cases.length) return;
-    const id = `run-${format(new Date(), 'yyyyMMdd-HHmm')}-${pick}`;
+    const nos = new Set(only.split(/[^0-9]+/).filter(Boolean).map(Number));
+    const todo = nos.size ? cases.filter((c) => nos.has(c.no)) : cases;
+    if (!todo.length) return;
+    const id = `run-${format(new Date(), 'yyyyMMdd-HHmm')}-${pick}${nos.size ? `-${todo.length}q` : ''}`;
     setRunId(id);
     setResults([]);
-    setProgress({ done: 0, total: cases.length });
-    const queue = [...cases];
+    setProgress({ done: 0, total: todo.length });
+    const queue = [...todo];
     let done = 0;
     let failed = 0;
     const worker = async () => {
       while (queue.length) {
         const c = queue.shift()!;
-        const { error } = await supabase.functions.invoke('bot-jobs', { body: { job: 'eval_case', run_id: id, case_no: c.no, models: pick === 'sonnet' ? ['claude-sonnet-5-5'] : MODELS.map((m) => m.id) } });
+        const { error } = await supabase.functions.invoke('bot-jobs', { body: { job: 'eval_case', run_id: id, case_no: c.no, models: PICKS[pick].models } });
         if (error) failed++;
         done++;
-        setProgress({ done, total: cases.length });
+        setProgress({ done, total: todo.length });
         await loadResults(id);
       }
     };
     await Promise.all(Array.from({ length: PARALLEL }, worker));
     setProgress(null);
     await loadRuns();
-    toast({ title: 'המבחן הסתיים', description: failed ? `${failed} שאלות לא רצו, אפשר להריץ שוב` : `${cases.length} שאלות` });
+    toast({ title: 'המבחן הסתיים', description: failed ? `${failed} שאלות לא רצו, אפשר להריץ שוב` : `${todo.length} שאלות` });
   };
 
   const byCase = useMemo(() => {
@@ -92,8 +104,10 @@ export function ModelTest() {
 
   /** One Markdown file: every question with its data, history, our answer and both models' answers, then the costs. */
   const download = () => {
-    const out: string[] = [`# מבחן מודלים: ${runId}`, '', `${cases.length} שאלות · ${ran.map((m) => m.label).join(' ו-')} · ⏎ / --- = הודעה נפרדת`, ''];
-    for (const c of cases) {
+    // Only the questions this run asked.
+    const asked = cases.filter((c) => byCase.has(c.no));
+    const out: string[] = [`# מבחן מודלים: ${runId}`, '', `${asked.length} שאלות (${asked.map((c) => c.no).join(', ')}) · ${ran.map((m) => m.label).join(' ו-')} · ⏎ / --- = הודעה נפרדת`, ''];
+    for (const c of asked) {
       const r = byCase.get(c.no) ?? {};
       out.push('---', '', `## שאלה ${c.no}`, '');
       out.push('### נתוני הלקוח', '', c.ctx, '');
@@ -138,8 +152,8 @@ export function ModelTest() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border p-4">
         <div>
-          <p className="font-semibold">מבחן מודלים: Haiku 5.5 מול Sonnet 5.5</p>
-          <p className="text-xs text-muted-foreground">{cases.length} שאלות · אותו פרומפט לשניהם · בלי שופט: התשובות יורדות לקובץ, ואתם בודקים</p>
+          <p className="font-semibold">מבחן מודלים</p>
+          <p className="text-xs text-muted-foreground">{cases.length} שאלות · אותו פרומפט לכל המודלים · בלי שופט: התשובות יורדות לקובץ, ואתם בודקים</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {runs.length > 0 && (
@@ -160,12 +174,18 @@ export function ModelTest() {
           <select
             className="h-9 rounded-md border border-border bg-background px-2 text-sm"
             value={pick}
-            onChange={(e) => setPick(e.target.value as 'sonnet' | 'both')}
+            onChange={(e) => setPick(e.target.value as Pick)}
             disabled={!!progress}
           >
-            <option value="sonnet">רק Sonnet 5.5</option>
-            <option value="both">Haiku ו-Sonnet</option>
+            {(Object.keys(PICKS) as Pick[]).map((k) => <option key={k} value={k}>{PICKS[k].label}</option>)}
           </select>
+          <input
+            className="h-9 w-44 rounded-md border border-border bg-background px-2 text-sm"
+            placeholder="שאלות (ריק = הכל)"
+            value={only}
+            onChange={(e) => setOnly(e.target.value)}
+            disabled={!!progress}
+          />
           <Button onClick={run} disabled={!!progress || !cases.length} className="gap-1.5">
             {progress ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
             {progress ? `${progress.done}/${progress.total}` : 'הרצת המבחן'}

@@ -268,6 +268,7 @@ export default function AppHome() {
           onToggle={toggleOnTable}
           onPerfectDay={refetchStreak}
           firstOpens={firstOpens}
+          allHabits={habits}
         />
       )}
 

@@ -266,9 +266,8 @@ async function jobProfiles() {
 
 // ── eval: one question of the model test ──────────────────────────────────────
 
-const ALL_EVAL_MODELS = ['claude-haiku-5-5', 'claude-sonnet-5-5'];
+const ALL_EVAL_MODELS = ['claude-haiku-5-5', 'claude-sonnet-5-5', 'gpt-6.1-terra'];
 async function jobEvalCase(body: Row) {
-  if (!anthropic) return { error: 'ANTHROPIC_API_KEY missing' };
   const runId = String(body.run_id ?? '');
   const { data: c } = await db.from('bot_eval_cases').select('*').eq('no', body.case_no).maybeSingle();
   if (!c || !runId) return { error: 'no case' };
@@ -279,9 +278,9 @@ async function jobEvalCase(body: Row) {
   const chat = lines.join('\n');
   const prompt = await buildPrompt(db, 'eval', null, c.question, true, chat, { ctx: c.ctx, day: c.day });
 
-  // Both models, the same prompt.
-  // The models to run: the ones asked for (e.g. only Sonnet), else both.
-  const EVAL_MODELS = Array.isArray(body.models) && body.models.length ? ALL_EVAL_MODELS.filter((m) => body.models.includes(m)) : ALL_EVAL_MODELS;
+  // The models to run, the same prompt: the ones asked for (e.g. only Terra), else Haiku and Sonnet.
+  const EVAL_MODELS = Array.isArray(body.models) && body.models.length ? ALL_EVAL_MODELS.filter((m) => body.models.includes(m)) : ALL_EVAL_MODELS.slice(0, 2);
+  if (!EVAL_MODELS.length) return { error: 'no such model' };
   const answers = await Promise.all(EVAL_MODELS.map((model) => runModel(db, prompt, { model, kind: 'eval' })));
 
   // Only what code can check by itself; the rest is read by us.

@@ -3,7 +3,7 @@
 //   message: now · the client's app data · what we know about the client ·
 //            from our program (closest chunks the client has reached) ·
 //            our closest past answers · the group's last messages
-// → Claude → up to three short WhatsApp messages, and whether to hand off to us.
+// → Claude → up to two short WhatsApp messages, and whether to hand off to us.
 
 import Anthropic from 'npm:@anthropic-ai/sdk';
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
@@ -15,7 +15,7 @@ const anthropic = Deno.env.get('ANTHROPIC_API_KEY') ? new Anthropic() : null;
 export const brainReady = () => !!anthropic;
 
 /** Used only if bot_settings has no "rules" (they're edited in the dashboard). */
-const FALLBACK_RULES = `אתה "העוזר הדיגיטלי של חטוב בלי תפריט". אתה כותב בשם הצוות ("אנחנו"), קצר וחם, עד 3 הודעות קצרות מופרדות בשורה ---. לא עצה רפואית; כאב, פציעה, מחלה, הריון, אכילה לא בריאה, רצון לעזוב או תלונה: אומרים שתעביר למאמנים ומסמנים [העבר]. אם אין צורך לענות, כתוב רק: [שקט]`;
+const FALLBACK_RULES = `אתה "העוזר הדיגיטלי של חטוב בלי תפריט". אתה כותב בשם הצוות ("אנחנו"), קצר וחם, עד 2 הודעות קצרות מופרדות בשורה ---. לא עצה רפואית; כאב, פציעה, מחלה, הריון, אכילה לא בריאה, רצון לעזוב או תלונה: אומרים שתעביר למאמנים ומסמנים [העבר]. אם אין צורך לענות, כתוב רק: [שקט]`;
 
 export const HANDOFF_TAG = '[העבר]';
 
@@ -181,9 +181,11 @@ export async function runModel(
   db: SupabaseClient,
   prompt: PromptParts,
   opts: { model?: string; kind?: 'reply' | 'eval'; chatId?: string | null; userId?: string | null } = {},
-): Promise<{ text: string; refused: boolean; cost: number }> {
-  if (!anthropic) return { text: '', refused: false, cost: 0 };
-  const model = opts.model ?? MODEL;
+): Promise<{ text: string; refused: boolean; cost: number; model: string }> {
+  // The live model is bot_settings.model (switched without a deploy), else MODEL.
+  const model = opts.model ?? (await setting<string>(db, 'model')) ?? MODEL;
+  if (model.startsWith('gpt-')) return { ...(await runOpenAI(db, prompt, model, opts)), model };
+  if (!anthropic) return { text: '', refused: false, cost: 0, model };
   const request = {
     model,
     max_tokens: 4000,
@@ -198,15 +200,63 @@ export async function runModel(
   const u = claudeUsage(r);
   await logUsage(db, { kind: opts.kind ?? 'reply', model, chatId: opts.chatId, userId: opts.userId, ...u });
   const text = ((r.content ?? []) as Row[]).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
-  return { text, refused: r.stop_reason === 'refusal', cost: costOf({ kind: 'reply', model, ...u }) };
+  return { text, refused: r.stop_reason === 'refusal', cost: costOf({ kind: 'reply', model, ...u }), model };
+}
+
+/** How many messages an answer may be: Terra writes 2–3 short ones (its own rules), Claude up to 2. */
+export const maxParts = (model: string) => (model.startsWith('gpt-') ? 3 : 2);
+
+/**
+ * An OpenAI model (for the model test only), the same prompt: the system part as
+ * instructions, the message as input. Responses API, low reasoning effort.
+ */
+async function runOpenAI(
+  db: SupabaseClient,
+  prompt: PromptParts,
+  model: string,
+  opts: { kind?: 'reply' | 'eval'; chatId?: string | null; userId?: string | null },
+): Promise<{ text: string; refused: boolean; cost: number }> {
+  const key = Deno.env.get('OPENAI_API_KEY');
+  if (!key) return { text: '', refused: false, cost: 0 };
+  // The same prompt, plus the rules written for OpenAI models (bot_settings.rules_openai).
+  const extra = await setting<string>(db, 'rules_openai');
+  const instructions = extra ? `${prompt.system}\n\n# תוספת לכללים (גוברת על מה שלמעלה)\n${extra}` : prompt.system;
+  const call = (withEffort: boolean) =>
+    fetch('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        instructions,
+        input: prompt.user,
+        max_output_tokens: 4000,
+        ...(withEffort ? { reasoning: { effort: 'low' } } : {}),
+      }),
+    });
+  let res = await call(true);
+  // A model without the reasoning setting: the same request without it.
+  if (res.status === 400) res = await call(false);
+  if (!res.ok) {
+    console.error('[brain] openai', res.status, await res.text());
+    return { text: '', refused: false, cost: 0 };
+  }
+  const r = (await res.json()) as Row;
+  const content = ((r.output ?? []) as Row[]).filter((o) => o.type === 'message').flatMap((o) => (o.content ?? []) as Row[]);
+  const text = content.filter((c) => c.type === 'output_text').map((c) => c.text).join('\n').trim();
+  const cached = r.usage?.input_tokens_details?.cached_tokens ?? 0;
+  const u = { input: (r.usage?.input_tokens ?? 0) - cached, output: r.usage?.output_tokens ?? 0, cacheRead: cached, cacheWrite: 0 };
+  await logUsage(db, { kind: opts.kind ?? 'reply', model, chatId: opts.chatId, userId: opts.userId, ...u });
+  return { text, refused: content.some((c) => c.type === 'refusal'), cost: costOf({ kind: 'reply', model, ...u }) };
 }
 
 /** Splits the model's text into messages; [שקט] → none; [העבר] noted and removed. */
-export function toReply(text: string): Reply {
+export function toReply(text: string, max = 2): Reply {
   if (!text || text.includes('[שקט]')) return { parts: [], handoff: false };
   const handoff = text.includes(HANDOFF_TAG);
   const clean = text.split(HANDOFF_TAG).join('').trim();
-  const parts = clean.split(/\n\s*---\s*\n/).map((s) => s.trim()).filter(Boolean).slice(0, 3);
+  const all = clean.split(/\n\s*---\s*\n/).map((s) => s.trim()).filter(Boolean);
+  // At most `max` messages: anything after the last joins it, so nothing is lost.
+  const parts = all.length > max ? [...all.slice(0, max - 1), all.slice(max - 1).join('\n')] : all;
   return { parts, handoff };
 }
 
@@ -219,10 +269,9 @@ export async function composeReply(
   /** Test group: whoever writes plays the client, coaches included. */
   everyoneIsClient = false,
 ): Promise<Reply> {
-  if (!anthropic) return { parts: [], handoff: false };
   const prompt = await buildPrompt(db, chatId, userId, latest, everyoneIsClient);
   // A refusal that the fallback didn't rescue is just silence.
-  const { text, refused } = await runModel(db, prompt, { chatId, userId });
+  const { text, refused, model } = await runModel(db, prompt, { chatId, userId });
   if (refused) return { parts: [], handoff: false };
-  return toReply(text);
+  return toReply(text, maxParts(model));
 }

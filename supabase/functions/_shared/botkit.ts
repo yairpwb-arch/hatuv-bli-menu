@@ -10,6 +10,8 @@ const PRICES: Record<string, [number, number, number, number]> = {
   'claude-haiku-5-5': [0.1, 0.5, 0.01, 0.125],
   'claude-sonnet-5-5': [2, 10, 0.2, 2.5],
   'claude-opus-5-5': [4, 20, 0.2, 5],
+  // OpenAI caches by itself: no write price; cached input is "cache read".
+  'gpt-6.1-terra': [1, 5, 0.05, 0],
   'text-embedding-3-small': [0.02, 0, 0, 0],
 };
 /** OpenAI transcription, per minute of audio. */

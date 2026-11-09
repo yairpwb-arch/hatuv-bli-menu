@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { nextSaturday } from '@/lib/programStart';
+import { TRACKS, programEnd, trackLabel } from '@/lib/programTracks';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -64,6 +65,7 @@ interface User {
   phone_number: string | null;
   is_active: boolean;
   created_at: string;
+  plan_duration_days: number | null;
 }
 
 interface WeightEntry {
@@ -371,7 +373,7 @@ export default function AdminUsers() {
 
   // Add-user form
   const [isAddOpen, setIsAddOpen] = useState(false);
-  const [newUser, setNewUser] = useState({ email: '', password: '', startDate: nextSaturday() });
+  const [newUser, setNewUser] = useState({ email: '', password: '', startDate: nextSaturday(), planDays: 0 });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Tab-specific data
@@ -450,6 +452,7 @@ export default function AdminUsers() {
       height: user.height ?? undefined,
       phone_number: (user as any).phone_number || '',
       start_date: user.start_date || '',
+      plan_duration_days: user.plan_duration_days ?? undefined,
       is_active: user.is_active,
       initial_weight: user.initial_weight ?? undefined,
       current_weight: user.current_weight ?? undefined,
@@ -877,6 +880,7 @@ export default function AdminUsers() {
         height: editPersonal.height ?? null,
         phone_number: (editPersonal as any).phone_number || null,
         start_date: editPersonal.start_date || null,
+        ...(editPersonal.plan_duration_days ? { plan_duration_days: editPersonal.plan_duration_days } : {}),
         is_active: editPersonal.is_active ?? true,
         initial_weight: editPersonal.initial_weight ?? null,
         current_weight: editPersonal.current_weight ?? null,
@@ -978,19 +982,23 @@ export default function AdminUsers() {
       toast({ title: 'שגיאה', description: 'אנא מלא את כל השדות', variant: 'destructive' });
       return;
     }
+    if (!newUser.planDays) {
+      toast({ title: 'שגיאה', description: 'צריך לבחור מסלול: 6 או 10 חודשים', variant: 'destructive' });
+      return;
+    }
     setIsSubmitting(true);
 
     // Everything else (name, body details, goal) comes from the trainee's
     // onboarding questionnaire on first login.
     const { data: fnData, error: fnError } = await supabase.functions.invoke('admin-create-user', {
-      body: { email: newUser.email.trim(), password: newUser.password, start_date: newUser.startDate },
+      body: { email: newUser.email.trim(), password: newUser.password, start_date: newUser.startDate, plan_duration_days: newUser.planDays },
     });
     if (fnError || fnData?.error) {
       const msg = fnData?.error || fnError?.message || 'שגיאה ביצירת משתמש';
       toast({ title: 'שגיאה', description: msg, variant: 'destructive' });
     } else {
       toast({ title: 'הצלחה', description: 'המשתמש נוסף בהצלחה' });
-      setNewUser({ email: '', password: '', startDate: nextSaturday() });
+      setNewUser({ email: '', password: '', startDate: nextSaturday(), planDays: 0 });
       setIsAddOpen(false);
       fetchUsers();
     }
@@ -1036,6 +1044,28 @@ export default function AdminUsers() {
                   );
                 })()}
               </div>
+              <div className="space-y-1">
+                <Label>מסלול</Label>
+                <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="מסלול">
+                  {TRACKS.map(t => (
+                    <Button
+                      key={t.days}
+                      type="button"
+                      role="radio"
+                      aria-checked={newUser.planDays === t.days}
+                      variant={newUser.planDays === t.days ? 'default' : 'outline'}
+                      onClick={() => setNewUser(p => ({ ...p, planDays: t.days }))}
+                    >
+                      {t.label}
+                    </Button>
+                  ))}
+                </div>
+                {newUser.planDays > 0 && newUser.startDate && (
+                  <p className="text-xs text-muted-foreground">
+                    {newUser.planDays / 7} שבועות · מסתיים ב-{format(new Date(`${programEnd(newUser.startDate, newUser.planDays)}T12:00:00`), 'd.M.yyyy')}
+                  </p>
+                )}
+              </div>
               <p className="text-xs text-muted-foreground">שאר הפרטים (שם, גיל, גובה, משקל, מטרה) המתאמן ממלא בשאלון הפתיחה בכניסה הראשונה.</p>
               <div className="grid grid-cols-2 gap-3 pt-1">
                 <Button variant="outline" onClick={() => setIsAddOpen(false)} disabled={isSubmitting}>ביטול</Button>
@@ -1060,6 +1090,7 @@ export default function AdminUsers() {
                   <TableHead className="text-right">שם</TableHead>
                   <TableHead className="text-right">אימייל</TableHead>
                   <TableHead className="text-right">יום</TableHead>
+                  <TableHead className="text-right">מסלול</TableHead>
                   <TableHead className="text-right">משקל</TableHead>
                   <TableHead className="text-right">סטטוס</TableHead>
                   <TableHead className="text-right">עריכה</TableHead>
@@ -1071,6 +1102,7 @@ export default function AdminUsers() {
                     <TableCell className="font-medium">{user.full_name || '-'}</TableCell>
                     <TableCell dir="ltr" className="text-left text-sm">{user.email}</TableCell>
                     <TableCell>{calcCurrentDay(user.start_date)}</TableCell>
+                    <TableCell className="whitespace-nowrap">{trackLabel(user.plan_duration_days)}</TableCell>
                     <TableCell>{user.current_weight ? `${user.current_weight} ק"ג` : '-'}</TableCell>
                     <TableCell>
                       <Badge variant={user.is_active ? 'default' : 'secondary'}>{user.is_active ? 'פעיל' : 'לא פעיל'}</Badge>
@@ -1182,6 +1214,27 @@ export default function AdminUsers() {
                       </p>
                     );
                   })()}
+                </div>
+                <div className="space-y-1">
+                  <Label>מסלול</Label>
+                  <Select
+                    value={editPersonal.plan_duration_days ? String(editPersonal.plan_duration_days) : ''}
+                    onValueChange={v => setEditPersonal(p => ({ ...p, plan_duration_days: Number(v) }))}
+                  >
+                    <SelectTrigger><SelectValue placeholder="בחר מסלול" /></SelectTrigger>
+                    <SelectContent>
+                      {TRACKS.map(t => <SelectItem key={t.days} value={String(t.days)}>{t.label}</SelectItem>)}
+                      {/* A length set before the tracks existed stays selectable as is. */}
+                      {editingUser?.plan_duration_days && !TRACKS.some(t => t.days === editingUser.plan_duration_days) && (
+                        <SelectItem value={String(editingUser.plan_duration_days)}>{trackLabel(editingUser.plan_duration_days)} (נוכחי)</SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                  {editPersonal.plan_duration_days && editPersonal.start_date && (
+                    <p className="text-xs text-muted-foreground">
+                      מסתיים ב-{format(new Date(`${programEnd(editPersonal.start_date, editPersonal.plan_duration_days)}T12:00:00`), 'd.M.yyyy')}
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center gap-3 col-span-2 pt-1">
                   <Switch

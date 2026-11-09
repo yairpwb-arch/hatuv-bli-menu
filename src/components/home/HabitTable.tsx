@@ -6,6 +6,8 @@ import { CUTLERY, PLATE, TABLE_H, TABLE_SLOTS, TableKey, hitAreaAt, isTableKey, 
 import { selectionHaptic, successHaptic, tapHaptic } from '@/lib/native';
 import { cn } from '@/lib/utils';
 import { AppleFruit } from './table/AppleFruit';
+import { CoffeeCup } from './table/CoffeeCup';
+import { HabitsInfo } from './HabitsInfo';
 import { Fork, Knife } from './table/Cutlery';
 import { OliveOil } from './table/OliveOil';
 import { Plate } from './table/Plate';
@@ -23,12 +25,13 @@ const OBJECTS: Record<SlotKey, (p: TableObjectProps) => JSX.Element> = {
   olive_oil: OliveOil,
   fruit_snack: AppleFruit,
   water_before_snack: SmallGlass,
+  coffee_sugar: CoffeeCup,
 };
 
 /** Tag order under the table follows the table, roughly top to bottom. */
 const ORDER: TableKey[] = [
   'water_before_meal', 'one_sauce', 'one_plate', 'plate_thirds', 'plate_protein', 'plate_veggies',
-  'fruit_snack', 'water_before_snack', 'olive_oil',
+  'fruit_snack', 'water_before_snack', 'coffee_sugar', 'olive_oil',
 ];
 
 /** One object placed on the table, centred on its slot. */
@@ -91,9 +94,11 @@ interface HabitTableProps {
   onPerfectDay: () => void;
   /** When the first habit opens, for the empty table ("מחר", "בעוד 3 ימים"). */
   firstOpens?: string | null;
+  /** Every habit in progress now (on the table or not), for the "what's this" list. */
+  allHabits?: Habit[];
 }
 
-export function HabitTable({ habits, onToggle, onPerfectDay, firstOpens }: HabitTableProps) {
+export function HabitTable({ habits, onToggle, onPerfectDay, firstOpens, allHabits = habits }: HabitTableProps) {
   const [explain, setExplain] = useState<Habit | null>(null);
   const [celebrate, setCelebrate] = useState(false);
 
@@ -155,8 +160,11 @@ export function HabitTable({ habits, onToggle, onPerfectDay, firstOpens }: Habit
 
   return (
     <Card className="space-y-2.5 p-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-card-title">השולחן של היום</h3>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1">
+          <h3 className="text-card-title">השולחן של היום</h3>
+          {allHabits.length > 0 && <HabitsInfo habits={allHabits} />}
+        </div>
         {!empty && <span className={cn('text-label font-semibold tabular-nums', allDone ? 'text-success' : 'text-muted-foreground')}>
           {done} מתוך {habits.length}
         </span>}

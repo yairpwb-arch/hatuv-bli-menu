@@ -17,9 +17,10 @@ export type TableKey =
   | 'one_sauce'
   | 'olive_oil'
   | 'fruit_snack'
-  | 'water_before_snack';
+  | 'water_before_snack'
+  | 'coffee_sugar';
 
-export type SummaryKey = 'routine_wake_eat' | 'routine_stop_eating' | 'no_sweet_drinks' | 'coffee_sugar' | 'routine_sleep';
+export type SummaryKey = 'routine_wake_eat' | 'routine_stop_eating' | 'no_sweet_drinks' | 'routine_sleep';
 
 export type HiddenKey = 'slow_eating' | 'meals_4';
 
@@ -27,10 +28,10 @@ export type VisualKey = TableKey | SummaryKey | HiddenKey;
 
 const TABLE_KEYS: TableKey[] = [
   'water_before_meal', 'plate_thirds', 'plate_veggies', 'plate_protein', 'one_plate', 'one_sauce',
-  'olive_oil', 'fruit_snack', 'water_before_snack',
+  'olive_oil', 'fruit_snack', 'water_before_snack', 'coffee_sugar',
 ];
 /** In the order they're asked; the summary shows at most 4. */
-export const SUMMARY_KEYS: SummaryKey[] = ['routine_wake_eat', 'routine_stop_eating', 'no_sweet_drinks', 'coffee_sugar', 'routine_sleep'];
+export const SUMMARY_KEYS: SummaryKey[] = ['routine_wake_eat', 'routine_stop_eating', 'no_sweet_drinks', 'routine_sleep'];
 const HIDDEN_KEYS: HiddenKey[] = ['slow_eating', 'meals_4'];
 const ALL_KEYS: string[] = [...TABLE_KEYS, ...SUMMARY_KEYS, ...HIDDEN_KEYS];
 
@@ -54,9 +55,12 @@ const SHORT_LABELS: Record<TableKey, string> = {
   fruit_snack: 'מאכלים בריאים',
   water_before_snack: 'מים לפני נשנוש',
   olive_oil: 'שמן זית',
+  coffee_sugar: 'סוכר בקפה',
 };
 
 export function shortLabel(h: { name: string; visual_key: VisualKey | null }): string {
+  // Coffee: two habits on the same cup (half the sugar, then none).
+  if (h.visual_key === 'coffee_sugar') return h.name.includes('חצי') ? 'חצי סוכר בקפה' : 'בלי סוכר בקפה';
   if (isTableKey(h.visual_key)) return SHORT_LABELS[h.visual_key];
   return h.name.split(/\s+/).slice(0, 3).join(' ');
 }
@@ -88,6 +92,8 @@ export const TABLE_SLOTS: Record<Exclude<TableKey, 'plate_thirds' | 'plate_veggi
   water_before_snack: { cx: 0.25, cy: 0.715, w: 0.12, ratio: 80 / 64 },
   // bottom-right
   olive_oil: { cx: 0.9, cy: 0.705, w: 0.09, ratio: 2 },
+  // bottom-right, beside the oil: the coffee cup (mirrors the small glass on the left)
+  coffee_sugar: { cx: 0.735, cy: 0.715, w: 0.16, ratio: 64 / 80 },
 };
 
 /** CSS position (in % of the table box) for a centre given in W units. */

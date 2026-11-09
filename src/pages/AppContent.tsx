@@ -274,6 +274,7 @@ export default function AppContent() {
     );
   }
 
+  const shoppingOpen = !!allContent.find((i) => shoppingList(i.body))?.isUnlocked;
   const nextTitle = nextUp?.title ?? lockedNextLabel;
   const initials = (profile?.full_name ?? '')
     .trim()
@@ -303,16 +304,19 @@ export default function AppContent() {
           <p className="text-label text-muted-foreground">{completedContent} מתוך {totalContent} תכנים הושלמו</p>
         </Card>
 
+        {/* The shopping list shows only once its stage opened; until then the guides take its place. */}
         <div className="grid grid-cols-2 gap-3">
           <Button variant="outline" onClick={handleSnacksBookClick}>
             <BookText strokeWidth={2} />
             ספר נשנושים
           </Button>
-          <Button variant="outline" onClick={handleShoppingListClick}>
-            <ShoppingCart strokeWidth={2} />
-            רשימת קניות
-          </Button>
-          <Button variant="outline" className="col-span-2" onClick={() => navigate('/app/guides')}>
+          {shoppingOpen && (
+            <Button variant="outline" onClick={handleShoppingListClick}>
+              <ShoppingCart strokeWidth={2} />
+              רשימת קניות
+            </Button>
+          )}
+          <Button variant="outline" className={shoppingOpen ? 'col-span-2' : undefined} onClick={() => navigate('/app/guides')}>
             <FileText strokeWidth={2} />
             ספריית מדריכים
           </Button>

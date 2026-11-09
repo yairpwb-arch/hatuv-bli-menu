@@ -10,7 +10,7 @@
 //   - not if one of us wrote in the group in the last 6 hours.
 
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
-import { buildPrompt, composeReply, runModel, toReply } from '../whatsapp-webhook/brain.ts';
+import { buildPrompt, composeReply, maxParts, runModel, toReply } from '../whatsapp-webhook/brain.ts';
 import { TEST_GROUP_ID, alertHandoff, deliver, readChat, sendTyping } from '../_shared/wa.ts';
 
 type Row = Record<string, any>;
@@ -284,9 +284,9 @@ export async function proactive(db: SupabaseClient) {
 
     if (!kind) continue;
     const prompt = await buildPrompt(db, g.chat_id, g.user_id, query, false, undefined, undefined, task, extra);
-    const { text, refused } = await runModel(db, prompt, { chatId: g.chat_id, userId: g.user_id });
+    const { text, refused, model } = await runModel(db, prompt, { chatId: g.chat_id, userId: g.user_id });
     if (refused) continue;
-    const { parts, handoff } = toReply(text);
+    const { parts, handoff } = toReply(text, maxParts(model));
     if (!parts.length) continue;
     if (handoff) await alertHandoff(db, g.chat_id, g.user_id, parts.join('\n'), true);
     await deliver(db, g.chat_id, g.user_id, parts);
