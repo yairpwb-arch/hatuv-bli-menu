@@ -72,7 +72,7 @@ function ViewToggle({ view, onChange }: { view: ContentView; onChange: (v: Conte
 }
 
 export default function AppContent() {
-  const { currentDay, user, profile } = useAuth();
+  const { contentDay: currentDay, startsIn, user, profile } = useAuth();
   const navigate = useNavigate();
   const [allContent, setAllContent] = useState<ContentItem[]>([]);
   const [partMetas, setPartMetas] = useState<PartMeta[]>([]);
@@ -132,7 +132,7 @@ export default function AppContent() {
   const nextUp = useMemo(() => allContent.find((i) => i.isUnlocked && !i.isCompleted) ?? null, [allContent]);
   const soon = useMemo(() => allContent.find((i) => !i.isUnlocked) ?? null, [allContent]);
   const currentId = nextUp?.id ?? null;
-  const lockedNextLabel = !nextUp && soon ? `התוכן הבא נפתח ${soon.daysUntilUnlock > 0 ? inDays(soon.daysUntilUnlock) : 'אחרי השלב הנוכחי'}` : null;
+  const lockedNextLabel = startsIn > 0 ? `התהליך שלך מתחיל ${inDays(startsIn)}, ואז נפתח התוכן הראשון` : !nextUp && soon ? `התוכן הבא נפתח ${soon.daysUntilUnlock > 0 ? inDays(soon.daysUntilUnlock) : 'אחרי השלב הנוכחי'}` : null;
 
   const unlockedIds = useMemo(() => allContent.filter((i) => i.isUnlocked).map((i) => i.id), [allContent]);
   const completedParts = useMemo(() => parts.filter((p) => p.complete).map((p) => p.number), [parts]);

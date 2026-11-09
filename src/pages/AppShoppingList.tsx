@@ -38,7 +38,7 @@ export function shoppingMessage(categories: ShoppingCategory[], marked: Set<stri
  */
 export default function AppShoppingList() {
   const navigate = useNavigate();
-  const { user, currentDay } = useAuth();
+  const { user, contentDay: currentDay } = useAuth();
   const [row, setRow] = useState<Row | null>(null);
   const [snacksBook, setSnacksBook] = useState('');
   const [isLoading, setIsLoading] = useState(true);

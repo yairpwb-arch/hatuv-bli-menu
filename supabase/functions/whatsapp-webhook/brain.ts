@@ -49,7 +49,9 @@ async function clientContext(db: SupabaseClient, userId: string | null, day: num
   const lines: string[] = [];
   if (p) {
     lines.push(`לקוח: ${p.full_name ?? 'לא ידוע'} (${p.gender === 'female' ? 'אישה' : p.gender === 'male' ? 'גבר' : 'מין לא ידוע'}).`);
-    if (day != null) lines.push(day >= 1 ? `יום ${day} בתהליך, שבוע ${Math.ceil(day / 7)}.` : `התהליך מתחיל בעוד ${1 - day} ימים.`);
+    if (day != null) lines.push(day >= 1
+      ? `יום ${day} בתהליך, שבוע ${Math.ceil(day / 7)}.`
+      : `התהליך עוד לא התחיל: מתחיל בעוד ${1 - day} ימים (ביום שבת). אין לו עדיין הרגלים, סרטונים או משימות, והתוכן באפליקציה נעול עד אז. אל תיתן לו משימות ואל תדבר על הרגלים או תוכן מהתוכנית; אפשר לענות על שאלות, להרגיע ולהגיד שמתחילים בשבת.`);
     lines.push(`משקל התחלה ${p.initial_weight ?? '?'}, נוכחי ${p.current_weight ?? '?'}, יעד ${p.target_weight ?? '?'} ק"ג. שינה ${p.sleep_time ?? '?'}–${p.wake_time ?? '?'}.`);
   }
   // This stage's habits (what the client works on now).
@@ -90,6 +92,8 @@ async function clientContext(db: SupabaseClient, userId: string | null, day: num
 
 /** The program's chunks closest to the question, from what the client has reached. */
 async function fromProgram(db: SupabaseClient, question: string, day: number | null): Promise<string> {
+  // Before the start date nothing of the program is open to the client yet.
+  if (day != null && day < 1) return '';
   const v = await embed(db, [question]);
   if (!v) return '';
   const { data, error } = await db.rpc('match_bot_knowledge', { q: vectorLiteral(v[0]), max_day: Math.max(1, day ?? 1), k: 4 });

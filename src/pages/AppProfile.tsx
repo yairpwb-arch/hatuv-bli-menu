@@ -65,7 +65,7 @@ function DetailRow({ label, value, onEdit }: { label: string; value: string; onE
 }
 
 export default function AppProfile() {
-  const { user, currentDay, currentWeek, planDays, refreshProfile } = useAuth();
+  const { user, currentDay, contentDay, currentWeek, planDays, refreshProfile } = useAuth();
   const { goal: stepGoal } = useStepGoal();
   const navigate = useNavigate();
   const { currentStreak, perfectDaysThisMonth } = useStreak(user?.id, currentWeek);
@@ -116,16 +116,16 @@ export default function AppProfile() {
       done: new Set((progressRes.data || []).map((p) => p.content_id).filter((id) => ids.has(id))).size,
       total: content.length,
     });
-    const unlocked = content.filter((c) => c.unlock_day <= currentDay);
+    const unlocked = content.filter((c) => c.unlock_day <= contentDay);
     // Parts 1–3 are the journey; 5 is the separate habits-basics track.
     const parts = unlocked.map((c) => c.part_number).filter((n) => Number.isFinite(n) && n < 5);
     setPart(parts.length ? Math.max(...parts) : null);
-    const next = content.find((c) => c.unlock_day > currentDay);
-    setNextUnlock(next ? { title: next.title, days: next.unlock_day - currentDay } : null);
+    const next = content.find((c) => c.unlock_day > contentDay);
+    setNextUnlock(next ? { title: next.title, days: next.unlock_day - contentDay } : null);
 
     setPlan({ workoutDays: (workoutRes.data || []).length, walkDays: (walkRes.data || []).length });
     setIsLoading(false);
-  }, [user, currentDay]);
+  }, [user, contentDay]);
 
   useEffect(() => {
     load();

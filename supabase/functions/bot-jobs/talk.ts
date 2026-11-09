@@ -220,8 +220,11 @@ export async function proactive(db: SupabaseClient) {
   const sent: Row[] = [];
 
   for (const g of await talkingGroups(db)) {
-    const { data: profile } = await db.from('profiles').select('full_name, sleep_time, wake_time').eq('id', g.user_id).maybeSingle();
+    const { data: profile } = await db.from('profiles').select('full_name, sleep_time, wake_time, start_date').eq('id', g.user_id).maybeSingle();
     if (!profile || asleep(profile, now)) continue;
+    // Before the start date there's nothing to check in on: the bot only answers.
+    const todayYmd = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
+    if (!profile.start_date || profile.start_date > todayYmd) continue;
     const [{ data: today }, { data: coach }] = await Promise.all([
       db.from('bot_proactive').select('kind, sent_at').eq('chat_id', g.chat_id).gte('sent_at', new Date(now.getTime() - 3 * 86400_000).toISOString()),
       db.from('whatsapp_messages').select('id').eq('chat_id', g.chat_id).eq('sender', 'coach').gte('created_at', new Date(now.getTime() - 6 * HOUR).toISOString()).limit(1),

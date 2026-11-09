@@ -50,7 +50,7 @@ export default function AppGuide() {
   const { id } = useParams<{ id: string }>();
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const { user, currentDay, profile } = useAuth();
+  const { user, contentDay: currentDay, profile } = useAuth();
   const [guide, setGuide] = useState<Guide | null>(null);
   const [avatar, setAvatar] = useState(DEFAULT_AVATAR);
   const [snacksBook, setSnacksBook] = useState('');

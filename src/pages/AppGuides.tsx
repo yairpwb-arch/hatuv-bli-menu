@@ -28,7 +28,7 @@ const countLabel = (n: number) => (n === 1 ? 'מדריך אחד זמין' : `${n
 /** The guides library: a full screen of big cards, filtered by topic. */
 export default function AppGuides() {
   const navigate = useNavigate();
-  const { user, currentDay } = useAuth();
+  const { user, contentDay: currentDay } = useAuth();
   const [guides, setGuides] = useState<Guide[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [topic, setTopic] = useState<GuideCategory | 'all'>('all');

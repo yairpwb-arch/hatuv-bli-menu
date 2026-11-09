@@ -28,6 +28,10 @@ interface AuthContextType {
   currentDay: number;
   currentWeek: number;
   planDays: number;
+  /** The program day for content unlocks: ≤ 0 before the start date. */
+  contentDay: number;
+  /** Days until the program starts; 0 once it has. */
+  startsIn: number;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
@@ -47,9 +51,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   
   const planDays = profile?.plan_duration_days ?? 252;
 
-  const currentDay = profile?.start_date
-    ? Math.max(1, Math.floor((Date.now() - new Date(profile.start_date).getTime()) / (1000 * 60 * 60 * 24)) + 1)
+  // The real program day: 0 or less before the start date.
+  const rawDay = profile?.start_date
+    ? Math.floor((Date.now() - new Date(profile.start_date).getTime()) / (1000 * 60 * 60 * 24)) + 1
     : 1;
+  const currentDay = Math.max(1, rawDay);
+  /** For content unlocks: before the start date nothing is open (the app itself is). */
+  const contentDay = Math.min(rawDay, currentDay);
+  /** Days until the program starts; 0 once it has. */
+  const startsIn = Math.max(0, 1 - rawDay);
 
   // Calendar-week based (Sunday boundaries), capped by rolling 7-day week.
   // Prevents users who start late in the week from jumping to week 2 after only 1-2 days.
@@ -215,6 +225,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       currentDay,
       currentWeek,
       planDays,
+      contentDay,
+      startsIn,
       signIn,
       signUp,
       signOut,

@@ -34,7 +34,7 @@ function writeSeen(userId: string, ids: Iterable<string>) {
  * Re-checked on every navigation so the dots clear as soon as the trainee acts.
  */
 export function useTabBadges(): TabBadges {
-  const { user, currentDay, currentWeek } = useAuth();
+  const { user, contentDay: currentDay, currentWeek } = useAuth();
   const { pathname } = useLocation();
   const [badges, setBadges] = useState<TabBadges>({});
 
