@@ -1,81 +1,68 @@
-// The bot's answer: the client's data from the app, the group's recent messages,
-// our closest past answers (bot_examples) and the style guide → Claude → up to
-// three short WhatsApp messages.
+// The bot's answer. Its prompt:
+//   system: the rules + the coaches' style guide (both in bot_settings, cached)
+//   message: now · the client's app data · what we know about the client ·
+//            from our program (closest chunks the client has reached) ·
+//            our closest past answers · the group's last messages
+// → Claude → up to three short WhatsApp messages, and whether to hand off to us.
 
 import Anthropic from 'npm:@anthropic-ai/sdk';
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
+import { claudeUsage, costOf, embed, logUsage, setting, vectorLiteral } from '../_shared/botkit.ts';
 
-// The cheapest current model while testing (Sonnet 5.5 / Opus 5.5 for more quality).
-const MODEL = 'claude-haiku-5-5';
+// Chosen after the model test (Haiku 5.5 vs Sonnet 5.5).
+export const MODEL = 'claude-sonnet-5-5';
 const anthropic = Deno.env.get('ANTHROPIC_API_KEY') ? new Anthropic() : null;
 export const brainReady = () => !!anthropic;
 
-// Stable instructions (cached); the style guide is appended from bot_settings.
-const RULES = `אתה "העוזר הדיגיטלי של חטוב בלי תפריט" — תהליך ליווי לירידה במשקל דרך הרגלים, בלי דיאטה.
-אתה משתתף בקבוצת וואטסאפ של לקוח אחד, יחד עם המאמנים (יאיר לוזון וזיגר). אתה כותב בשם הצוות ("אנחנו"), לא מתחזה לאף מאמן.
-אם שואלים מי אתה: העוזר הדיגיטלי של חטוב בלי תפריט, שעוזר למאמנים ללוות את הלקוח בין ההודעות שלהם.
+/** Used only if bot_settings has no "rules" (they're edited in the dashboard). */
+const FALLBACK_RULES = `אתה "העוזר הדיגיטלי של חטוב בלי תפריט". אתה כותב בשם הצוות ("אנחנו"), קצר וחם, עד 3 הודעות קצרות מופרדות בשורה ---. לא עצה רפואית; כאב, פציעה, מחלה, הריון, אכילה לא בריאה, רצון לעזוב או תלונה: אומרים שתעביר למאמנים ומסמנים [העבר]. אם אין צורך לענות, כתוב רק: [שקט]`;
 
-איך לכתוב:
-- כמו המאמנים: קצר, חם, ישיר, בעברית מדוברת, בגוף שני לפי מין הלקוח (לא בלוכסן).
-- עד 3 הודעות קצרות. כל הודעה בשורה/פסקה משלה, ובין הודעות שורה שבה רק ---
-- בלי רשימות, בלי כותרות, בלי הדגשות, בלי "כמובן", בלי הרצאות. לכל היותר אימוג'י אחד, ולא בכל הודעה.
-- הגב קצר למה שהלקוח כתב, ובדרך כלל המשך בשאלה אחת שמבררת פרטים או עוזרת לו להתקדם.
-- השתמש בנתונים מהאפליקציה כשהם רלוונטיים (שלב, הרגלים, שקילות, אימונים, צעדים), במספרים מדויקים. אל תמציא נתונים שלא קיבלת.
-
-גבולות:
-- לא עצה רפואית, לא שינוי תרופות או טיפול. כאב, פציעה, מחלה, תרופות: מגיבים באמפתיה ואומרים שתעביר למאמנים.
-- לא מבטיחים בשם המאמנים (מחירים, שינויים בתוכנית, פגישות): אומרים שתעביר להם.
-- לא תפריטים ולא ספירת קלוריות. אנחנו משנים הרגלים.
-- הדוגמאות שתקבל הן תשובות אמיתיות של המאמנים ללקוחות אחרים, בשביל הסגנון בלבד. אסור להזכיר מהן עובדות, אנשים או מקרים.
-- לא "משימות השבוע" ולא "המשפט היומי".
-- "[הודעה קולית] …" הוא תמלול אוטומטי של הקלטה: התייחס לתוכן כאילו נכתב, וקח בחשבון שייתכנו טעויות תמלול. אם כתוב שלא הצלחנו לתמלל, בקש בעדינות לכתוב או להקליט שוב.
-- אם אין צורך לענות (למשל הודעה של המאמנים לעצמם, או "👍" שסוגר שיחה), כתוב רק: [שקט]`;
+export const HANDOFF_TAG = '[העבר]';
 
 type Row = Record<string, any>;
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 const daysAgo = (n: number) => iso(new Date(Date.now() - n * 86400_000));
+const WD = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'];
+
+/** The client's day in the program (day 1 = start date), or null. */
+async function programDay(db: SupabaseClient, userId: string | null): Promise<number | null> {
+  if (!userId) return null;
+  const { data } = await db.from('profiles').select('start_date').eq('id', userId).maybeSingle();
+  if (!data?.start_date) return null;
+  return Math.floor((Date.now() - new Date(`${data.start_date}T00:00:00`).getTime()) / 86400_000) + 1;
+}
 
 /** What the app knows about the client, as short Hebrew lines. */
-async function clientContext(db: SupabaseClient, userId: string | null): Promise<string> {
+async function clientContext(db: SupabaseClient, userId: string | null, day: number | null): Promise<string> {
   if (!userId) return 'אין לקוח משויך לקבוצה הזו (קבוצת ניסיון): אין נתונים מהאפליקציה.';
-  const [profile, onboarding, weights, steps, habitsLog, acts, checkin, summaries, schedule, walks] = await Promise.all([
-    db.from('profiles').select('full_name, gender, start_date, initial_weight, current_weight, target_weight, sleep_time, wake_time').eq('id', userId).maybeSingle(),
+  const [profile, onboarding, weights, steps, acts, checkin, schedule, walks] = await Promise.all([
+    db.from('profiles').select('full_name, gender, initial_weight, current_weight, target_weight, sleep_time, wake_time').eq('id', userId).maybeSingle(),
     db.from('onboarding_responses').select('answers').eq('user_id', userId).maybeSingle(),
     db.from('weight_log').select('weight, recorded_at').eq('user_id', userId).order('recorded_at', { ascending: false }).limit(6),
     db.from('steps_log').select('date, steps').eq('user_id', userId).gte('date', daysAgo(7)).order('date'),
-    db.from('daily_habits_log').select('habit_id, completed_at').eq('user_id', userId).gte('completed_at', daysAgo(7)),
     db.from('activities').select('kind, custom_name, day, duration_min, status').eq('user_id', userId).gte('day', daysAgo(10)).order('day'),
-    db.from('weekly_checkin').select('week_number, answers, weight_today').eq('user_id', userId).order('week_number', { ascending: false }).limit(1),
-    db.from('daily_summaries').select('summary_date, energy, hunger, proud_of').eq('user_id', userId).order('summary_date', { ascending: false }).limit(3),
+    db.from('weekly_checkin').select('week_number, answers').eq('user_id', userId).order('week_number', { ascending: false }).limit(1),
     db.from('workout_day_schedule').select('weekday, workout_plan_days(name)').eq('user_id', userId),
     db.from('user_walking_schedule').select('day_of_week, is_active').eq('user_id', userId),
   ]);
   const p = profile.data as Row | null;
   const lines: string[] = [];
-  const WD = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'];
-
-  let day: number | null = null;
   if (p) {
-    if (p.start_date) day = Math.floor((Date.now() - new Date(`${p.start_date}T00:00:00`).getTime()) / 86400_000) + 1;
     lines.push(`לקוח: ${p.full_name ?? 'לא ידוע'} (${p.gender === 'female' ? 'אישה' : p.gender === 'male' ? 'גבר' : 'מין לא ידוע'}).`);
     if (day != null) lines.push(day >= 1 ? `יום ${day} בתהליך, שבוע ${Math.ceil(day / 7)}.` : `התהליך מתחיל בעוד ${1 - day} ימים.`);
     lines.push(`משקל התחלה ${p.initial_weight ?? '?'}, נוכחי ${p.current_weight ?? '?'}, יעד ${p.target_weight ?? '?'} ק"ג. שינה ${p.sleep_time ?? '?'}–${p.wake_time ?? '?'}.`);
   }
-
-  // This stage's habits and how many of the last 7 days each was ticked.
+  // This stage's habits (what the client works on now).
   if (day != null && day >= 1) {
     const { data: defs } = await db
       .from('habit_definitions')
-      .select('id, name, is_bonus, day_start, day_end')
+      .select('name, is_bonus, day_end')
       .lte('day_start', day)
       .or(`day_end.gte.${day},day_end.is.null`)
       .or(`user_id.is.null,user_id.eq.${userId}`);
-    const done = new Map<string, number>();
-    for (const r of (habitsLog.data ?? []) as Row[]) done.set(r.habit_id, (done.get(r.habit_id) ?? 0) + 1);
-    const hs = ((defs ?? []) as Row[]).filter((h) => !h.is_bonus && h.day_end !== 0);
-    if (hs.length) lines.push('הרגלים בשלב הנוכחי (סומנו ב-7 הימים האחרונים): ' + hs.map((h) => `${h.name} ${done.get(h.id) ?? 0}/7`).join('; ') + '.');
+    const hs = ((defs ?? []) as Row[]).filter((h) => h.day_end !== 0);
+    if (hs.length) lines.push('ההרגלים בשלב הנוכחי: ' + hs.map((h) => h.name + (h.is_bonus ? ' (בונוס)' : '')).join('; ') + '.');
   }
-
   const ws = (weights.data ?? []) as Row[];
   if (ws.length) lines.push('שקילות אחרונות: ' + ws.map((w) => `${w.recorded_at} ${w.weight}`).join(', ') + '.');
   const st = (steps.data ?? []) as Row[];
@@ -92,8 +79,6 @@ async function clientContext(db: SupabaseClient, userId: string | null): Promise
   }
   const ci = (checkin.data ?? [])[0] as Row | undefined;
   if (ci?.answers?.items) lines.push(`שאלון שבועי אחרון (שבוע ${ci.week_number}): ` + (ci.answers.items as Row[]).map((i) => `${i.question} → ${i.answer}`).join('; ') + '.');
-  const sm = (summaries.data ?? []) as Row[];
-  if (sm.length) lines.push('סיכומים יומיים אחרונים: ' + sm.map((s) => `${s.summary_date}: אנרגיה ${s.energy ?? '?'}, רעב ${s.hunger ?? '?'}${s.proud_of ? `, גאה ב: ${s.proud_of}` : ''}`).join(' | ') + '.');
   const ob = (onboarding.data as Row | null)?.answers;
   if (ob) {
     const pick = ['occupation', 'sleep_hours', 'big_meals', 'small_meals', 'walks', 'trains', 'training_types', 'goal', 'max_pullups', 'max_pushups', 'max_squats', 'injuries', 'injuries_other', 'preferred_location'];
@@ -101,6 +86,16 @@ async function clientContext(db: SupabaseClient, userId: string | null): Promise
     if (bits.length) lines.push('שאלון פתיחה: ' + bits.join(', ') + '.');
   }
   return lines.join('\n') || 'אין נתונים מהאפליקציה.';
+}
+
+/** The program's chunks closest to the question, from what the client has reached. */
+async function fromProgram(db: SupabaseClient, question: string, day: number | null): Promise<string> {
+  const v = await embed(db, [question]);
+  if (!v) return '';
+  const { data, error } = await db.rpc('match_bot_knowledge', { q: vectorLiteral(v[0]), max_day: Math.max(1, day ?? 1), k: 4 });
+  if (error) console.error('[bot] knowledge search failed', error.message);
+  const kinds: Record<string, string> = { video: 'סרטון', guide: 'מדריך', stage: 'שלב', shopping: 'רשימת הקניות' };
+  return ((data ?? []) as Row[]).map((c) => `[${kinds[c.source] ?? c.source}: ${c.title}]\n${c.text}`).join('\n\n');
 }
 
 /** The group's last messages, oldest first. */
@@ -122,10 +117,100 @@ async function recentChat(db: SupabaseClient, chatId: string, everyoneIsClient: 
     .join('\n');
 }
 
-/**
- * The bot's reply to the latest client message(s), as separate WhatsApp messages,
- * or [] when it should stay quiet.
- */
+export interface Reply {
+  /** The messages to send (the hand-off tag already removed); empty = stay quiet. */
+  parts: string[];
+  /** The bot marked [העבר]: we get an alert in private. */
+  handoff: boolean;
+}
+
+export interface PromptParts {
+  system: string;
+  user: string;
+}
+
+/** Everything the model gets for one answer (also used by the model test). */
+export async function buildPrompt(
+  db: SupabaseClient,
+  chatId: string,
+  userId: string | null,
+  latest: string,
+  everyoneIsClient = false,
+  /** The model test passes the conversation as it was, instead of the live one. */
+  chatOverride?: string,
+  /** The model test's client: their data as text, and their day (instead of a real client). */
+  testClient?: { ctx: string; day: number },
+  /** A message the bot starts itself (check-in, after a workout, Friday): what to write, instead of a reply. */
+  task?: string,
+  /** Extra data for that message (e.g. the week's numbers on Friday). */
+  extra?: string,
+): Promise<PromptParts> {
+  const day = testClient ? testClient.day : await programDay(db, userId);
+  const [rules, guide, examples, ctx, program, profileRow, chat] = await Promise.all([
+    setting<string>(db, 'rules'),
+    setting<string>(db, 'style_guide'),
+    db.rpc('match_bot_examples', { q: latest, k: 12 }),
+    testClient ? Promise.resolve(testClient.ctx) : clientContext(db, userId, day),
+    fromProgram(db, latest, day),
+    userId ? db.from('client_profiles').select('profile').eq('user_id', userId).maybeSingle() : Promise.resolve({ data: null }),
+    chatOverride != null ? Promise.resolve(chatOverride) : recentChat(db, chatId, everyoneIsClient),
+  ]);
+  const ex = ((examples.data ?? []) as Row[])
+    .map((e, i) => `דוגמה ${i + 1}:${e.context ? `\n(לפני כן המאמן כתב: ${e.context})` : ''}\nלקוח: ${e.client}\nמאמן: ${e.coach}`)
+    .join('\n\n');
+  const known = ((profileRow as { data: Row | null }).data?.profile as string | undefined)?.trim();
+  const now = new Date().toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', weekday: 'long', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+  return {
+    system: `${rules?.trim() || FALLBACK_RULES}\n\n# תדריך הסגנון של המאמנים\n${guide ?? ''}`,
+    user:
+      `# עכשיו\n${now}\n\n# נתוני הלקוח מהאפליקציה\n${ctx}\n\n` +
+      (known ? `# מה שאנחנו יודעים על הלקוח\n${known}\n\n` : '') +
+      (program ? `# מהתוכנית שלנו\n${program}\n\n` : '') +
+      `# תשובות אמיתיות של המאמנים במצבים דומים (סגנון בלבד)\n${ex}\n\n` +
+      (extra ? `# נתונים להודעה הזו\n${extra}\n\n` : '') +
+      `# השיחה בקבוצה (האחרונה בסוף)\n${chat || '(אין עדיין הודעות)'}\n\n` +
+      (task
+        ? `# ההודעה שאתה יוזם עכשיו\n${task}\nרק את הטקסט שיישלח, בלי הסברים. אם אין טעם לשלוח עכשיו, כתוב רק: [שקט]`
+        : `כתוב את התשובה שלך להודעות האחרונות של הלקוח. רק את הטקסט שיישלח, בלי הסברים.`),
+  };
+}
+
+/** One model call on a prompt: the raw text and its cost (logged). */
+export async function runModel(
+  db: SupabaseClient,
+  prompt: PromptParts,
+  opts: { model?: string; kind?: 'reply' | 'eval'; chatId?: string | null; userId?: string | null } = {},
+): Promise<{ text: string; refused: boolean; cost: number }> {
+  if (!anthropic) return { text: '', refused: false, cost: 0 };
+  const model = opts.model ?? MODEL;
+  const request = {
+    model,
+    max_tokens: 4000,
+    output_config: { effort: 'low' },
+    system: [{ type: 'text', text: prompt.system, cache_control: { type: 'ephemeral' } }],
+    messages: [{ role: 'user', content: prompt.user }],
+  };
+  // Sonnet: if its safeguards decline, the request is rerun on a fallback model in the same call.
+  const r = (model.startsWith('claude-sonnet-5-5')
+    ? await anthropic.beta.messages.create({ ...request, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' } as any)
+    : await anthropic.messages.create(request as any)) as Row;
+  const u = claudeUsage(r);
+  await logUsage(db, { kind: opts.kind ?? 'reply', model, chatId: opts.chatId, userId: opts.userId, ...u });
+  const text = ((r.content ?? []) as Row[]).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
+  return { text, refused: r.stop_reason === 'refusal', cost: costOf({ kind: 'reply', model, ...u }) };
+}
+
+/** Splits the model's text into messages; [שקט] → none; [העבר] noted and removed. */
+export function toReply(text: string): Reply {
+  if (!text || text.includes('[שקט]')) return { parts: [], handoff: false };
+  const handoff = text.includes(HANDOFF_TAG);
+  const clean = text.split(HANDOFF_TAG).join('').trim();
+  const parts = clean.split(/\n\s*---\s*\n/).map((s) => s.trim()).filter(Boolean).slice(0, 3);
+  return { parts, handoff };
+}
+
+/** The bot's reply to the latest client message(s). */
 export async function composeReply(
   db: SupabaseClient,
   chatId: string,
@@ -133,42 +218,11 @@ export async function composeReply(
   latest: string,
   /** Test group: whoever writes plays the client, coaches included. */
   everyoneIsClient = false,
-): Promise<string[]> {
-  if (!anthropic) return [];
-  const [guideRow, examples, ctx, chat] = await Promise.all([
-    db.from('bot_settings').select('value').eq('key', 'style_guide').maybeSingle(),
-    db.rpc('match_bot_examples', { q: latest, k: 12 }),
-    clientContext(db, userId),
-    recentChat(db, chatId, everyoneIsClient),
-  ]);
-  const guide = (guideRow.data?.value as string | undefined) ?? '';
-  const ex = ((examples.data ?? []) as Row[])
-    .map((e, i) => `דוגמה ${i + 1}:${e.context ? `\n(לפני כן המאמן כתב: ${e.context})` : ''}\nלקוח: ${e.client}\nמאמן: ${e.coach}`)
-    .join('\n\n');
-  const now = new Date().toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', weekday: 'long', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
-
-  // (Haiku has no server-side refusal fallback; a refusal is just silence.)
-  const response = await anthropic.messages.create({
-    model: MODEL,
-    max_tokens: 4000,
-    output_config: { effort: 'low' },
-    system: [{ type: 'text', text: `${RULES}\n\n# תדריך הסגנון של המאמנים\n${guide}`, cache_control: { type: 'ephemeral' } }],
-    messages: [
-      {
-        role: 'user',
-        content:
-          `# עכשיו\n${now}\n\n# נתוני הלקוח מהאפליקציה\n${ctx}\n\n` +
-          `# תשובות אמיתיות של המאמנים במצבים דומים (סגנון בלבד)\n${ex}\n\n` +
-          `# השיחה בקבוצה (האחרונה בסוף)\n${chat}\n\n` +
-          `כתוב את התשובה שלך להודעות האחרונות של הלקוח. רק את הטקסט שיישלח, בלי הסברים.`,
-      },
-    ],
-  } as any);
-
-  const r = response as any;
-  console.log(JSON.stringify({ bot: 'usage', model: r.model, stop: r.stop_reason, usage: r.usage }));
-  if (r.stop_reason === 'refusal') return [];
-  const text = ((r.content ?? []) as Row[]).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
-  if (!text || text.includes('[שקט]')) return [];
-  return text.split(/\n\s*---\s*\n/).map((s) => s.trim()).filter(Boolean).slice(0, 3);
+): Promise<Reply> {
+  if (!anthropic) return { parts: [], handoff: false };
+  const prompt = await buildPrompt(db, chatId, userId, latest, everyoneIsClient);
+  // A refusal that the fallback didn't rescue is just silence.
+  const { text, refused } = await runModel(db, prompt, { chatId, userId });
+  if (refused) return { parts: [], handoff: false };
+  return toReply(text);
 }

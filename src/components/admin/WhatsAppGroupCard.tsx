@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
@@ -132,6 +133,55 @@ export function WhatsAppGroupCard({ userId }: { userId: string }) {
           </div>
         </>
       )}
+      <ClientProfile userId={userId} />
+    </div>
+  );
+}
+
+/** What the bot knows about the client: written weekly, and editable here. */
+function ClientProfile({ userId }: { userId: string }) {
+  const [text, setText] = useState('');
+  const [saved, setSaved] = useState('');
+  const [meta, setMeta] = useState<{ updated_at?: string; edited_at?: string | null } | null>(null);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    db.from('client_profiles').select('profile, updated_at, edited_at').eq('user_id', userId).maybeSingle()
+      .then(({ data }: { data: { profile: string; updated_at: string; edited_at: string | null } | null }) => {
+        setText(data?.profile ?? '');
+        setSaved(data?.profile ?? '');
+        setMeta(data);
+      });
+  }, [userId]);
+  const save = async () => {
+    setSaving(true);
+    const { data: who } = await supabase.auth.getUser();
+    const now = new Date().toISOString();
+    const { error } = await db.from('client_profiles').upsert(
+      { user_id: userId, profile: text, edited_by: who.user?.id ?? null, edited_at: now },
+      { onConflict: 'user_id' },
+    );
+    setSaving(false);
+    if (error) return toast({ title: 'שגיאה', description: error.message, variant: 'destructive' });
+    setSaved(text);
+    setMeta((m) => ({ ...m, edited_at: now }));
+    toast({ title: 'נשמר', description: 'העדכון השבועי הבא יתחיל מהגרסה שלך' });
+  };
+  const when = (d?: string | null) => (d ? new Date(d).toLocaleDateString('he-IL') : null);
+  return (
+    <div className="space-y-2 border-t border-border pt-3">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <Label>מה שאנחנו יודעים על הלקוח</Label>
+          <p className="text-xs text-muted-foreground">
+            {meta?.updated_at ? `עודכן אוטומטית ${when(meta.updated_at)}` : 'מתעדכן אוטומטית במוצאי שבת'}
+            {meta?.edited_at ? ` · נערך ידנית ${when(meta.edited_at)}` : ''}
+          </p>
+        </div>
+        <Button size="sm" onClick={save} disabled={saving || text === saved}>
+          {saving && <Loader2 className="ml-1 h-4 w-4 animate-spin" />}שמירה
+        </Button>
+      </div>
+      <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={7} placeholder="עוד אין תיק. הוא נכתב אחרי שבוע של שיחות בקבוצה." className="text-sm" />
     </div>
   );
 }

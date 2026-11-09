@@ -11,3 +11,7 @@ verify_jwt = false
 # whatsapp-webhook is called by Green API (no Supabase JWT); it checks WEBHOOK_TOKEN itself.
 [functions.whatsapp-webhook]
 verify_jwt = false
+
+# bot-jobs is called by pg_cron (no JWT); it checks x-cron-secret or an admin session itself.
+[functions.bot-jobs]
+verify_jwt = false
