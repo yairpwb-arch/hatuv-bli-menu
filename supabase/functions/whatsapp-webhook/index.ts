@@ -6,7 +6,7 @@
 // real group it never answers or sends anything.
 //
 // How it answers a client:
-//   - a live conversation (the bot wrote in the last 20 minutes): after ~20 s,
+//   - a live conversation (the bot wrote in the last 20 minutes): after ~10 s,
 //     messages in a row answered together;
 //   - a new one: it waits 5 minutes (bot_pending_replies, answered by bot-jobs
 //     'replies'), and stays quiet if one of us answered meanwhile.
@@ -22,6 +22,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 import { brainReady, composeReply } from './brain.ts';
+import { afterReply, coachTurn, reviewCoaches } from './workouts.ts';
 import { logUsage } from '../_shared/botkit.ts';
 import { TEST_GROUP_ID, alertHandoff, coachPhones, deliver, digits, readChat, sendTyping, sleep } from '../_shared/wa.ts';
 
@@ -33,7 +34,7 @@ const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY') ?? '';
 /** The bot wrote within this → the conversation is live. */
 export const LIVE_MS = 20 * 60_000;
 /** A live conversation: answered after this (messages in a row become one answer). */
-const LIVE_WAIT_MS = 20_000;
+const LIVE_WAIT_MS = 10_000;
 /** A new conversation: the bot waits this long for one of us first. */
 const NEW_WAIT_MS = 5 * 60_000;
 
@@ -128,6 +129,24 @@ async function handle(body: any) {
   // How a group's id is found: it's in this line in the function's logs.
   console.log(JSON.stringify({ type, chatId, sender: senderPhone, senderName, chatName: body.senderData?.chatName, text: msg.text }));
 
+  // A coach writing the bot in private: talking a workout review over (for now: the test group's coach).
+  if (chatId.endsWith('@c.us')) {
+    if (type !== 'incomingMessageReceived' || !brainReady() || !(await reviewCoaches(supabase)).has(senderPhone)) return;
+    if (body.messageData?.typeMessage === 'audioMessage' && msg.mediaUrl) {
+      msg.text = await transcribe(msg.mediaUrl, body.messageData?.fileMessageData?.mimeType);
+    }
+    if (!msg.text) return;
+    await saveMessage({ chat_id: chatId, user_id: null, sender: 'coach', sender_phone: senderPhone, sender_name: senderName, text: msg.text, type: msg.type, media_url: msg.mediaUrl, wa_message_id: waId, created_at: at });
+    // Messages in a row are answered once, by the last one ("מאשר" + "תעדכן אותו" = one answer).
+    await sleep(LIVE_WAIT_MS);
+    const { data: newer } = await supabase.from('whatsapp_messages').select('id').eq('chat_id', chatId).eq('sender', 'coach').gt('created_at', at).limit(1);
+    if ((newer ?? []).length) return;
+    await readChat(chatId);
+    await sendTyping(chatId, 6000);
+    await coachTurn(supabase, chatId, msg.text);
+    return;
+  }
+
   const isTest = !!TEST_GROUP_ID && chatId === TEST_GROUP_ID;
   const { data: group } = await supabase.from('whatsapp_groups').select('chat_id, user_id, bot_enabled, draft_mode').eq('chat_id', chatId).maybeSingle();
   // A chat that isn't a trainee's group (and isn't the test group): nothing is kept.
@@ -183,7 +202,7 @@ async function handle(body: any) {
     return;
   }
 
-  // A live conversation: answer in ~20 s; a newer message in the meantime takes over.
+  // A live conversation: answer in ~10 s; a newer message in the meantime takes over.
   await sleep(LIVE_WAIT_MS);
   const { data: newer } = await supabase
     .from('whatsapp_messages')
@@ -197,11 +216,12 @@ async function handle(body: any) {
 
   await readChat(chatId);
   await sendTyping(chatId, 8000);
-  const { parts, handoff } = await composeReply(supabase, chatId, userId, msg.text);
+  const { parts, handoff, review } = await composeReply(supabase, chatId, userId, msg.text);
   // The test group always gets the answer; a real group in draft mode would get only our alert.
   const toGroup = isTest || !group?.draft_mode;
   if (handoff) await alertHandoff(supabase, chatId, userId, parts.join('\n'), toGroup);
   if (toGroup) await deliver(supabase, chatId, userId, parts, true);
+  if (toGroup) await afterReply(supabase, chatId, userId, review);
 }
 
 Deno.serve(async (req) => {

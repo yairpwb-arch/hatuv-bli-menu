@@ -24,6 +24,8 @@ import { useRunBuiltWorkout } from '@/hooks/useRunBuiltWorkout';
 import { ActivityRow, useActivities } from '@/hooks/useActivities';
 import type { ActivityKind } from '@/lib/activityKinds';
 import { Plus } from 'lucide-react';
+import { toast } from 'sonner';
+import { loadMyWorkout } from '@/lib/myWorkouts';
 import { startOfWeek } from 'date-fns';
 
 type View = 'week' | 'calendar' | 'history';
@@ -51,7 +53,17 @@ export default function AppWorkouts() {
   const navigate = useNavigate();
   const runBuiltWorkout = useRunBuiltWorkout(() => setSummaryKey((k) => k + 1));
   // The activity sheet: new (optionally for a day / a kind) or editing one.
-  const [sheet, setSheet] = useState<{ open: boolean; date?: Date; kind?: ActivityKind; existing?: ActivityRow | null }>({ open: false });
+  const [sheet, setSheet] = useState<{ open: boolean; date?: Date; kind?: ActivityKind; existing?: ActivityRow | null; build?: boolean }>({ open: false });
+  /** A planned workout from "האימונים שלי": straight into the workout player. */
+  const runMyWorkout = async (id: string, title: string) => {
+    const w = await loadMyWorkout(id);
+    if (!w || w.items.length === 0) {
+      toast.error('האימון הזה כבר לא שמור. אפשר לבנות אותו מחדש');
+      setSheet({ open: true, build: true });
+      return;
+    }
+    runBuiltWorkout(w.name || title, w.items, 'strength_gym', id);
+  };
   const weekStart = format(startOfWeek(new Date(), { weekStartsOn: 0 }), 'yyyy-MM-dd');
   const doneActs = acts.activities.filter((a) => a.status === 'done');
   const activitiesThisWeek = doneActs.filter((a) => a.day >= weekStart).length;
@@ -158,6 +170,8 @@ export default function AppWorkouts() {
             activities={acts.activities}
             onOpenActivity={(a) => setSheet({ open: true, existing: a })}
             canRemoveWalks={currentDay >= 43}
+            onRunMyWorkout={runMyWorkout}
+            onBuildWorkout={(day) => setSheet({ open: true, date: new Date(`${day}T12:00:00`), build: true })}
           />
           <WatchConnectCard connected={watch.connected} isBusy={watch.isBusy} onConnect={watch.connect} />
         </>
@@ -211,6 +225,7 @@ export default function AppWorkouts() {
         }}
         defaultDate={sheet.date}
         initialKind={sheet.kind}
+        initialStep={sheet.build ? 'build' : undefined}
         existing={sheet.existing}
         replaceable={replaceable}
         onRunWorkout={runBuiltWorkout}

@@ -47,6 +47,8 @@ export interface CalEvent {
   seriesId?: string;
   occurrenceDay?: string;
   repeat?: Repeat;
+  /** A planned workout the trainee built ("האימונים שלי"): "התחל אימון" runs it. */
+  myWorkoutId?: string | null;
 }
 
 /** How a custom event repeats. */
@@ -145,7 +147,8 @@ export function useCalendar(userId: string | undefined, from: Date, to: Date) {
       // Repeating series that started before the range ends (expanded per day below).
       db
         .from('calendar_events')
-        .select('id, type, title, starts_at, ends_at, notes, repeat_rule, repeat_days, repeat_until, excluded_days')
+        // All columns: my_workout_id may not exist yet on an older database.
+        .select('*')
         .eq('user_id', userId)
         .not('repeat_rule', 'is', null)
         .lt('starts_at', endExclusive.toISOString()),
@@ -224,6 +227,7 @@ export function useCalendar(userId: string | undefined, from: Date, to: Date) {
         hasTime: true,
         done: !!e.done_at,
         notes: e.notes,
+        myWorkoutId: e.my_workout_id ?? null,
       });
     }
 
@@ -231,6 +235,7 @@ export function useCalendar(userId: string | undefined, from: Date, to: Date) {
     type SeriesRow = {
       id: string; type: EventType; title: string; starts_at: string; ends_at: string | null; notes: string | null;
       repeat_rule: 'daily' | 'weekly'; repeat_days: number[] | null; repeat_until: string | null; excluded_days: string[] | null;
+      my_workout_id?: string | null;
     };
     for (const r of (seriesRes.data || []) as SeriesRow[]) {
       if (r.repeat_rule !== 'daily' && r.repeat_rule !== 'weekly') continue;
@@ -257,6 +262,7 @@ export function useCalendar(userId: string | undefined, from: Date, to: Date) {
           seriesId: r.id,
           occurrenceDay: dk,
           repeat: { rule: r.repeat_rule, days: r.repeat_days ?? [], until: r.repeat_until },
+          myWorkoutId: r.my_workout_id ?? null,
         });
       }
     }

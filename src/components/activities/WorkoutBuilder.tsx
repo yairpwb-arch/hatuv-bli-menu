@@ -24,7 +24,7 @@ export interface BuiltExercise {
 
 /* Exercises done for time, not reps, start in "זמן" mode: cardio as one long
    stretch, holds (plank, jump rope) as a few short sets. */
-const CARDIO = /running|run|ריצה|הליכה|הליכון|אופניים|אליפטי|סטפר|cardio|קרדיו/i;
+const CARDIO = /running|\brun\b|ריצה|הליכה|הליכון|אופניים|אליפטי|סטפר|cardio|קרדיו/i;
 const HOLD = /פלאנק|plank|חבל/i;
 const DEFAULT_SECONDS = 60;
 function startingPoint(e: Exercise): Pick<BuiltExercise, 'sets' | 'reps' | 'weightKg' | 'seconds'> {
@@ -48,7 +48,12 @@ interface MyWorkout {
  * reps / weight each. Can be saved as "האימון שלי" and reused, or run in the
  * workout player.
  */
-export function WorkoutBuilder({ userId, onRun }: { userId: string; onRun: (name: string, items: BuiltExercise[], myWorkoutId: string | null) => void }) {
+export function WorkoutBuilder({ userId, onRun, onPlan }: {
+  userId: string;
+  onRun: (name: string, items: BuiltExercise[], myWorkoutId: string | null) => void;
+  /** A saved workout → into the calendar on fixed days ("התחל אימון" there runs it). */
+  onPlan?: (myWorkoutId: string, name: string) => void;
+}) {
   const [library, setLibrary] = useState<Exercise[]>([]);
   const [mine, setMine] = useState<MyWorkout[]>([]);
   const [query, setQuery] = useState('');
@@ -257,6 +262,15 @@ export function WorkoutBuilder({ userId, onRun }: { userId: string; onRun: (name
               שמור כ"אימון שלי"
             </Button>
           </SheetActions>
+          {savedId && onPlan && (
+            <button
+              type="button"
+              onClick={() => onPlan(savedId, name.trim() || 'האימון שלי')}
+              className="min-h-[48px] w-full rounded-inner border border-success/40 bg-success/10 text-body font-semibold text-success"
+            >
+              להוסיף ליומן כאימון קבוע
+            </button>
+          )}
         </>
       )}
     </div>

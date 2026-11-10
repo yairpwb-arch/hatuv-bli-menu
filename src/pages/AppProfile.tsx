@@ -12,12 +12,14 @@ import { supabase } from '@/integrations/supabase/client';
 import { useStreak } from '@/hooks/useStreak';
 import { useHabits } from '@/hooks/useHabits';
 import { useAvatarUpload } from '@/hooks/useAvatarUpload';
-import { Card, Pill, PrimaryButton, SecondaryButton, SectionHeader, StatTile } from '@/components/ds';
+import { BottomSheet, Card, Pill, PrimaryButton, SectionHeader, StatTile } from '@/components/ds';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PhotoGallery } from '@/components/profile/PhotoGallery';
+import { DETAIL_FIELDS, DetailEditSheet, type DetailField } from '@/components/profile/DetailEditSheet';
+import { PhotoSourceButtons } from '@/components/profile/PhotoSource';
+import { MeasurementsCard } from '@/components/profile/MeasurementsCard';
+import type { LucideIcon } from 'lucide-react';
 import { initials } from '@/lib/initials';
 import { opensIn } from '@/lib/hebrewDays';
 import { useStepGoal } from '@/hooks/useStepGoal';
@@ -36,7 +38,7 @@ interface ProfileRow {
   birthdate: string | null;
 }
 
-type EditableField = 'height' | 'target_weight' | 'gender' | 'age';
+type EditableField = DetailField;
 
 const GENDER_LABELS: Record<string, string> = { male: 'זכר', female: 'נקבה', other: 'אחר' };
 
@@ -48,14 +50,15 @@ function ageOf(p: ProfileRow): number | null {
   return now.getFullYear() - b.getFullYear() - (now < new Date(now.getFullYear(), b.getMonth(), b.getDate()) ? 1 : 0);
 }
 
-function DetailRow({ label, value, onEdit }: { label: string; value: string; onEdit: () => void }) {
+function DetailRow({ icon: Icon, label, value, onEdit }: { icon: LucideIcon; label: string; value: string; onEdit: () => void }) {
   return (
     <button
       type="button"
       onClick={onEdit}
-      className="flex min-h-[52px] w-full items-center justify-between gap-3 px-1 text-right"
+      className="flex min-h-[52px] w-full items-center gap-3 px-1 text-right"
     >
-      <span className="text-body text-muted-foreground">{label}</span>
+      <Icon className="h-5 w-5 shrink-0 text-primary" strokeWidth={2} aria-hidden />
+      <span className="flex-1 text-body text-muted-foreground">{label}</span>
       <span className="flex items-center gap-2 text-body font-semibold">
         {value}
         <ChevronLeft className="h-4 w-4 text-muted-foreground" strokeWidth={2} />
@@ -150,19 +153,19 @@ export default function AppProfile() {
     setEditing(field);
   };
 
-  const saveEdit = async () => {
-    if (!user || !editing) return;
-    const value = editing === 'gender' ? draft || null : draft ? Number(draft) : null;
-    if (editing !== 'gender' && value != null && Number.isNaN(value)) return;
+  const saveEdit = async (field: EditableField, text: string) => {
+    if (!user) return false;
+    const value = field === 'gender' ? text || null : text ? Number(text) : null;
+    if (field !== 'gender' && value != null && Number.isNaN(value)) return false;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase as any).from('profiles').update({ [editing]: value }).eq('id', user.id);
+    const { error } = await (supabase as any).from('profiles').update({ [field]: value }).eq('id', user.id);
     if (error) {
       toast.error('לא הצלחנו לשמור');
-      return;
+      return false;
     }
-    setProfile((p) => (p ? { ...p, [editing]: value } : p));
-    setEditing(null);
+    setProfile((p) => (p ? { ...p, [field]: value } : p));
     toast.success('נשמר');
+    return true;
   };
 
   if (isLoading || !profile) {
@@ -181,7 +184,6 @@ export default function AppProfile() {
   }
 
   const age = ageOf(profile);
-  const editLabels: Record<EditableField, string> = { height: 'גובה (ס"מ)', target_weight: 'משקל יעד (ק"ג)', gender: 'מין', age: 'גיל' };
 
   return (
     <div className="min-h-screen space-y-card-gap px-4 pb-24 pt-4">
@@ -250,10 +252,10 @@ export default function AppProfile() {
       <Card className="space-y-1">
         <SectionHeader title="הפרטים שלי" />
         <div className="divide-y divide-border">
-          <DetailRow label="גובה" value={profile.height ? `${profile.height} ס"מ` : 'להוספה'} onEdit={() => openEdit('height')} />
-          <DetailRow label="משקל יעד" value={profile.target_weight ? `${formatKg(profile.target_weight)} ק"ג` : 'להוספה'} onEdit={() => openEdit('target_weight')} />
-          <DetailRow label="מין" value={profile.gender ? GENDER_LABELS[profile.gender] ?? profile.gender : 'להוספה'} onEdit={() => openEdit('gender')} />
-          <DetailRow label="גיל" value={age ? String(age) : 'להוספה'} onEdit={() => openEdit('age')} />
+          <DetailRow icon={DETAIL_FIELDS.height.icon} label="גובה" value={profile.height ? `${profile.height} ס"מ` : 'להוספה'} onEdit={() => openEdit('height')} />
+          <DetailRow icon={DETAIL_FIELDS.target_weight.icon} label="משקל יעד" value={profile.target_weight ? `${formatKg(profile.target_weight)} ק"ג` : 'להוספה'} onEdit={() => openEdit('target_weight')} />
+          <DetailRow icon={DETAIL_FIELDS.gender.icon} label="מין" value={profile.gender ? GENDER_LABELS[profile.gender] ?? profile.gender : 'להוספה'} onEdit={() => openEdit('gender')} />
+          <DetailRow icon={DETAIL_FIELDS.age.icon} label="גיל" value={age ? String(age) : 'להוספה'} onEdit={() => openEdit('age')} />
         </div>
       </Card>
 
@@ -276,6 +278,8 @@ export default function AppProfile() {
         </div>
       </Card>
 
+      {user && <MeasurementsCard userId={user.id} />}
+
       <PrimaryButton icon={TrendingUp} onClick={() => navigate('/app/progress')}>לדף ההתקדמות</PrimaryButton>
 
       {/* Photos — the progress screen's "all photos" link lands here */}
@@ -290,54 +294,12 @@ export default function AppProfile() {
       )}
 
       {/* Native photo source sheet */}
-      <Dialog open={avatar.isPickingSource} onOpenChange={avatar.setIsPickingSource}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>תמונת פרופיל</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-2 pt-2">
-            <SecondaryButton className="w-full" onClick={() => avatar.pickNative('CAMERA')}>צילום</SecondaryButton>
-            <SecondaryButton className="w-full" onClick={() => avatar.pickNative('PHOTOS')}>מהגלריה</SecondaryButton>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <BottomSheet open={avatar.isPickingSource} onOpenChange={avatar.setIsPickingSource} title="תמונת פרופיל" icon={Camera}>
+        <PhotoSourceButtons onPick={avatar.uploadFile} />
+      </BottomSheet>
 
       {/* Edit one detail */}
-      <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>{editing ? editLabels[editing] : ''}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 pt-2">
-            {editing === 'gender' ? (
-              <div className="grid grid-cols-2 gap-2">
-                {['male', 'female'].map((g) => (
-                  <button
-                    key={g}
-                    type="button"
-                    onClick={() => setDraft(g)}
-                    className={cn(
-                      'min-h-[52px] rounded-inner border text-body font-semibold',
-                      draft === g ? 'border-primary bg-primary-tint' : 'border-border',
-                    )}
-                  >
-                    {GENDER_LABELS[g]}
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <Input
-                autoFocus
-                inputMode="decimal"
-                value={draft}
-                onChange={(e) => setDraft(e.target.value.replace(/[^\d.]/g, ''))}
-                className="h-14 text-center text-2xl"
-              />
-            )}
-            <PrimaryButton onClick={saveEdit}>שמירה</PrimaryButton>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <DetailEditSheet field={editing} initial={draft} onClose={() => setEditing(null)} onSave={saveEdit} />
     </div>
   );
 }

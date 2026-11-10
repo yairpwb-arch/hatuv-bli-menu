@@ -99,7 +99,7 @@ serve(async (req) => {
     // Update profile — always activate admin-created users regardless of trigger default
     const updateData: Record<string, unknown> = {
       is_active: true,
-      plan_duration_days: plan_duration_days ?? 252,
+      plan_duration_days: plan_duration_days ?? 280,
       subscription_type: subscription_type ?? 'program',
     };
     if (start_date) updateData.start_date = start_date;

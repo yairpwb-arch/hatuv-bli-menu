@@ -69,5 +69,13 @@ export function useAvatarUpload(userId: string | undefined, onUpdated: (url: str
   /** Opens the native source sheet on the phone, the file picker on the web. */
   const start = () => (Capacitor.isNativePlatform() ? setIsPickingSource(true) : fileInputRef.current?.click());
 
-  return { fileInputRef, onFileChange, start, isUploading, isPickingSource, setIsPickingSource, pickNative };
+  /** A photo already picked (the source sheet's camera / gallery buttons). */
+  const uploadFile = (file: File) => {
+    setIsPickingSource(false);
+    if (!file.type.startsWith('image/')) return void toast.error('נא לבחור קובץ תמונה');
+    if (file.size > 5 * 1024 * 1024) return void toast.error('גודל הקובץ חייב להיות עד 5MB');
+    upload(file, file.name.split('.').pop() || 'jpg');
+  };
+
+  return { fileInputRef, onFileChange, start, isUploading, isPickingSource, setIsPickingSource, pickNative, uploadFile };
 }

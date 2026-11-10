@@ -163,6 +163,7 @@ import { AppHeader } from "./components/AppHeader";
 import { ActiveWorkoutProvider, useActiveWorkout } from "@/contexts/ActiveWorkoutContext";
 import { useAppReminders } from "@/hooks/useAppReminders";
 import { UndoToaster } from "@/components/UndoToaster";
+import { ProgressReminder } from "@/components/ProgressReminder";
 import { WorkoutMiniBar } from "./components/WorkoutMiniBar";
 import { LaunchSplash } from "./components/LaunchSplash";
 import { BrandedLoaderOverlay, FullScreenLoader } from "./components/BrandedLoader";
@@ -260,6 +261,8 @@ function ProtectedRouteInner() {
       </div>
       <BottomNav />
       <UndoToaster />
+      {/* No measurements / progress photos yet: asked for on every visit. */}
+      <ProgressReminder />
 
       {/* WorkoutMiniBar — shown when session is minimized */}
       <WorkoutMiniBar />

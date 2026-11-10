@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { format } from 'date-fns';
 import { he } from 'date-fns/locale';
 import { CalendarDays, Check, ChevronLeft, Dumbbell, Footprints, Pencil } from 'lucide-react';
@@ -26,7 +26,7 @@ import { DoneDetails, DoneSheet } from './DoneSheet';
 import { cn } from '@/lib/utils';
 import { EditDaysDialog } from './EditDaysDialog';
 import { SessionSummaryDialog } from './SessionSummaryDialog';
-import { DayStatus, WEEKDAY_SHORT, WalkCard, WorkoutCard } from './WeekCards';
+import { DayStatus, OwnPlanCard, WEEKDAY_SHORT, WalkCard, WorkoutCard } from './WeekCards';
 import { PendingDay, StageDayPrompt } from './StageDayPrompt';
 
 interface Session {
@@ -41,7 +41,7 @@ const localDay = (iso: string) => format(new Date(iso), 'yyyy-MM-dd');
 
 export function WeekView({
   userId, currentWeek, planDays, sessions, watchWorkouts, onStart, onChanged, activityDays, onAddActivity, onStartWalk,
-  activities, onOpenActivity, canRemoveWalks,
+  activities, onOpenActivity, canRemoveWalks, onRunMyWorkout, onBuildWorkout,
 }: {
   userId: string;
   currentWeek: number;
@@ -60,6 +60,10 @@ export function WeekView({
   onOpenActivity?: (a: ActivityRow) => void;
   /** From weeks 7–8 a walk can leave the plan: steps are what counts by then. */
   canRemoveWalks?: boolean;
+  /** A planned workout from "האימונים שלי": run it in the workout player. */
+  onRunMyWorkout?: (myWorkoutId: string, name: string) => void;
+  /** A planned workout with no saved exercises: build one (or pick a saved one) and run it. */
+  onBuildWorkout?: (day: string) => void;
 }) {
   const plan = useWeekPlan(userId, currentWeek, planDays);
   const today = format(new Date(), 'yyyy-MM-dd');
@@ -67,6 +71,8 @@ export function WeekView({
   // This week's times, the ones the calendar shows.
   const [weekFrom, weekTo] = useMemo(() => [new Date(`${plan.week[0]}T12:00:00`), new Date(`${plan.week[6]}T12:00:00`)], [plan.week[0]]); // eslint-disable-line react-hooks/exhaustive-deps
   const cal = useCalendar(userId, weekFrom, weekTo);
+  const eventsRef = useRef(cal.events);
+  eventsRef.current = cal.events;
   // Something added or moved elsewhere (the activity sheet, the calendar): show it here too.
   const { reload: reloadCal } = cal;
   useEffect(() => {
@@ -247,6 +253,39 @@ export function WeekView({
   const selWorkouts = daysOn(selWd);
   const selWalks = walksOn(selWd);
   const selPlanned = plannedOn(selected);
+  // An activity logged that day that is one of the trainee's planned items (a GPS walk,
+  // a run of their saved workout…): the planned card shows it done, and it isn't listed twice.
+  const fulfilled = new Map<string, ActivityRow>();
+  const usedActs = new Set<string>();
+  for (const e of selPlanned) {
+    if (e.done) continue;
+    const a = selActivities.find((x) => {
+      if (usedActs.has(x.id)) return false;
+      const isWalk = x.kind === 'walk' || x.kind === 'hike';
+      if (e.type === 'walk') return isWalk;
+      return !isWalk && ((x.custom_name ?? kindInfo(x.kind).label) === e.title || x.note === e.title || (!!e.myWorkoutId && !!kindInfo(x.kind).strength));
+    });
+    if (a) {
+      usedActs.add(a.id);
+      fulfilled.set(e.key, a);
+    }
+  }
+
+  /** "ביצעתי" on a planned item of the trainee's, with an undo. */
+  const markOwnDone = async (e: CalEvent) => {
+    const ok = await cal.markDone(e);
+    if (!ok) return void toast.error('לא הצלחנו לסמן, נסו שוב');
+    successHaptic();
+    onChanged?.();
+    const day = format(e.start, 'yyyy-MM-dd');
+    showUndo('סומן כבוצע', async () => {
+      // A repeating one became its own (done) copy for that day.
+      const doneOne = eventsRef.current.find(
+        (x) => x.source === 'custom' && x.done && x.type === e.type && x.title === e.title && format(x.start, 'yyyy-MM-dd') === day,
+      );
+      afterUndo(doneOne ? await cal.unmarkDone(doneOne) : false);
+    });
+  };
   const watchWalk = watchWorkouts.find((w) => w.kind === 'walk' && localDay(w.started_at) === selected);
 
   // ── The day's cards, in one list ordered by time (earliest on top) ──
@@ -312,45 +351,45 @@ export function WeekView({
         ),
       };
     }),
-    // Planned by the trainee in the calendar: tap for start / cancel.
+    // Planned by the trainee (once or on fixed days): like the program's cards, in green.
     ...selPlanned.map((e) => {
-      const Icon = e.type === 'walk' ? Footprints : Dumbbell;
       const minutes = e.end ? Math.round((e.end.getTime() - e.start.getTime()) / 60_000) : 0;
+      const act = fulfilled.get(e.key);
+      const isWalk = e.type === 'walk';
+      const start =
+        selected !== today
+          ? undefined
+          : isWalk
+          ? onStartWalk && (() => onStartWalk(selected))
+          : e.myWorkoutId && onRunMyWorkout
+          ? () => onRunMyWorkout(e.myWorkoutId!, e.title)
+          : onBuildWorkout && (() => onBuildWorkout(selected));
+      const openSheet = () => {
+        setCancelStep(null);
+        setPlannedOpen(e);
+      };
       return {
         at: e.start.getTime(),
         key: `p:${e.key}`,
         el: (
-          <button
+          <OwnPlanCard
             key={e.key}
-            type="button"
-            onClick={() => {
-              setCancelStep(null);
-              setPlannedOpen(e);
-            }}
-            className="flex min-h-[64px] w-full items-center gap-3 rounded-card border border-border bg-card p-3 text-right"
-          >
-            <span className={cn('flex h-11 w-11 shrink-0 items-center justify-center rounded-inner', e.type === 'walk' ? 'bg-success/15 text-success' : 'bg-primary/15 text-primary')}>
-              <Icon className="h-5 w-5" strokeWidth={2} aria-hidden />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-body font-semibold">{e.title}</span>
-              <span className="block text-label text-muted-foreground">
-                <span dir="ltr">{format(e.start, 'HH:mm')}</span>
-                {minutes ? ` · ${minutes} דק'` : ''}
-                {e.repeat ? ' · קבוע' : ''}
-              </span>
-            </span>
-            {e.done ? (
-              <Check className="h-5 w-5 shrink-0 text-success" strokeWidth={2.5} aria-hidden />
-            ) : (
-              <ChevronLeft className="h-5 w-5 shrink-0 text-muted-foreground" strokeWidth={2} aria-hidden />
-            )}
-          </button>
+            type={isWalk ? 'walk' : 'workout'}
+            title={e.title}
+            time={format(e.start, 'HH:mm')}
+            minutes={minutes || undefined}
+            repeat={!!e.repeat}
+            status={statusOf(selected, e.done || !!act)}
+            onStart={start || undefined}
+            onDone={canUndo(selected) ? () => markOwnDone(e) : undefined}
+            onDoneTap={act ? () => onOpenActivity?.(act) : openSheet}
+            onMore={openSheet}
+          />
         ),
       };
     }),
     // Logged by the trainee on this day: tap to edit or delete.
-    ...selActivities.map((a) => {
+    ...selActivities.filter((a) => !usedActs.has(a.id)).map((a) => {
       const info = kindInfo(a.kind);
       return {
         at: new Date(a.started_at).getTime(),
@@ -554,6 +593,18 @@ export function WeekView({
               >
                 התחל הליכה
               </PrimaryButton>
+            )}
+            {plannedOpen.done && (
+              <SecondaryButton
+                className="w-full"
+                onClick={async () => {
+                  const e = plannedOpen;
+                  setPlannedOpen(null);
+                  afterUndo(await cal.unmarkDone(e));
+                }}
+              >
+                ביטול הסימון
+              </SecondaryButton>
             )}
             <SecondaryButton className="w-full" onClick={() => navigate(`/app/calendar/day/${selected}`)}>
               פתיחה ביומן

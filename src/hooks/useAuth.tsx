@@ -49,7 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   
-  const planDays = profile?.plan_duration_days ?? 252;
+  const planDays = profile?.plan_duration_days ?? 280;
 
   // The real program day: 0 or less before the start date.
   const rawDay = profile?.start_date

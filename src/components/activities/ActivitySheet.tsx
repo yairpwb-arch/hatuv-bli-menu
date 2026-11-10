@@ -30,7 +30,7 @@ const chip = (on: boolean) =>
  * an existing activity.
  */
 export function ActivitySheet({
-  open, onOpenChange, defaultDate, initialKind, existing, replaceable, onRunWorkout,
+  open, onOpenChange, defaultDate, initialKind, existing, replaceable, onRunWorkout, initialStep,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
@@ -42,6 +42,8 @@ export function ActivitySheet({
   /** Today's planned workout / walk that isn't done yet — offers "this replaces it". */
   replaceable?: { workout?: boolean; walk?: boolean };
   onRunWorkout: (name: string, items: BuiltExercise[], kind: ActivityKind, myWorkoutId: string | null) => void;
+  /** 'build': open straight on "בנה אימון" (a planned workout's "התחל אימון"). */
+  initialStep?: 'build';
 }) {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -65,6 +67,8 @@ export function ActivitySheet({
   const [repeatDays, setRepeatDays] = useState<number[]>([]);
   const [repeatWeeks, setRepeatWeeks] = useState<number | null>(8);
   const [busy, setBusy] = useState(false);
+  // A saved workout ("האימונים שלי") being planned on fixed days.
+  const [built, setBuilt] = useState<{ id: string; name: string } | null>(null);
 
   const today = format(new Date(), 'yyyy-MM-dd');
 
@@ -72,8 +76,9 @@ export function ActivitySheet({
     if (!open) return;
     const base = existing ? new Date(existing.started_at) : defaultDate ?? new Date();
     const baseDay = format(base, 'yyyy-MM-dd');
-    setKind(existing?.kind ?? initialKind ?? 'walk');
-    setStep(existing || initialKind ? 'details' : 'kind');
+    setKind(existing?.kind ?? initialKind ?? (initialStep === 'build' ? 'strength_gym' : 'walk'));
+    setStep(initialStep === 'build' && !existing ? 'build' : existing || initialKind ? 'details' : 'kind');
+    setBuilt(null);
     setCustomName(existing?.custom_name ?? '');
     setWhen(existing ? (baseDay === today ? 'earlier' : 'date') : baseDay > today ? 'planned' : baseDay < today ? 'date' : 'now');
     setDate(baseDay);
@@ -91,7 +96,7 @@ export function ActivitySheet({
     setRepeatDays([]);
     setRepeatWeeks(8);
     setConfirmDelete(false);
-  }, [open, existing, defaultDate, initialKind, today]);
+  }, [open, existing, defaultDate, initialKind, initialStep, today]);
 
   const info = kindInfo(kind);
   const duration = freeMinutes ? Number(freeMinutes) || null : minutes;
@@ -113,7 +118,7 @@ export function ActivitySheet({
     setBusy(true);
     if (when === 'planned') {
       const until = repeat && repeatWeeks ? format(addDays(new Date(`${date}T12:00`), repeatWeeks * 7 - 1), 'yyyy-MM-dd') : null;
-      const ok = await plan(kind, title, startedAt(), duration, repeat ? { days: repeatDays, until } : null);
+      const ok = await plan(kind, built?.name ?? title, startedAt(), duration, repeat ? { days: repeatDays, until } : null, built?.id ?? null);
       setBusy(false);
       if (!ok) return toast.error('לא נשמר, נסו שוב');
       toast(repeat ? 'נכנס ליומן כפעילות קבועה' : 'נכנס ליומן');
@@ -199,6 +204,14 @@ export function ActivitySheet({
               onOpenChange(false);
               onRunWorkout(name, items, kind, myId);
             }}
+            onPlan={(id, name) => {
+              setBuilt({ id, name });
+              setStrengthMode('build');
+              setWhen('planned');
+              setRepeat(true);
+              setRepeatDays([new Date(`${date || today}T12:00`).getDay()]);
+              setStep('details');
+            }}
           />
         </>
       )}
@@ -206,6 +219,17 @@ export function ActivitySheet({
       {step === 'details' && (
         <div className="space-y-4 pb-2">
           {!existing && !initialKind && <Header back={() => setStep('kind')} />}
+
+          {built && (
+            <div className="flex items-center justify-between gap-3 rounded-inner border border-success/40 bg-success/10 px-4 py-3">
+              <p className="min-w-0 truncate text-body">
+                האימון: <span className="font-bold">{built.name}</span>
+              </p>
+              <button type="button" onClick={() => setStep('build')} className="min-h-[44px] shrink-0 text-label font-semibold text-success">
+                החלפה
+              </button>
+            </div>
+          )}
 
           {kind === 'other' && (
             <Input value={customName} onChange={(e) => setCustomName(e.target.value)} placeholder="מה עשית? (למשל: סקי)" className="h-12" autoFocus />

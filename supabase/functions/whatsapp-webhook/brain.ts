@@ -8,6 +8,7 @@
 import Anthropic from 'npm:@anthropic-ai/sdk';
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 import { claudeUsage, costOf, embed, logUsage, setting, vectorLiteral } from '../_shared/botkit.ts';
+import { REVIEW_END_TAG, REVIEW_START_TAG, reviewSection } from './workouts.ts';
 
 // Chosen after the model test (Haiku 5.5 vs Sonnet 5.5).
 export const MODEL = 'claude-sonnet-5-5';
@@ -126,6 +127,8 @@ export interface Reply {
   parts: string[];
   /** The bot marked [העבר]: we get an alert in private. */
   handoff: boolean;
+  /** A workout review the bot opened ([בחינת_אימון]) or finished asking about ([סיום_בחינה]). */
+  review?: 'start' | 'finish' | null;
 }
 
 export interface PromptParts {
@@ -150,7 +153,7 @@ export async function buildPrompt(
   extra?: string,
 ): Promise<PromptParts> {
   const day = testClient ? testClient.day : await programDay(db, userId);
-  const [rules, guide, examples, ctx, program, profileRow, chat] = await Promise.all([
+  const [rules, guide, examples, ctx, program, profileRow, chat, review] = await Promise.all([
     setting<string>(db, 'rules'),
     setting<string>(db, 'style_guide'),
     db.rpc('match_bot_examples', { q: latest, k: 12 }),
@@ -158,6 +161,8 @@ export async function buildPrompt(
     fromProgram(db, latest, day),
     userId ? db.from('client_profiles').select('profile').eq('user_id', userId).maybeSingle() : Promise.resolve({ data: null }),
     chatOverride != null ? Promise.resolve(chatOverride) : recentChat(db, chatId, everyoneIsClient),
+    // A workout review (asking the client about their workouts); not in the model test.
+    testClient || day == null || day < 1 ? Promise.resolve('') : reviewSection(db, userId, chatId),
   ]);
   const ex = ((examples.data ?? []) as Row[])
     .map((e, i) => `דוגמה ${i + 1}:${e.context ? `\n(לפני כן המאמן כתב: ${e.context})` : ''}\nלקוח: ${e.client}\nמאמן: ${e.coach}`)
@@ -171,6 +176,7 @@ export async function buildPrompt(
       `# עכשיו\n${now}\n\n# נתוני הלקוח מהאפליקציה\n${ctx}\n\n` +
       (known ? `# מה שאנחנו יודעים על הלקוח\n${known}\n\n` : '') +
       (program ? `# מהתוכנית שלנו\n${program}\n\n` : '') +
+      (review ? `${review}\n\n` : '') +
       `# תשובות אמיתיות של המאמנים במצבים דומים (סגנון בלבד)\n${ex}\n\n` +
       (extra ? `# נתונים להודעה הזו\n${extra}\n\n` : '') +
       `# השיחה בקבוצה (האחרונה בסוף)\n${chat || '(אין עדיין הודעות)'}\n\n` +
@@ -184,7 +190,7 @@ export async function buildPrompt(
 export async function runModel(
   db: SupabaseClient,
   prompt: PromptParts,
-  opts: { model?: string; kind?: 'reply' | 'eval'; chatId?: string | null; userId?: string | null } = {},
+  opts: { model?: string; kind?: 'reply' | 'eval' | 'review'; chatId?: string | null; userId?: string | null } = {},
 ): Promise<{ text: string; refused: boolean; cost: number; model: string }> {
   // The live model is bot_settings.model (switched without a deploy), else MODEL.
   const model = opts.model ?? (await setting<string>(db, 'model')) ?? MODEL;
@@ -218,7 +224,7 @@ async function runOpenAI(
   db: SupabaseClient,
   prompt: PromptParts,
   model: string,
-  opts: { kind?: 'reply' | 'eval'; chatId?: string | null; userId?: string | null },
+  opts: { kind?: 'reply' | 'eval' | 'review'; chatId?: string | null; userId?: string | null },
 ): Promise<{ text: string; refused: boolean; cost: number }> {
   const key = Deno.env.get('OPENAI_API_KEY');
   if (!key) return { text: '', refused: false, cost: 0 };
@@ -257,11 +263,12 @@ async function runOpenAI(
 export function toReply(text: string, max = 2): Reply {
   if (!text || text.includes('[שקט]')) return { parts: [], handoff: false };
   const handoff = text.includes(HANDOFF_TAG);
-  const clean = text.split(HANDOFF_TAG).join('').trim();
+  const review = text.includes(REVIEW_END_TAG) ? 'finish' : text.includes(REVIEW_START_TAG) ? 'start' : null;
+  const clean = [HANDOFF_TAG, REVIEW_START_TAG, REVIEW_END_TAG].reduce((t, tag) => t.split(tag).join(''), text).trim();
   const all = clean.split(/\n\s*---\s*\n/).map((s) => s.trim()).filter(Boolean);
   // At most `max` messages: anything after the last joins it, so nothing is lost.
   const parts = all.length > max ? [...all.slice(0, max - 1), all.slice(max - 1).join('\n')] : all;
-  return { parts, handoff };
+  return { parts, handoff, review };
 }
 
 /** The bot's reply to the latest client message(s). */

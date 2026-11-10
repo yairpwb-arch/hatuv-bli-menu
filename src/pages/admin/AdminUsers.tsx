@@ -45,9 +45,10 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { format, differenceInDays, startOfWeek, addDays } from 'date-fns';
 import { he } from 'date-fns/locale';
-import { Moon } from 'lucide-react';
-import { DailySummariesTab } from '@/components/admin/DailySummariesTab';
-import { WhatsAppGroupCard } from '@/components/admin/WhatsAppGroupCard';
+import { Bot } from 'lucide-react';
+import { OnboardingAnswersTab } from '@/components/admin/OnboardingAnswersTab';
+import { BodyProgressSection } from '@/components/admin/BodyProgressSection';
+import { BotTab, ClientDrawer, ClientHeader, DetailsTab, useClientHeader } from '@/components/admin/ClientPanel';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -333,25 +334,12 @@ function toSaturday(dateStr: string): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-function nextSaturdayStr(): string {
-  const today = new Date();
-  const daysUntilSat = (6 - today.getDay() + 7) % 7;
-  const sat = new Date(today);
-  sat.setDate(today.getDate() + daysUntilSat);
-  return `${sat.getFullYear()}-${String(sat.getMonth() + 1).padStart(2, '0')}-${String(sat.getDate()).padStart(2, '0')}`;
-}
 const GENDER_LABELS: Record<string, string> = { male: 'זכר', female: 'נקבה', other: 'אחר' };
 
 function calcCurrentDay(startDate: string | null): string {
   if (!startDate) return '-';
   const days = differenceInDays(new Date(), new Date(startDate)) + 1;
   return days > 0 ? String(days) : '-';
-}
-
-function calcAge(birthdate: string | null): string {
-  if (!birthdate) return '-';
-  const age = Math.floor((Date.now() - new Date(birthdate).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
-  return isNaN(age) || age < 0 ? '-' : String(age);
 }
 
 function scoreColor(score: number | null): string {
@@ -368,6 +356,9 @@ export default function AdminUsers() {
   const [isLoading, setIsLoading] = useState(true);
   const [adminUserIds, setAdminUserIds] = useState<string[]>([]);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  // Bumped when something the panel's header shows changes (details saved, the bot's switches).
+  const [headerKey, setHeaderKey] = useState(0);
+  const headerData = useClientHeader(editingUser, headerKey);
   const [deletingUser, setDeletingUser] = useState<User | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -868,42 +859,24 @@ export default function AdminUsers() {
 
   // ── Personal info save ───────────────────────────────────────────────────────
 
-  const handleSavePersonal = async () => {
+  /** The weights on the "נתונים" tab: only those columns, so nothing else is overwritten. */
+  const handleSaveWeights = async () => {
     if (!editingUser) return;
     setIsSavingPersonal(true);
-    const { error } = await supabase
-      .from('profiles')
-      .update({
-        full_name: editPersonal.full_name || null,
-        birthdate: editPersonal.birthdate || null,
-        gender: editPersonal.gender || null,
-        height: editPersonal.height ?? null,
-        phone_number: (editPersonal as any).phone_number || null,
-        start_date: editPersonal.start_date || null,
-        ...(editPersonal.plan_duration_days ? { plan_duration_days: editPersonal.plan_duration_days } : {}),
-        is_active: editPersonal.is_active ?? true,
-        initial_weight: editPersonal.initial_weight ?? null,
-        current_weight: editPersonal.current_weight ?? null,
-        target_weight: editPersonal.target_weight ?? null,
-      })
-      .eq('id', editingUser.id);
-
+    const patch = {
+      initial_weight: editPersonal.initial_weight ?? null,
+      current_weight: editPersonal.current_weight ?? null,
+      target_weight: editPersonal.target_weight ?? null,
+    };
+    const { error } = await supabase.from('profiles').update(patch).eq('id', editingUser.id);
     if (error) { toast({ title: 'שגיאה', description: error.message, variant: 'destructive' }); }
     else {
-      toast({ title: 'הצלחה', description: 'הנתונים עודכנו' });
+      toast({ title: 'נשמר' });
+      setEditingUser(u => (u ? { ...u, ...patch } : u));
+      setHeaderKey(k => k + 1);
       fetchUsers();
     }
     setIsSavingPersonal(false);
-  };
-
-  const handleResetStartDate = async () => {
-    if (!editingUser) return;
-    const sat = nextSaturdayStr();
-    await supabase.from('profiles').update({ start_date: sat }).eq('id', editingUser.id);
-    setEditPersonal(p => ({ ...p, start_date: sat }));
-    setEditingUser(u => u ? { ...u, start_date: sat } : null);
-    toast({ title: 'הצלחה', description: 'יום ההתחלה אופס לשבת הקרובה' });
-    fetchUsers();
   };
 
   const handleDeleteWeightEntry = async (entryId: string) => {
@@ -1093,12 +1066,12 @@ export default function AdminUsers() {
                   <TableHead className="text-right">מסלול</TableHead>
                   <TableHead className="text-right">משקל</TableHead>
                   <TableHead className="text-right">סטטוס</TableHead>
-                  <TableHead className="text-right">עריכה</TableHead>
+                  <TableHead className="text-right">נתוני מתאמן</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {users.map(user => (
-                  <TableRow key={user.id}>
+                  <TableRow key={user.id} className="cursor-pointer" onClick={() => openEdit(user)}>
                     <TableCell className="font-medium">{user.full_name || '-'}</TableCell>
                     <TableCell dir="ltr" className="text-left text-sm">{user.email}</TableCell>
                     <TableCell>{calcCurrentDay(user.start_date)}</TableCell>
@@ -1108,9 +1081,9 @@ export default function AdminUsers() {
                       <Badge variant={user.is_active ? 'default' : 'secondary'}>{user.is_active ? 'פעיל' : 'לא פעיל'}</Badge>
                     </TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
                         <Button variant="ghost" size="sm" onClick={() => openEdit(user)}>
-                          <Edit className="h-4 w-4 ml-1" />ערוך
+                          <UserIcon className="h-4 w-4 ml-1" />נתונים
                         </Button>
                         <Button
                           variant="ghost"
@@ -1130,135 +1103,51 @@ export default function AdminUsers() {
         </CardContent>
       </Card>
 
-      {/* ── 5-Tab Edit Dialog ── */}
-      <Dialog open={!!editingUser} onOpenChange={(o) => { if (!o) closeEdit(); }}>
-        <DialogContent dir="rtl" className="max-w-2xl max-h-[92vh] overflow-y-auto p-0">
-          <DialogHeader className="px-6 pt-5 pb-0">
-            <DialogTitle className="text-lg pr-8">{editingUser?.full_name || editingUser?.email}</DialogTitle>
-          </DialogHeader>
+      {/* ── The client panel: a wide drawer with a sticky header and tabs ── */}
+      <ClientDrawer open={!!editingUser} onClose={closeEdit} title={editingUser?.full_name || editingUser?.email || 'מתאמן'}>
+        {editingUser && (
+          <Tabs defaultValue="personal" dir="rtl" className="flex min-h-0 flex-1 flex-col">
+            <div className="shrink-0 border-b border-border bg-card">
+              <ClientHeader user={editingUser} data={headerData} onClose={closeEdit} />
+              <div className="overflow-x-auto px-6 pb-3">
+                <TabsList className="inline-flex h-11 w-full min-w-max justify-start gap-1 rounded-inner bg-card-inner p-1">
+                  {([
+                    ['personal', 'פרטים', UserIcon],
+                    ['body', 'נתונים', Scale],
+                    ['habits', 'הרגלים', Repeat2],
+                    ['workout', 'אימון', Dumbbell],
+                    ['survey', 'שאלון', ClipboardList],
+                    ['bot', 'בוט', Bot],
+                  ] as const).map(([v, label, Icon]) => (
+                    <TabsTrigger key={v} value={v} className="h-9 flex-1 gap-1.5 rounded-[12px] px-3 text-label font-semibold data-[state=active]:bg-card data-[state=active]:shadow-sm">
+                      <Icon className="h-4 w-4" />{label}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </div>
+            </div>
 
-          <Tabs defaultValue="personal" dir="rtl" className="w-full">
-            <TabsList className="w-full grid grid-cols-6 mx-6 mt-3" style={{ width: 'calc(100% - 3rem)' }}>
-              <TabsTrigger value="personal" className="text-xs gap-1"><UserIcon className="h-3.5 w-3.5" />פרטים</TabsTrigger>
-              <TabsTrigger value="body" className="text-xs gap-1"><Scale className="h-3.5 w-3.5" />נתונים</TabsTrigger>
-              <TabsTrigger value="habits" className="text-xs gap-1"><Repeat2 className="h-3.5 w-3.5" />הרגלים</TabsTrigger>
-              <TabsTrigger value="workout" className="text-xs gap-1"><Dumbbell className="h-3.5 w-3.5" />אימון</TabsTrigger>
-              <TabsTrigger value="survey" className="text-xs gap-1"><ClipboardList className="h-3.5 w-3.5" />שאלון</TabsTrigger>
-              <TabsTrigger value="daily" className="text-xs gap-1"><Moon className="h-3.5 w-3.5" />סיכומים יומיים</TabsTrigger>
-            </TabsList>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+            {/* ── Tab 1: Details (personal, process, danger zone) ── */}
+            <TabsContent value="personal" className="mt-0 min-h-full">
+              <DetailsTab
+                user={editingUser}
+                onSaved={(patch) => {
+                  setEditingUser(u => (u ? { ...u, ...(patch as Partial<User>) } : u));
+                  setEditPersonal(p => ({ ...p, ...(patch as Partial<User>) }));
+                  setHeaderKey(k => k + 1);
+                  fetchUsers();
+                }}
+              />
+            </TabsContent>
 
-            {/* ── Tab 1: Personal ── */}
-            <TabsContent value="personal" className="px-6 pb-6 pt-4 space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1 col-span-2">
-                  <Label>שם מלא</Label>
-                  <Input value={editPersonal.full_name || ''} onChange={e => setEditPersonal(p => ({ ...p, full_name: e.target.value }))} />
-                </div>
-                <div className="space-y-1 col-span-2">
-                  <Label>אימייל</Label>
-                  <Input value={editingUser?.email || ''} readOnly dir="ltr" className="text-left bg-muted/40 cursor-default" />
-                </div>
-                <div className="space-y-1">
-                  <Label>גיל</Label>
-                  <Input
-                    type="number"
-                    min={10}
-                    max={120}
-                    dir="ltr"
-                    className="text-left"
-                    placeholder="30"
-                    value={calcAge(editPersonal.birthdate || null) !== '-' ? calcAge(editPersonal.birthdate || null) : ''}
-                    onChange={e => {
-                      const age = parseInt(e.target.value);
-                      if (!isNaN(age) && age > 0) {
-                        setEditPersonal(p => ({ ...p, birthdate: `${new Date().getFullYear() - age}-01-01` }));
-                      } else {
-                        setEditPersonal(p => ({ ...p, birthdate: '' }));
-                      }
-                    }}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label>מגדר</Label>
-                  <Select value={editPersonal.gender || ''} onValueChange={v => setEditPersonal(p => ({ ...p, gender: v }))}>
-                    <SelectTrigger><SelectValue placeholder="בחר" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="male">זכר</SelectItem>
-                      <SelectItem value="female">נקבה</SelectItem>
-                      <SelectItem value="other">אחר</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1">
-                  <Label>גובה (ס"מ)</Label>
-                  <Input type="number" dir="ltr" className="text-left" value={editPersonal.height ?? ''} onChange={e => setEditPersonal(p => ({ ...p, height: parseFloat(e.target.value) || undefined }))} placeholder="170" />
-                </div>
-                <div className="space-y-1">
-                  <Label>טלפון</Label>
-                  <Input dir="ltr" className="text-left" value={(editPersonal as any).phone_number || ''} onChange={e => setEditPersonal(p => ({ ...p, phone_number: e.target.value } as any))} placeholder="050-000-0000" />
-                </div>
-                <div className="space-y-1">
-                  <Label>תאריך התחלה</Label>
-                  <Input
-                    type="date"
-                    dir="ltr"
-                    className="text-left"
-                    value={editPersonal.start_date || ''}
-                    onChange={e => setEditPersonal(p => ({ ...p, start_date: e.target.value || '' }))}
-                  />
-                  {editPersonal.start_date && (() => {
-                    const d = differenceInDays(new Date(), new Date(editPersonal.start_date)) + 1;
-                    return (
-                      <p className={`text-xs font-medium ${d > 0 ? 'text-success' : 'text-destructive'}`}>
-                        {d > 0 ? `יום ${d} בתוכנית` : 'תאריך עתידי — תוכן יהיה נעול'}
-                      </p>
-                    );
-                  })()}
-                </div>
-                <div className="space-y-1">
-                  <Label>מסלול</Label>
-                  <Select
-                    value={editPersonal.plan_duration_days ? String(editPersonal.plan_duration_days) : ''}
-                    onValueChange={v => setEditPersonal(p => ({ ...p, plan_duration_days: Number(v) }))}
-                  >
-                    <SelectTrigger><SelectValue placeholder="בחר מסלול" /></SelectTrigger>
-                    <SelectContent>
-                      {TRACKS.map(t => <SelectItem key={t.days} value={String(t.days)}>{t.label}</SelectItem>)}
-                      {/* A length set before the tracks existed stays selectable as is. */}
-                      {editingUser?.plan_duration_days && !TRACKS.some(t => t.days === editingUser.plan_duration_days) && (
-                        <SelectItem value={String(editingUser.plan_duration_days)}>{trackLabel(editingUser.plan_duration_days)} (נוכחי)</SelectItem>
-                      )}
-                    </SelectContent>
-                  </Select>
-                  {editPersonal.plan_duration_days && editPersonal.start_date && (
-                    <p className="text-xs text-muted-foreground">
-                      מסתיים ב-{format(new Date(`${programEnd(editPersonal.start_date, editPersonal.plan_duration_days)}T12:00:00`), 'd.M.yyyy')}
-                    </p>
-                  )}
-                </div>
-                <div className="flex items-center gap-3 col-span-2 pt-1">
-                  <Switch
-                    checked={editPersonal.is_active ?? true}
-                    onCheckedChange={v => setEditPersonal(p => ({ ...p, is_active: v }))}
-                  />
-                  <Label>מתאמן פעיל</Label>
-                </div>
-              </div>
-              <div className="flex gap-2 pt-2">
-                <Button onClick={handleSavePersonal} disabled={isSavingPersonal} className="flex-1">
-                  {isSavingPersonal && <Loader2 className="h-4 w-4 ml-2 animate-spin" />}שמור
-                </Button>
-                <Button variant="outline" onClick={handleResetStartDate} className="gap-1.5">
-                  <RefreshCw className="h-3.5 w-3.5" />אפס יום התחלה
-                </Button>
-              </div>
-              <div className="pt-2">
-                {editingUser && <WhatsAppGroupCard userId={editingUser.id} />}
-              </div>
+            {/* ── Tab: Bot (WhatsApp group, switches, what we know) ── */}
+            <TabsContent value="bot" className="mt-0">
+              <BotTab userId={editingUser.id} onChanged={() => setHeaderKey(k => k + 1)} />
             </TabsContent>
 
             {/* ── Tab 2: Body / Weight ── */}
-            <TabsContent value="body" className="px-6 pb-6 pt-4 space-y-4">
+            <TabsContent value="body" className="mt-0 px-6 pb-6 pt-5 space-y-4">
               <div className="grid grid-cols-3 gap-3">
                 {[
                   { label: 'משקל התחלתי (ק"ג)', key: 'initial_weight' },
@@ -1274,7 +1163,7 @@ export default function AdminUsers() {
                   </div>
                 ))}
               </div>
-              <Button onClick={handleSavePersonal} disabled={isSavingPersonal} size="sm">
+              <Button onClick={handleSaveWeights} disabled={isSavingPersonal} size="sm">
                 {isSavingPersonal && <Loader2 className="h-3.5 w-3.5 ml-1 animate-spin" />}שמור משקלים
               </Button>
 
@@ -1385,10 +1274,13 @@ export default function AdminUsers() {
                   </div>
                 );
               })()}
+
+              {/* Circumferences and body photos */}
+              {editingUser && <BodyProgressSection userId={editingUser.id} />}
             </TabsContent>
 
             {/* ── Tab 3: Habits ── */}
-            <TabsContent value="habits" className="px-6 pb-6 pt-4 space-y-4">
+            <TabsContent value="habits" className="mt-0 px-6 pb-6 pt-5 space-y-4">
               {/* Global habits */}
               <div className="space-y-3">
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">הרגלים כלליים</p>
@@ -1512,7 +1404,7 @@ export default function AdminUsers() {
             </TabsContent>
 
             {/* ── Tab 4: Workout Plan ── */}
-            <TabsContent value="workout" className="px-6 pb-6 pt-4 space-y-4">
+            <TabsContent value="workout" className="mt-0 px-6 pb-6 pt-5 space-y-4">
               {/* Toggle */}
               <div className="flex items-center justify-between p-3 bg-muted/50 rounded-xl">
                 <div>
@@ -2016,8 +1908,14 @@ export default function AdminUsers() {
               </div>
             </TabsContent>
 
-            {/* ── Tab 5: Survey ── */}
-            <TabsContent value="survey" className="px-6 pb-6 pt-4">
+            {/* ── Tab 5: Questionnaires: the opening one, then the weekly ones ── */}
+            <TabsContent value="survey" className="mt-0 space-y-6 px-6 pb-6 pt-5">
+              <section className="space-y-3">
+                <h3 className="text-card-title">שאלון פתיחה</h3>
+                <OnboardingAnswersTab userId={editingUser.id} />
+              </section>
+              <section className="space-y-3">
+                <h3 className="text-card-title">שאלונים שבועיים</h3>
               {isLoadingCheckins ? (
                 <div className="flex items-center justify-center py-12">
                   <Loader2 className="h-7 w-7 animate-spin text-primary" />
@@ -2097,14 +1995,12 @@ export default function AdminUsers() {
                   ))}
                 </Accordion>
               )}
+              </section>
             </TabsContent>
-            {/* ── Tab 6: Daily summaries (the bedtime questionnaire) ── */}
-            <TabsContent value="daily" className="px-6 pb-6 pt-4">
-              {editingUser && <DailySummariesTab userId={editingUser.id} />}
-            </TabsContent>
+            </div>
           </Tabs>
-        </DialogContent>
-      </Dialog>
+        )}
+      </ClientDrawer>
 
       {/* ── Delete User Confirmation Dialog ── */}
       <AlertDialog open={!!deletingUser} onOpenChange={(o) => { if (!o) setDeletingUser(null); }}>

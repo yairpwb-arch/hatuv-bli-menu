@@ -104,7 +104,7 @@ export function PhotosStep({ userId, value, onChange }: PhotosStepProps) {
 /* ── Circumference measurements ───────────────────────────────────────────── */
 
 export type MeasureKey = 'arm' | 'chest' | 'waist' | 'belly';
-const MEASURES: { key: MeasureKey; label: string; hint: string; start: number }[] = [
+export const MEASURES: { key: MeasureKey; label: string; hint: string; start: number }[] = [
   { key: 'arm', label: 'יד', hint: 'החלק הרחב של הזרוע, יד רפויה', start: 32 },
   { key: 'chest', label: 'חזה', hint: 'בקו הפטמות', start: 95 },
   { key: 'waist', label: 'מותניים', hint: 'החלק הצר ביותר', start: 80 },

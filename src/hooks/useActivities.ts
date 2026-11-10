@@ -127,9 +127,11 @@ export function useActivities(userId: string | undefined) {
     startsAt: Date,
     minutes: number | null,
     repeat?: { days: number[]; until: string | null } | null,
+    /** A workout from "האימונים שלי": the calendar's "התחל אימון" runs it. */
+    myWorkoutId?: string | null,
   ) => {
     const type = kind === 'walk' || kind === 'hike' ? 'walk' : kind === 'other' ? 'other' : 'workout';
-    const { error } = await db.from('calendar_events').insert({
+    const row = {
       user_id: userId,
       type,
       title,
@@ -138,7 +140,10 @@ export function useActivities(userId: string | undefined) {
       ...(repeat && repeat.days.length > 0
         ? { repeat_rule: 'weekly', repeat_days: [...repeat.days].sort(), repeat_until: repeat.until }
         : {}),
-    });
+    };
+    let { error } = await db.from('calendar_events').insert(myWorkoutId ? { ...row, my_workout_id: myWorkoutId } : row);
+    // A database without the my_workout_id column yet: plan it without the link.
+    if (error && myWorkoutId && /my_workout_id/.test(error.message ?? '')) ({ error } = await db.from('calendar_events').insert(row));
     // Its reminder is scheduled with the others.
     if (!error) window.dispatchEvent(new Event(CALENDAR_CHANGED));
     return !error;

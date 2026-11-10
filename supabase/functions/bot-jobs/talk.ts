@@ -12,6 +12,7 @@
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 import { buildPrompt, composeReply, maxParts, runModel, toReply } from '../whatsapp-webhook/brain.ts';
 import { TEST_GROUP_ID, alertHandoff, deliver, readChat, sendTyping } from '../_shared/wa.ts';
+import { REVIEW_OPEN_TASK, afterReply, openReview, reviewDue, reviewTimeouts, startReview } from '../whatsapp-webhook/workouts.ts';
 
 type Row = Record<string, any>;
 const MIN = 60_000;
@@ -107,9 +108,10 @@ export async function replies(db: SupabaseClient) {
     if (!latest) continue;
     await readChat(p.chat_id);
     await sendTyping(p.chat_id, 8000);
-    const { parts, handoff } = await composeReply(db, p.chat_id, p.user_id, latest);
+    const { parts, handoff, review } = await composeReply(db, p.chat_id, p.user_id, latest);
     if (handoff) await alertHandoff(db, p.chat_id, p.user_id, parts.join('\n'), true);
     await deliver(db, p.chat_id, p.user_id, parts);
+    await afterReply(db, p.chat_id, p.user_id, review);
     answered++;
   }
   return { answered };
@@ -218,6 +220,8 @@ export async function proactive(db: SupabaseClient) {
   const nextCandles = holy.candles.find((c) => c > now) ?? null;
   const midnight = israelMidnight(now).toISOString();
   const sent: Row[] = [];
+  // Workout interviews left hanging for 3 days: on to the coach with what there is.
+  await reviewTimeouts(db);
 
   for (const g of await talkingGroups(db)) {
     const { data: profile } = await db.from('profiles').select('full_name, sleep_time, wake_time, start_date').eq('id', g.user_id).maybeSingle();
@@ -276,7 +280,19 @@ export async function proactive(db: SupabaseClient) {
       }
     }
 
-    if (!kind && il.minutes >= 16 * 60 && il.minutes < 16 * 60 + 20 && il.weekday !== 5 && il.weekday !== 6 && !sentSince('checkin', 48 * HOUR)) {
+    // Every 4 weeks once workouts are open: the bot asks how they go (17:00, not Friday or Saturday).
+    let opensReview = false;
+    if (!kind && il.minutes >= 17 * 60 && il.minutes < 17 * 60 + 20 && il.weekday !== 5 && il.weekday !== 6 && !sentSince('workout_review', 20 * HOUR) && (await reviewDue(db, g.user_id))) {
+      if (await startReview(db, g.user_id, g.chat_id, 'scheduled')) {
+        kind = 'workout_review';
+        task = REVIEW_OPEN_TASK;
+        query = 'בדיקת אימון: איך הולכים לך האימונים';
+        opensReview = true;
+      }
+    }
+
+    // Not in the middle of asking about the workouts.
+    if (!kind && !(await openReview(db, g.user_id)) && il.minutes >= 16 * 60 && il.minutes < 16 * 60 + 20 && il.weekday !== 5 && il.weekday !== 6 && !sentSince('checkin', 48 * HOUR)) {
       const last = await lastUpdate(db, g.chat_id, g.user_id);
       if (now.getTime() - last >= 48 * HOUR) {
         kind = 'checkin';
@@ -288,9 +304,12 @@ export async function proactive(db: SupabaseClient) {
     if (!kind) continue;
     const prompt = await buildPrompt(db, g.chat_id, g.user_id, query, false, undefined, undefined, task, extra);
     const { text, refused, model } = await runModel(db, prompt, { chatId: g.chat_id, userId: g.user_id });
-    if (refused) continue;
-    const { parts, handoff } = toReply(text, maxParts(model));
-    if (!parts.length) continue;
+    const { parts, handoff } = refused ? { parts: [], handoff: false } : toReply(text, maxParts(model));
+    if (!parts.length) {
+      // The opening never went out: no review hanging open.
+      if (opensReview) await db.from('bot_workout_reviews').update({ status: 'cancelled', closed_at: new Date().toISOString() }).eq('user_id', g.user_id).eq('status', 'interview');
+      continue;
+    }
     if (handoff) await alertHandoff(db, g.chat_id, g.user_id, parts.join('\n'), true);
     await deliver(db, g.chat_id, g.user_id, parts);
     await db.from('bot_proactive').insert({ chat_id: g.chat_id, user_id: g.user_id, kind, text: parts.join('\n---\n') });

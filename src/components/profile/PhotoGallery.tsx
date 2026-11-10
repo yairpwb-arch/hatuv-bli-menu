@@ -1,18 +1,15 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Camera, Plus, Trash2, ImageIcon, ZoomIn } from 'lucide-react';
+import { Camera, Plus, ImageIcon, ZoomIn } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { format } from 'date-fns';
-import { he } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
-import { removeBodyPhoto, uploadBodyPhoto, withSignedUrls } from '@/lib/bodyPhotos';
+import { removeBodyPhoto, withSignedUrls } from '@/lib/bodyPhotos';
+import { AddPhotoSheet } from './AddPhotoSheet';
+import { PhotoViewer } from './PhotoViewer';
+import { PHOTOS_CHANGED } from './MeasurementsCard';
 
 interface Photo {
   id: string;
@@ -22,7 +19,11 @@ interface Photo {
   photo_type: 'before' | 'after' | 'progress';
   taken_at: string;
   notes: string | null;
+  /** 'onboarding': taken in the opening questionnaire (body_photos), shown as "לפני". */
+  source?: 'gallery' | 'onboarding';
 }
+
+const ANGLE_LABEL: Record<string, string> = { front: 'מקדימה', side: 'מהצד', back: 'מאחור' };
 
 interface PhotoGalleryProps {
   userId: string;
@@ -33,90 +34,73 @@ export function PhotoGallery({ userId, isAdmin = false }: PhotoGalleryProps) {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
-  const [photoType, setPhotoType] = useState<'before' | 'after' | 'progress'>('progress');
-  const [photoDate, setPhotoDate] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [photoNotes, setPhotoNotes] = useState('');
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  /** Index (in photos) of the photo open in the viewer. */
+  const [viewing, setViewing] = useState<number | null>(null);
 
   const fetchPhotos = async () => {
-    setIsLoading(true);
-    const { data, error } = await supabase
-      .from('transformation_photos')
-      .select('*')
-      .eq('user_id', userId)
-      .order('taken_at', { ascending: true });
+    const [gallery, opening] = await Promise.all([
+      supabase
+        .from('transformation_photos')
+        .select('*')
+        .eq('user_id', userId)
+        .order('taken_at', { ascending: true }),
+      // The photos from the opening questionnaire (front / side / back).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (supabase as any)
+        .from('body_photos')
+        .select('id, angle, storage_path, taken_at')
+        .eq('user_id', userId),
+    ]);
 
-    if (!error && data) {
+    const rows: Photo[] = [
+      ...((opening.data ?? []) as { id: string; angle: string; storage_path: string; taken_at: string }[]).map((b) => ({
+        id: `body:${b.id}`,
+        photo_url: `storage://body-photos/${b.storage_path}`,
+        photo_type: 'before' as const,
+        taken_at: b.taken_at,
+        notes: `שאלון הפתיחה · ${ANGLE_LABEL[b.angle] ?? b.angle}`,
+        source: 'onboarding' as const,
+      })),
+      ...((gallery.data ?? []) as Photo[]).map((p) => ({ ...p, source: 'gallery' as const })),
+    ];
+    // Oldest first; on the same day the opening photos come first.
+    rows.sort((a, b) => a.taken_at.localeCompare(b.taken_at) || (a.source === 'onboarding' ? -1 : 0) - (b.source === 'onboarding' ? -1 : 0));
+
+    if (!gallery.error || !opening.error) {
       // Private body photos are shown through short-lived signed links.
-      setPhotos(await withSignedUrls(data as Photo[]));
+      setPhotos(await withSignedUrls(rows));
     }
     setIsLoading(false);
   };
 
+  // Refetches after adding / deleting keep the gallery on screen (no skeleton).
   useEffect(() => {
+    setIsLoading(true);
     fetchPhotos();
   }, [userId]);
 
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // A photo added from the reminder: show it.
+  useEffect(() => {
+    const onChange = () => void fetchPhotos();
+    window.addEventListener(PHOTOS_CHANGED, onChange);
+    return () => window.removeEventListener(PHOTOS_CHANGED, onChange);
+  }, [userId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    if (!file.type.startsWith('image/')) {
-      toast.error('נא לבחור קובץ תמונה');
-      return;
-    }
-
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error('גודל הקובץ חייב להיות עד 10MB');
-      return;
-    }
-
-    setIsUploading(true);
-
+  // Asked for in the viewer first ("למחוק את התמונה?").
+  const handleDelete = async (photo: { id: string; photo_url: string }) => {
+    const row = photos.find((p) => p.id === photo.id);
+    const stored = row?.stored_url ?? photo.photo_url;
     try {
-      // Body photos go to the private bucket, never a public one.
-      const stored = await uploadBodyPhoto(userId, file);
-
-      const { error: dbError } = await supabase
-        .from('transformation_photos')
-        .insert({
-          user_id: userId,
-          photo_url: stored,
-          photo_type: photoType,
-          taken_at: photoDate,
-          notes: photoNotes || null,
-        });
-
-      if (dbError) throw dbError;
-
-      toast.success('התמונה הועלתה בהצלחה');
-      setIsUploadOpen(false);
-      setPhotoNotes('');
-      fetchPhotos();
-    } catch (error) {
-      console.error('Error uploading photo:', error);
-      toast.error('שגיאה בהעלאת התמונה');
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  const handleDelete = async (photo: Photo) => {
-    if (!confirm('למחוק את התמונה?')) return;
-
-    try {
-      const { error } = await supabase
-        .from('transformation_photos')
-        .delete()
-        .eq('id', photo.id);
+      const { error } = row?.source === 'onboarding'
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ? await (supabase as any).from('body_photos').delete().eq('id', photo.id.slice('body:'.length))
+        : await supabase.from('transformation_photos').delete().eq('id', photo.id);
 
       if (error) throw error;
-      await removeBodyPhoto(photo.stored_url ?? photo.photo_url);
+      await removeBodyPhoto(stored);
 
       toast.success('התמונה נמחקה');
-      setSelectedPhoto(null);
+      setViewing(null);
       fetchPhotos();
     } catch (error) {
       console.error('Error deleting photo:', error);
@@ -176,62 +160,37 @@ export function PhotoGallery({ userId, isAdmin = false }: PhotoGalleryProps) {
             <div className="space-y-2">
               <h4 className="text-sm font-medium text-muted-foreground">לפני ואחרי</h4>
               <div className="grid grid-cols-2 gap-3">
-                <div 
-                  className={cn(
-                    "aspect-[3/4] rounded-xl border-2 border-dashed flex items-center justify-center overflow-hidden",
-                    beforePhotos.length > 0 ? "border-transparent" : "border-muted-foreground/20"
-                  )}
-                >
-                  {beforePhotos.length > 0 ? (
-                    <div 
-                      className="relative w-full h-full cursor-pointer group"
-                      onClick={() => setSelectedPhoto(beforePhotos[0])}
-                    >
-                      <img 
-                        src={beforePhotos[0].photo_url} 
-                        alt="Before" 
-                        className="w-full h-full object-cover rounded-xl"
-                      />
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center">
-                        <ZoomIn className="h-6 w-6 text-white" />
+                {([
+                  [beforePhotos[0], 'לפני', 'Before'],
+                  [afterPhotos[afterPhotos.length - 1], 'אחרי', 'After'],
+                ] as const).map(([p, label, alt]) => (
+                  <div
+                    key={label}
+                    className={cn(
+                      "aspect-[3/4] rounded-xl border-2 border-dashed flex items-center justify-center overflow-hidden",
+                      p ? "border-transparent" : "border-muted-foreground/20"
+                    )}
+                  >
+                    {p ? (
+                      <button
+                        type="button"
+                        className="relative w-full h-full cursor-pointer group"
+                        onClick={() => setViewing(photos.indexOf(p))}
+                      >
+                        <img src={p.photo_url} alt={alt} className="w-full h-full object-cover rounded-xl" />
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center">
+                          <ZoomIn className="h-6 w-6 text-white" />
+                        </div>
+                        <span className="absolute bottom-2 right-2 bg-background/80 px-2 py-1 rounded text-xs font-medium">{label}</span>
+                      </button>
+                    ) : (
+                      <div className="text-center text-muted-foreground">
+                        <ImageIcon className="h-8 w-8 mx-auto mb-1 opacity-40" />
+                        <span className="text-xs">{label}</span>
                       </div>
-                      <span className="absolute bottom-2 right-2 bg-background/80 px-2 py-1 rounded text-xs font-medium">לפני</span>
-                    </div>
-                  ) : (
-                    <div className="text-center text-muted-foreground">
-                      <ImageIcon className="h-8 w-8 mx-auto mb-1 opacity-40" />
-                      <span className="text-xs">לפני</span>
-                    </div>
-                  )}
-                </div>
-                <div 
-                  className={cn(
-                    "aspect-[3/4] rounded-xl border-2 border-dashed flex items-center justify-center overflow-hidden",
-                    afterPhotos.length > 0 ? "border-transparent" : "border-muted-foreground/20"
-                  )}
-                >
-                  {afterPhotos.length > 0 ? (
-                    <div 
-                      className="relative w-full h-full cursor-pointer group"
-                      onClick={() => setSelectedPhoto(afterPhotos[afterPhotos.length - 1])}
-                    >
-                      <img 
-                        src={afterPhotos[afterPhotos.length - 1].photo_url} 
-                        alt="After" 
-                        className="w-full h-full object-cover rounded-xl"
-                      />
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center">
-                        <ZoomIn className="h-6 w-6 text-white" />
-                      </div>
-                      <span className="absolute bottom-2 right-2 bg-background/80 px-2 py-1 rounded text-xs font-medium">אחרי</span>
-                    </div>
-                  ) : (
-                    <div className="text-center text-muted-foreground">
-                      <ImageIcon className="h-8 w-8 mx-auto mb-1 opacity-40" />
-                      <span className="text-xs">אחרי</span>
-                    </div>
-                  )}
-                </div>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -241,21 +200,22 @@ export function PhotoGallery({ userId, isAdmin = false }: PhotoGalleryProps) {
             <div className="space-y-2">
               <h4 className="text-sm font-medium text-muted-foreground">כל התמונות ({photos.length})</h4>
               <div className="grid grid-cols-4 gap-2">
-                {photos.map((photo) => (
-                  <div 
-                    key={photo.id} 
+                {photos.map((photo, n) => (
+                  <button
+                    type="button"
+                    key={photo.id}
                     className="relative aspect-square rounded-lg overflow-hidden cursor-pointer group"
-                    onClick={() => setSelectedPhoto(photo)}
+                    onClick={() => setViewing(n)}
                   >
-                    <img 
-                      src={photo.photo_url} 
+                    <img
+                      src={photo.photo_url}
                       alt={getTypeLabel(photo.photo_type)}
                       className="w-full h-full object-cover"
                     />
                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                       <ZoomIn className="h-5 w-5 text-white" />
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
@@ -271,97 +231,24 @@ export function PhotoGallery({ userId, isAdmin = false }: PhotoGalleryProps) {
         </CardContent>
       </Card>
 
-      {/* Upload Dialog */}
-      <Dialog open={isUploadOpen} onOpenChange={setIsUploadOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>הוספת תמונה</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 pt-4">
-            <div className="space-y-2">
-              <Label>סוג תמונה</Label>
-              <Select value={photoType} onValueChange={(v) => setPhotoType(v as typeof photoType)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="before">לפני</SelectItem>
-                  <SelectItem value="progress">התקדמות</SelectItem>
-                  <SelectItem value="after">אחרי</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>תאריך צילום</Label>
-              <Input
-                type="date"
-                value={photoDate}
-                onChange={(e) => setPhotoDate(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>הערות (אופציונלי)</Label>
-              <Input
-                placeholder="למשל: אחרי שבוע ראשון"
-                value={photoNotes}
-                onChange={(e) => setPhotoNotes(e.target.value)}
-              />
-            </div>
-            <div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleUpload}
-              />
-              <Button 
-                onClick={() => fileInputRef.current?.click()}
-                className="w-full gradient-primary"
-                disabled={isUploading}
-              >
-                {isUploading ? 'מעלה...' : 'בחר תמונה והעלה'}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {!isAdmin && (
+        <AddPhotoSheet
+          open={isUploadOpen}
+          onClose={() => setIsUploadOpen(false)}
+          userId={userId}
+          defaultType={beforePhotos.length ? 'progress' : 'before'}
+          onSaved={fetchPhotos}
+        />
+      )}
 
-      {/* Photo View Dialog */}
-      <Dialog open={!!selectedPhoto} onOpenChange={() => setSelectedPhoto(null)}>
-        <DialogContent className="max-w-lg p-2">
-          {selectedPhoto && (
-            <div className="space-y-3">
-              <img 
-                src={selectedPhoto.photo_url} 
-                alt={getTypeLabel(selectedPhoto.photo_type)}
-                className="w-full rounded-lg"
-              />
-              <div className="flex items-center justify-between px-2">
-                <div>
-                  <span className="text-sm font-medium">{getTypeLabel(selectedPhoto.photo_type)}</span>
-                  <span className="text-sm text-muted-foreground mr-2">
-                    {format(new Date(selectedPhoto.taken_at), 'dd/MM/yyyy', { locale: he })}
-                  </span>
-                  {selectedPhoto.notes && (
-                    <p className="text-sm text-muted-foreground">{selectedPhoto.notes}</p>
-                  )}
-                </div>
-                {!isAdmin && (
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    className="text-destructive"
-                    onClick={() => handleDelete(selectedPhoto)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      <PhotoViewer
+        photos={photos}
+        index={viewing}
+        onIndex={setViewing}
+        onClose={() => setViewing(null)}
+        onDelete={handleDelete}
+        canDelete={!isAdmin}
+      />
     </>
   );
 }

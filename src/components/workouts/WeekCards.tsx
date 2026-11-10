@@ -3,6 +3,7 @@ import { format } from 'date-fns';
 import { Check, ClipboardCheck, Dumbbell, Eye, Footprints, Play, Watch, Clock } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, Pill, PrimaryButton, SecondaryButton } from '@/components/ds';
+import { Button } from '@/components/ui/button';
 import type { WorkoutPlanDay, WorkoutPlanExercise } from '@/hooks/useWorkoutPlan';
 import type { WatchWorkout } from '@/lib/watchWorkouts';
 import { estimateMinutes, muscleTags } from '@/lib/exerciseLabels';
@@ -194,6 +195,80 @@ export function WalkCard({
         <button type="button" onClick={onRemove} className="min-h-[44px] w-full text-label font-semibold text-muted-foreground">
           הסרת ההליכה מהתוכנית
         </button>
+      )}
+    </Card>
+  );
+}
+
+// ── Planned by the trainee ────────────────────────────────────────────────────
+
+/**
+ * A walk / workout the trainee added to the calendar (once or on fixed days):
+ * the same card as the program's, in green so it's told apart, with the same
+ * actions — start it in the app, or mark it done.
+ */
+export function OwnPlanCard({
+  type, title, time, minutes, repeat, exercises, status, onStart, onDone, onDoneTap, onMore,
+}: {
+  type: 'walk' | 'workout';
+  title: string;
+  /** "HH:mm" */
+  time: string;
+  minutes?: number;
+  repeat?: boolean;
+  /** A workout from "האימונים שלי": how many exercises. */
+  exercises?: number;
+  status: DayStatus;
+  /** Start it: the GPS walk, or the workout player. */
+  onStart?: () => void;
+  /** "I did it" — marks it done. */
+  onDone?: () => Promise<void>;
+  onDoneTap?: () => void;
+  /** The planned item's sheet: the calendar, cancelling it. */
+  onMore: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const Icon = type === 'walk' ? Footprints : Dumbbell;
+  const done = async () => {
+    if (!onDone) return;
+    setBusy(true);
+    await onDone();
+    setBusy(false);
+  };
+  const rest = [
+    minutes ? `${minutes} דק'` : null,
+    exercises ? exerciseCount(exercises) : null,
+    repeat ? 'קבוע' : null,
+  ].filter(Boolean).join(' · ');
+
+  return (
+    <Card className={cn('space-y-3 border-success/40', status === 'today' && 'border-success/70')}>
+      <button type="button" onClick={onMore} className="flex w-full items-start gap-3 text-right" aria-label={`${title}: אפשרויות`}>
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-inner bg-success/15 text-success">
+          {status === 'done' ? <Check className="h-5 w-5" strokeWidth={2.5} /> : <Icon className="h-5 w-5" strokeWidth={2} />}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-card-title leading-tight">{title}</span>
+          <span className="block text-label text-muted-foreground"><span dir="ltr">{time}</span>{rest ? ` · ${rest}` : ''}</span>
+        </span>
+        {status === 'done' ? null : <Pill tone="success">שלי</Pill>}
+      </button>
+      {status === 'done' && (
+        <div className="flex justify-start">
+          <DonePill label={type === 'walk' ? 'בוצעה' : 'בוצע'} onTap={onDoneTap} />
+        </div>
+      )}
+
+      {status === 'today' && onStart && (
+        <Button size="lg" className="w-full bg-success text-base font-bold text-success-foreground hover:bg-success/90" onClick={onStart} disabled={busy}>
+          <Play strokeWidth={2} aria-hidden />
+          {type === 'walk' ? 'התחל הליכה' : 'התחל אימון'}
+        </Button>
+      )}
+      {(status === 'today' || status === 'missed') && onDone && (
+        <SecondaryButton icon={type === 'walk' ? Footprints : ClipboardCheck} className="w-full" disabled={busy} onClick={done}>
+          {type === 'walk' ? 'ביצעתי הליכה' : 'ביצעתי אימון'}
+        </SecondaryButton>
       )}
     </Card>
   );
