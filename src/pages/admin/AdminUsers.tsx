@@ -48,6 +48,7 @@ import { he } from 'date-fns/locale';
 import { Bot } from 'lucide-react';
 import { OnboardingAnswersTab } from '@/components/admin/OnboardingAnswersTab';
 import { BodyProgressSection } from '@/components/admin/BodyProgressSection';
+import { OwnActivitiesSection } from '@/components/admin/OwnActivitiesSection';
 import { BotTab, ClientDrawer, ClientHeader, DetailsTab, useClientHeader } from '@/components/admin/ClientPanel';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -1780,6 +1781,9 @@ export default function AdminUsers() {
                   </div>
                 )}
               </div>
+
+              {/* ── What the trainee added on their own (planned + logged) ── */}
+              <OwnActivitiesSection userId={editingUser.id} />
 
               {/* ── Workout History ── */}
               <div className="border-t border-border pt-4 mt-2">

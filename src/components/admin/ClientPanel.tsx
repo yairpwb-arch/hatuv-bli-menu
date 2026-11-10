@@ -111,6 +111,7 @@ interface HeaderData {
   lastWeighIn: string | null;
   lastMessage: { at: string; sender: string } | null;
   workoutsThisWeek: number;
+  walksThisWeek: number;
   part: number | null;
   group: GroupRow | null;
 }
@@ -124,13 +125,16 @@ export function useClientHeader(user: PanelUser | null, refreshKey: number) {
     (async () => {
       const weekStart = startOfWeek(new Date(), { weekStartsOn: 0 });
       const day = dayOf(user.start_date) ?? 0;
-      const [weights, group, sessions, acts, content] = await Promise.all([
+      const [weights, group, sessions, acts, content, walkActs, walkTicks] = await Promise.all([
         db.from('weight_log').select('weight, recorded_at').eq('user_id', user.id).order('recorded_at', { ascending: true }),
         db.from('whatsapp_groups').select('chat_id, name, user_id, bot_enabled, draft_mode').eq('user_id', user.id).maybeSingle(),
         db.from('workout_session_logs').select('id', { count: 'exact', head: true }).eq('user_id', user.id).gte('completed_at', weekStart.toISOString()),
         db.from('activities').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'done').is('session_id', null)
           .not('kind', 'in', '(walk,hike)').gte('started_at', weekStart.toISOString()),
         db.from('program_content').select('unlock_day, part_number').is('archived_at', null).lte('unlock_day', Math.max(day, 0)),
+        // Walks: logged as activities (GPS / by hand), or ticked as the plan's walk.
+        db.from('activities').select('day').eq('user_id', user.id).eq('status', 'done').in('kind', ['walk', 'hike']).gte('started_at', weekStart.toISOString()),
+        db.from('activity_log').select('completed_at').eq('user_id', user.id).eq('activity_type', 'walk').gte('completed_at', ymd(weekStart)),
       ]);
       const w = (weights.data ?? []) as { weight: number; recorded_at: string }[];
       const g = (group.data ?? null) as GroupRow | null;
@@ -147,6 +151,12 @@ export function useClientHeader(user: PanelUser | null, refreshKey: number) {
         lastWeighIn: w[w.length - 1]?.recorded_at ?? null,
         lastMessage,
         workoutsThisWeek: (sessions.count ?? 0) + (acts.count ?? 0),
+        // A walk both logged and ticked counts once (per day).
+        walksThisWeek: (() => {
+          const logged = ((walkActs.data ?? []) as { day: string }[]).map((a) => a.day);
+          const ticked = ((walkTicks.data ?? []) as { completed_at: string }[]).map((t) => t.completed_at.slice(0, 10)).filter((d) => !logged.includes(d));
+          return logged.length + new Set(ticked).size;
+        })(),
         part: parts.length ? Math.max(...parts) : null,
         group: g,
       });
@@ -218,7 +228,7 @@ export function ClientHeader({ user, data, onClose }: { user: PanelUser; data: H
           label="משקל"
           value={
             data?.lastWeight != null ? (
-              <span dir="ltr">{data.firstWeight != null ? `${data.firstWeight} → ` : ''}{data.lastWeight} ק"ג</span>
+              <span dir="ltr">{data.firstWeight != null && data.firstWeight !== data.lastWeight ? `${data.firstWeight} → ` : ''}{data.lastWeight} ק"ג</span>
             ) : '—'
           }
           sub={
@@ -237,7 +247,25 @@ export function ClientHeader({ user, data, onClose }: { user: PanelUser; data: H
           value={!data?.group ? 'אין קבוצה' : data.lastMessage ? ago(data.lastMessage.at) : 'אין הודעות'}
           sub={data?.lastMessage ? senderLabel[data.lastMessage.sender] ?? '' : undefined}
         />
-        <Stat label="אימונים השבוע" value={data ? data.workoutsThisWeek : '—'} sub="מיום ראשון" />
+        <Stat
+          label="השבוע (מיום ראשון)"
+          value={
+            data ? (
+              <span className="flex flex-wrap items-baseline gap-x-2">
+                <span className="text-primary-soft">{data.workoutsThisWeek === 1 ? 'אימון אחד' : `${data.workoutsThisWeek} אימונים`}</span>
+                <span className="text-success">{data.walksThisWeek === 1 ? 'הליכה אחת' : `${data.walksThisWeek} הליכות`}</span>
+              </span>
+            ) : '—'
+          }
+          sub={
+            data ? (
+              <span className="inline-flex items-center gap-2">
+                <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-pill bg-primary" />אימון</span>
+                <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-pill bg-success" />הליכה</span>
+              </span>
+            ) : undefined
+          }
+        />
       </div>
     </div>
   );

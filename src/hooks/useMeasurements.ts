@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { format } from 'date-fns';
+import { addDays, differenceInCalendarDays, format } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import type { MeasureKey } from '@/components/onboarding/BodySteps';
 
@@ -35,6 +35,32 @@ export const valuesOf = (r: MeasurementRow | null | undefined): MeasureValues =>
   return v;
 };
 
+/** Measurements are asked for again every two months. */
+export const MEASURE_EVERY_DAYS = 56;
+
+/** Due again: never measured, or the last one is two months old. */
+export const isMeasureDue = (lastYmd: string | null | undefined) =>
+  !lastYmd || differenceInCalendarDays(new Date(), new Date(`${lastYmd}T12:00:00`)) >= MEASURE_EVERY_DAYS;
+
+/** yyyy-MM-dd of the next measurement after one taken on lastYmd. */
+export const nextMeasureDay = (lastYmd: string) => format(addDays(new Date(`${lastYmd}T12:00:00`), MEASURE_EVERY_DAYS), 'yyyy-MM-dd');
+
+/** Saves today's measurements (a second time today replaces the first). */
+export async function saveMeasurements(userId: string, values: MeasureValues): Promise<boolean> {
+  const today = format(new Date(), 'yyyy-MM-dd');
+  const cols = {
+    arm_cm: values.arm ?? null,
+    chest_cm: values.chest ?? null,
+    waist_cm: values.waist ?? null,
+    belly_cm: values.belly ?? null,
+  };
+  const { data: todays } = await db.from('body_measurements').select('id').eq('user_id', userId).eq('measured_at', today).limit(1);
+  const { error } = todays?.[0]
+    ? await db.from('body_measurements').update(cols).eq('id', todays[0].id)
+    : await db.from('body_measurements').insert({ user_id: userId, measured_at: today, ...cols });
+  return !error;
+}
+
 /** A trainee's circumference measurements, oldest first; saving today's replaces today's. */
 export function useMeasurements(userId: string | undefined) {
   const [rows, setRows] = useState<MeasurementRow[]>([]);
@@ -57,19 +83,7 @@ export function useMeasurements(userId: string | undefined) {
   }, [load]);
 
   const save = async (values: MeasureValues): Promise<boolean> => {
-    if (!userId) return false;
-    const today = format(new Date(), 'yyyy-MM-dd');
-    const cols = {
-      arm_cm: values.arm ?? null,
-      chest_cm: values.chest ?? null,
-      waist_cm: values.waist ?? null,
-      belly_cm: values.belly ?? null,
-    };
-    const todays = rows.find((r) => r.measured_at === today);
-    const { error } = todays
-      ? await db.from('body_measurements').update(cols).eq('id', todays.id)
-      : await db.from('body_measurements').insert({ user_id: userId, measured_at: today, ...cols });
-    if (error) return false;
+    if (!userId || !(await saveMeasurements(userId, values))) return false;
     await load();
     return true;
   };

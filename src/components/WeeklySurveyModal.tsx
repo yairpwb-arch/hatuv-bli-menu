@@ -10,6 +10,9 @@ import { BottomSheet, PrimaryButton, SecondaryButton } from '@/components/ds';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { NumberField, OptionList } from '@/components/onboarding/inputs';
+import { MEASURES, MeasurementsStep, type MeasureKey } from '@/components/onboarding/BodySteps';
+import { MeasureValues, isMeasureDue, saveMeasurements } from '@/hooks/useMeasurements';
+import { MEASUREMENTS_CHANGED } from '@/components/profile/MeasurementsCard';
 import { cn } from '@/lib/utils';
 import { selectionHaptic, successHaptic } from '@/lib/native';
 import {
@@ -68,6 +71,9 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [attempted, setAttempted] = useState(false);
+  // Every two months the survey also asks for the circumferences.
+  const [measureDue, setMeasureDue] = useState(false);
+  const [lastMeasure, setLastMeasure] = useState<{ at: string; values: MeasureValues } | null>(null);
 
   // The habits asked about: this week's, the ones the trainee ticks (bonus ones left out).
   const surveyHabits = useMemo(() => habits.filter((h) => !h.is_bonus), [habits]);
@@ -79,16 +85,20 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
     (async () => {
       setIsLoading(true);
       setAttempted(false);
-      const [existing, lastWeight, unlockRow, exRows] = await Promise.all([
+      const [existing, lastWeight, unlockRow, exRows, lastM] = await Promise.all([
         db.from('weekly_checkin').select('id').eq('user_id', user.id).eq('week_number', currentWeek).maybeSingle(),
         db.from('weight_log').select('weight').eq('user_id', user.id).order('recorded_at', { ascending: false }).order('created_at', { ascending: false }).limit(1).maybeSingle(),
         db.from('program_content').select('unlock_day').eq('unlocks', 'workout_1').is('archived_at', null).maybeSingle(),
         planDays.length
           ? db.from('workout_plan_exercises').select('plan_day_id, sort_order, exercises(name)').in('plan_day_id', planDays.map((d) => d.id)).order('sort_order')
           : Promise.resolve({ data: [] }),
+        db.from('body_measurements').select('measured_at, arm_cm, chest_cm, waist_cm, belly_cm').eq('user_id', user.id).order('measured_at', { ascending: false }).limit(1).maybeSingle(),
       ]);
       if (gone) return;
       setDoneAlready(!!existing.data);
+      const lm = lastM.data as { measured_at: string; arm_cm: number | null; chest_cm: number | null; waist_cm: number | null; belly_cm: number | null } | null;
+      setMeasureDue(isMeasureDue(lm?.measured_at));
+      setLastMeasure(lm ? { at: lm.measured_at, values: { arm: lm.arm_cm ?? undefined, chest: lm.chest_cm ?? undefined, waist: lm.waist_cm ?? undefined, belly: lm.belly_cm ?? undefined } } : null);
 
       // Workouts open from the start → week 1; else the week of the video that opens them (weeks 5–6).
       const fromStart = planDays.some((d) => !d.unlocks_with);
@@ -149,6 +159,9 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
 
     // The answers as asked, readable as is (admin screen, coaching bot).
     const items: SurveyItem[] = [{ key: 'weight', question: T.weight, answer: weight! }];
+    const measured = (answers.measurements ?? {}) as MeasureValues;
+    const measuredText = MEASURES.filter((x) => measured[x.key] != null).map((x) => `${x.label} ${measured[x.key]}`).join(' · ');
+    if (measureDue && measuredText) items.push({ key: 'measurements', question: 'היקפים (ס"מ)', answer: measuredText });
     for (const h of surveyHabits) items.push({ key: `habit:${h.id}`, question: h.name, answer: answers[`habit:${h.id}`] as number });
     if (askWorkouts) {
       for (const d of planDays) {
@@ -194,6 +207,12 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
       : await db.from('weight_log').insert({ user_id: user.id, weight, recorded_at: today });
     if (w.error) toast.error('השאלון נשמר, אבל המשקל לא עודכן');
 
+    // The two-monthly measurements, into the measurements history (profile + admin).
+    if (measureDue && measuredText) {
+      if (await saveMeasurements(user.id, measured)) window.dispatchEvent(new Event(MEASUREMENTS_CHANGED));
+      else toast.error('השאלון נשמר, אבל ההיקפים לא נשמרו');
+    }
+
     clearDraft(user.id, currentWeek);
     successHaptic();
     setIsSaving(false);
@@ -227,6 +246,26 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
           <Question title={T.weight} hint={T.weightHint} invalid={bad('weight')}>
             <NumberField value={weight} onChange={(v) => set('weight', v)} unit='ק"ג' min={30} max={300} step={0.1} decimals compact />
           </Question>
+
+          {/* Circumferences, every two months */}
+          {measureDue && (
+            <section className="space-y-3 rounded-card border border-primary/40 bg-primary-tint/40 p-4">
+              <div>
+                <h3 className="text-card-title">{lastMeasure ? 'עברו חודשיים: מודדים היקפים שוב' : 'מדידת היקפים'}</h3>
+                <p className="text-label text-muted-foreground">
+                  סרט מדידה רך, צמוד לגוף בלי ללחוץ. פעם בחודשיים, כדי לראות שינוי גם כשהמשקל לא זז.
+                  {' '}אין סרט מדידה עכשיו? אפשר לדלג, ונזכיר לך.
+                </p>
+                {lastMeasure && (
+                  <p className="mt-1 text-label text-muted-foreground">
+                    בפעם הקודמת ({format(new Date(`${lastMeasure.at}T12:00:00`), 'd/M')}):{' '}
+                    {MEASURES.filter((x) => lastMeasure.values[x.key as MeasureKey] != null).map((x) => `${x.label} ${lastMeasure.values[x.key as MeasureKey]}`).join(' · ')}
+                  </p>
+                )}
+              </div>
+              <MeasurementsStep value={(answers.measurements ?? {}) as MeasureValues} onChange={(v) => set('measurements', v)} />
+            </section>
+          )}
 
           {/* Habits, 1–10 each */}
           {surveyHabits.length > 0 && (
