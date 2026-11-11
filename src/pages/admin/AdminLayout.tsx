@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useNavigate, Outlet, NavLink, Navigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from '@/hooks/use-toast';
-import { Users, BookOpen, ArrowRight, LayoutDashboard, LogOut, Repeat2, ClipboardList, Video, Bot } from 'lucide-react';
+import { Users, BookOpen, ArrowRight, LayoutDashboard, LogOut, Repeat2, ClipboardList, Video, Bot, Dumbbell } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { FullScreenLoader } from '@/components/BrandedLoader';
@@ -15,6 +15,7 @@ const adminNavItems = [
   { to: '/admin/surveys', icon: ClipboardList, label: 'שאלונים' },
   { to: '/admin/exercises', icon: Video, label: 'תרגילים' },
   { to: '/admin/bot', icon: Bot, label: 'בוט' },
+  { to: '/admin/workout-bot', icon: Dumbbell, label: 'בוט אימונים' },
 ];
 
 export default function AdminLayout() {

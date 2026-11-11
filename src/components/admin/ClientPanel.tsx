@@ -93,9 +93,11 @@ export function ClientDrawer({ open, onClose, title, children }: { open: boolean
           aria-describedby={undefined}
           // No focus ring on the close button just for opening.
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className="fixed inset-y-0 left-0 z-50 flex w-full max-w-[720px] flex-col bg-background shadow-xl outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left data-[state=open]:duration-300 data-[state=closed]:duration-200"
+          className="fixed inset-x-2 bottom-[calc(max(var(--app-safe-bottom),20px)+12px)] top-[calc(max(var(--app-safe-top),44px)+16px)] z-50 flex flex-col overflow-hidden rounded-card bg-background shadow-xl outline-none sm:inset-x-auto sm:bottom-0 sm:left-0 sm:top-0 sm:w-full sm:max-w-[720px] sm:rounded-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left data-[state=open]:duration-300 data-[state=closed]:duration-200"
         >
           <DialogPrimitive.Title className="sr-only">{title}</DialogPrimitive.Title>
+          {/* Wide screens: a full-height panel, below the status bar if there is one. */}
+          <div className="hidden shrink-0 bg-card sm:block" style={{ height: 'var(--app-safe-top)' }} aria-hidden />
           {children}
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
@@ -170,10 +172,10 @@ export function useClientHeader(user: PanelUser | null, refreshKey: number) {
 
 function Stat({ label, value, sub, tone }: { label: string; value: React.ReactNode; sub?: React.ReactNode; tone?: 'good' | 'muted' }) {
   return (
-    <div className="min-w-0 rounded-inner bg-card-inner px-3 py-2.5">
-      <p className="truncate text-label text-muted-foreground">{label}</p>
-      <p className="truncate text-body font-bold">{value}</p>
-      {sub && <p className={cn('truncate text-label', tone === 'good' ? 'text-success' : 'text-muted-foreground')}>{sub}</p>}
+    <div className="min-w-0 rounded-[12px] bg-card-inner px-2.5 py-1.5 sm:rounded-inner sm:px-3 sm:py-2.5">
+      <p className="truncate text-[11px] leading-4 text-muted-foreground sm:text-label">{label}</p>
+      <p className="truncate text-label font-bold sm:text-body">{value}</p>
+      {sub && <p className={cn('truncate text-[11px] leading-4 sm:text-label', tone === 'good' ? 'text-success' : 'text-muted-foreground')}>{sub}</p>}
     </div>
   );
 }
@@ -204,26 +206,26 @@ export function ClientHeader({ user, data, onClose }: { user: PanelUser; data: H
   const senderLabel: Record<string, string> = { client: 'מהלקוח', coach: 'מאיתנו', bot: 'מהבוט' };
 
   return (
-    <div className="space-y-3 px-6 pb-3 pt-5">
+    <div className="space-y-2 px-4 pb-2 pt-2 sm:space-y-3 sm:px-6 sm:pb-3 sm:pt-5">
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1 space-y-1.5">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="truncate text-[1.5rem] font-extrabold leading-tight">{user.full_name || user.email}</h2>
-            <Pill tone={status.tone}>{status.label}</Pill>
-            <Pill tone={bot === 'live' ? 'success' : bot === 'draft' ? 'brand' : 'neutral'} icon={Bot}>{BOT_LABEL[bot]}</Pill>
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+            <h2 className="truncate text-[1.125rem] font-extrabold leading-tight sm:text-[1.5rem]">{user.full_name || user.email}</h2>
+            <Pill tone={status.tone} className="px-2 py-0.5 text-[11px] sm:px-3 sm:py-1.5 sm:text-label">{status.label}</Pill>
+            <Pill tone={bot === 'live' ? 'success' : bot === 'draft' ? 'brand' : 'neutral'} icon={Bot} className="px-2 py-0.5 text-[11px] sm:px-3 sm:py-1.5 sm:text-label [&>svg]:h-3.5 [&>svg]:w-3.5">{BOT_LABEL[bot]}</Pill>
           </div>
-          <p className="text-body text-muted-foreground">{line}</p>
+          <p className="line-clamp-2 text-[12px] leading-[1.125rem] text-muted-foreground sm:text-body">{line}</p>
         </div>
         <button
           type="button"
           onClick={onClose}
           aria-label="סגירה"
-          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-pill text-muted-foreground hover:bg-card-inner"
+          className="-ml-2 -mt-1.5 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-pill text-muted-foreground hover:bg-card-inner"
         >
           <X className="h-5 w-5" />
         </button>
       </div>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] sm:mx-0 sm:grid sm:grid-cols-4 sm:gap-2 sm:overflow-visible sm:px-0 [&::-webkit-scrollbar]:hidden [&>*]:w-[42%] [&>*]:shrink-0 sm:[&>*]:w-auto">
         <Stat
           label="משקל"
           value={
@@ -367,7 +369,7 @@ export function DetailsTab({ user, onSaved }: { user: PanelUser; onSaved: (patch
 
   return (
     <div className="flex min-h-full flex-col">
-      <div className="flex-1 space-y-card-gap px-6 py-5">
+      <div className="flex-1 space-y-card-gap px-3 py-4 sm:px-6 sm:py-5">
         <Card className="space-y-4">
           <SectionHeader title="פרטים אישיים" />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -464,14 +466,14 @@ export function DetailsTab({ user, onSaved }: { user: PanelUser; onSaved: (patch
       </div>
 
       {/* One save button, always in reach */}
-      <div className="sticky bottom-0 z-10 flex items-center gap-3 border-t border-border bg-card/95 px-6 py-3 backdrop-blur">
+      <div className="sticky bottom-0 z-10 flex items-center gap-3 border-t border-border bg-card/95 px-4 py-3 backdrop-blur sm:px-6 sm:pb-[calc(0.75rem+var(--app-safe-bottom))]">
         <p className={cn('flex-1 text-label', dirty ? 'font-semibold text-primary-soft' : 'text-muted-foreground')}>
           {dirty ? 'יש שינויים שלא נשמרו' : 'אין שינויים'}
         </p>
         {dirty && (
           <Button variant="ghost" onClick={() => setForm(base)} disabled={saving}>ביטול</Button>
         )}
-        <PrimaryButton className="w-auto px-10" disabled={!dirty || saving} onClick={save}>
+        <PrimaryButton className="w-auto px-8 sm:px-10" disabled={!dirty || saving} onClick={save}>
           {saving && <Loader2 className="h-4 w-4 animate-spin" />}שמירה
         </PrimaryButton>
       </div>
@@ -572,7 +574,7 @@ export function BotTab({ userId, onChanged }: { userId: string; onChanged: () =>
   };
 
   return (
-    <div className="space-y-card-gap px-6 py-5">
+    <div className="space-y-card-gap px-3 py-4 sm:px-6 sm:py-5">
       <Card className="space-y-4">
         <SectionHeader
           title="קבוצת וואטסאפ"

@@ -19,6 +19,8 @@ export const brainReady = () => !!anthropic;
 const FALLBACK_RULES = `אתה "העוזר הדיגיטלי של חטוב בלי תפריט". אתה כותב בשם הצוות ("אנחנו"), קצר וחם, עד 2 הודעות קצרות מופרדות בשורה ---. לא עצה רפואית; כאב, פציעה, מחלה, הריון, אכילה לא בריאה, רצון לעזוב או תלונה: אומרים שתעביר למאמנים ומסמנים [העבר]. אם אין צורך לענות, כתוב רק: [שקט]`;
 
 export const HANDOFF_TAG = '[העבר]';
+/** The client asked for more / other workouts: the workout bot builds them (planBuilder.ts). */
+export const PLAN_REQUEST_TAG = '[בקשת_אימון]';
 
 type Row = Record<string, any>;
 const iso = (d: Date) => d.toISOString().slice(0, 10);
@@ -129,6 +131,8 @@ export interface Reply {
   handoff: boolean;
   /** A workout review the bot opened ([בחינת_אימון]) or finished asking about ([סיום_בחינה]). */
   review?: 'start' | 'finish' | null;
+  /** The client asked for more / other workouts ([בקשת_אימון]). */
+  planRequest?: boolean;
 }
 
 export interface PromptParts {
@@ -264,11 +268,12 @@ export function toReply(text: string, max = 2): Reply {
   if (!text || text.includes('[שקט]')) return { parts: [], handoff: false };
   const handoff = text.includes(HANDOFF_TAG);
   const review = text.includes(REVIEW_END_TAG) ? 'finish' : text.includes(REVIEW_START_TAG) ? 'start' : null;
-  const clean = [HANDOFF_TAG, REVIEW_START_TAG, REVIEW_END_TAG].reduce((t, tag) => t.split(tag).join(''), text).trim();
+  const planRequest = text.includes(PLAN_REQUEST_TAG);
+  const clean = [HANDOFF_TAG, REVIEW_START_TAG, REVIEW_END_TAG, PLAN_REQUEST_TAG].reduce((t, tag) => t.split(tag).join(''), text).trim();
   const all = clean.split(/\n\s*---\s*\n/).map((s) => s.trim()).filter(Boolean);
   // At most `max` messages: anything after the last joins it, so nothing is lost.
   const parts = all.length > max ? [...all.slice(0, max - 1), all.slice(max - 1).join('\n')] : all;
-  return { parts, handoff, review };
+  return { parts, handoff, review, planRequest };
 }
 
 /** The bot's reply to the latest client message(s). */

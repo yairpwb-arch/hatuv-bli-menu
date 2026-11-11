@@ -8,6 +8,9 @@
 //   { job: 'profiles' }   a weekly profile (≤200 words) per active client
 //   { job: 'replies' }    a new conversation answered 5 minutes later (talk.ts)
 //   { job: 'proactive' }  messages the bot starts: check-in, after a workout, Friday, Shabbat (talk.ts)
+//   { job: 'plans' }      the workout bot: a plan for each opening questionnaire just finished (planBuilder.ts)
+//   { job: 'build_plan', user_id, request?, note? }  admin: build (or rebuild) a trainee's plan
+//   { job: 'approve_plan', draft_id }                admin: write an approved plan into the app
 //
 // Auth: x-cron-secret = PUSH_CRON_SECRET (the same secret as the notifications),
 // or an admin's session.
@@ -17,6 +20,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 import { claudeUsage, embed, logUsage, vectorLiteral } from '../_shared/botkit.ts';
 import { buildPrompt, runModel } from '../whatsapp-webhook/brain.ts';
 import { proactive, replies } from './talk.ts';
+import { approveDraft, jobPlans, startBuild } from '../whatsapp-webhook/planBuilder.ts';
 
 type Row = Record<string, any>;
 
@@ -317,12 +321,14 @@ async function jobEvalCase(body: Row) {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   let allowed = !!CRON_SECRET && req.headers.get('x-cron-secret') === CRON_SECRET;
+  let adminId: string | null = null;
   if (!allowed) {
     const token = (req.headers.get('authorization') ?? '').replace('Bearer ', '');
     const { data: who } = await db.auth.getUser(token);
     if (who?.user) {
       const { data: role } = await db.from('user_roles').select('id').eq('user_id', who.user.id).eq('role', 'admin').maybeSingle();
       allowed = !!role;
+      if (allowed) adminId = who.user.id;
     }
   }
   if (!allowed) return json({ error: 'unauthorized' }, 401);
@@ -336,6 +342,15 @@ Deno.serve(async (req) => {
     if (job === 'eval_case') return json(await jobEvalCase(body));
     if (job === 'replies') return json(await replies(db));
     if (job === 'proactive') return json(await proactive(db));
+    if (job === 'plans') return json(await jobPlans(db));
+    if (job === 'build_plan' && body.user_id) {
+      // The first plan if there are no workout days yet, else a request (add / replace days).
+      const { data: a } = await db.from('user_workout_assignments').select('plan_id').eq('user_id', body.user_id).eq('is_active', true).limit(1).maybeSingle();
+      const { count } = a ? await db.from('workout_plan_days').select('id', { count: 'exact', head: true }).eq('plan_id', a.plan_id) : { count: 0 };
+      const kind = body.kind === 'initial' || body.kind === 'request' ? body.kind : (count ?? 0) > 0 ? 'request' : 'initial';
+      return json(await startBuild(db, body.user_id, { kind, request: body.request ?? null, note: body.note ?? null }));
+    }
+    if (job === 'approve_plan' && body.draft_id) return json(await approveDraft(db, body.draft_id, adminId));
     return json({ error: 'unknown job' }, 400);
   } catch (err) {
     console.error('[bot-jobs]', job, err instanceof Error ? err.message : err);

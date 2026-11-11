@@ -194,6 +194,7 @@ const AdminHabits = lazy(() => import("./pages/admin/AdminHabits"));
 const AdminSurveys = lazy(() => import("./pages/admin/AdminSurveys"));
 const AdminExercises = lazy(() => import("./pages/admin/AdminExercises"));
 const AdminBot = lazy(() => import("./pages/admin/AdminBot"));
+const AdminWorkoutBot = lazy(() => import("./pages/admin/AdminWorkoutBot"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const Onboarding = lazy(() => import("./pages/Onboarding"));
 const WorkoutActiveSession = lazy(() => import("./components/WorkoutActiveSession"));
@@ -374,6 +375,7 @@ const App = () => (
               <Route path="surveys" element={<AdminSurveys />} />
               <Route path="exercises" element={<AdminExercises />} />
               <Route path="bot" element={<AdminBot />} />
+              <Route path="workout-bot" element={<AdminWorkoutBot />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>

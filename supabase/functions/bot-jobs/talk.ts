@@ -13,6 +13,7 @@ import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4
 import { buildPrompt, composeReply, maxParts, runModel, toReply } from '../whatsapp-webhook/brain.ts';
 import { TEST_GROUP_ID, alertHandoff, deliver, readChat, sendTyping } from '../_shared/wa.ts';
 import { REVIEW_OPEN_TASK, afterReply, openReview, reviewDue, reviewTimeouts, startReview } from '../whatsapp-webhook/workouts.ts';
+import { requestFromGroup } from '../whatsapp-webhook/planBuilder.ts';
 
 type Row = Record<string, any>;
 const MIN = 60_000;
@@ -108,10 +109,12 @@ export async function replies(db: SupabaseClient) {
     if (!latest) continue;
     await readChat(p.chat_id);
     await sendTyping(p.chat_id, 8000);
-    const { parts, handoff, review } = await composeReply(db, p.chat_id, p.user_id, latest);
+    const { parts, handoff, review, planRequest } = await composeReply(db, p.chat_id, p.user_id, latest);
     if (handoff) await alertHandoff(db, p.chat_id, p.user_id, parts.join('\n'), true);
     await deliver(db, p.chat_id, p.user_id, parts);
     await afterReply(db, p.chat_id, p.user_id, review);
+    // Asked for more / other workouts: the workout bot builds them, a coach approves.
+    if (planRequest) await requestFromGroup(db, p.chat_id, p.user_id);
     answered++;
   }
   return { answered };

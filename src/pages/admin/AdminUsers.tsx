@@ -45,10 +45,11 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { format, differenceInDays, startOfWeek, addDays } from 'date-fns';
 import { he } from 'date-fns/locale';
-import { Bot } from 'lucide-react';
+import { Bot, X } from 'lucide-react';
 import { OnboardingAnswersTab } from '@/components/admin/OnboardingAnswersTab';
 import { BodyProgressSection } from '@/components/admin/BodyProgressSection';
 import { OwnActivitiesSection } from '@/components/admin/OwnActivitiesSection';
+import { TraineePlanBot } from '@/components/admin/TraineePlanBot';
 import { BotTab, ClientDrawer, ClientHeader, DetailsTab, useClientHeader } from '@/components/admin/ClientPanel';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -360,6 +361,15 @@ export default function AdminUsers() {
   // Bumped when something the panel's header shows changes (details saved, the bot's switches).
   const [headerKey, setHeaderKey] = useState(0);
   const headerData = useClientHeader(editingUser, headerKey);
+  // Phone: once the header has scrolled away, the tabs bar shows the name and a close button.
+  const [headerEl, setHeaderEl] = useState<HTMLDivElement | null>(null);
+  const [headerGone, setHeaderGone] = useState(false);
+  useEffect(() => {
+    if (!headerEl) return;
+    const io = new IntersectionObserver(([e]) => setHeaderGone(!e.isIntersecting), { threshold: 0 });
+    io.observe(headerEl);
+    return () => io.disconnect();
+  }, [headerEl]);
   const [deletingUser, setDeletingUser] = useState<User | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -608,6 +618,11 @@ export default function AdminUsers() {
       .order('walk_number');
     setAdminWalks((data || []) as AdminWalkEntry[]);
   };
+
+  /** After the workout bot's plan was approved: show the new days. */
+  const reloadWorkoutPlan = useCallback(() => {
+    if (editingUser) void loadWorkoutPlan(editingUser.id);
+  }, [editingUser?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadWorkoutPlan = async (userId: string) => {
     // Load any assignment (active or inactive) so we can reactivate without creating a new plan
@@ -1107,11 +1122,22 @@ export default function AdminUsers() {
       {/* ── The client panel: a wide drawer with a sticky header and tabs ── */}
       <ClientDrawer open={!!editingUser} onClose={closeEdit} title={editingUser?.full_name || editingUser?.email || 'מתאמן'}>
         {editingUser && (
-          <Tabs defaultValue="personal" dir="rtl" className="flex min-h-0 flex-1 flex-col">
-            <div className="shrink-0 border-b border-border bg-card">
+          // Phone: the header scrolls away and the tabs stay on top. Wider: header and tabs stay, the tab scrolls.
+          <Tabs defaultValue="personal" dir="rtl" className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain sm:overflow-hidden">
+            <div className="bg-card sm:shrink-0">
               <ClientHeader user={editingUser} data={headerData} onClose={closeEdit} />
-              <div className="overflow-x-auto px-6 pb-3">
-                <TabsList className="inline-flex h-11 w-full min-w-max justify-start gap-1 rounded-inner bg-card-inner p-1">
+              <div ref={setHeaderEl} className="h-px" aria-hidden />
+            </div>
+            <div className="sticky top-0 z-20 border-b border-border bg-card px-3 pb-2 pt-1 sm:static sm:shrink-0 sm:px-6 sm:pb-3">
+              {headerGone && (
+                <div className="flex items-center gap-2 pb-1 sm:hidden">
+                  <p className="min-w-0 flex-1 truncate text-body font-bold">{editingUser.full_name || editingUser.email}</p>
+                  <button type="button" onClick={closeEdit} aria-label="סגירה" className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-pill text-muted-foreground">
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+              )}
+                <TabsList className="grid h-auto w-full grid-cols-6 gap-1 rounded-inner bg-card-inner p-1">
                   {([
                     ['personal', 'פרטים', UserIcon],
                     ['body', 'נתונים', Scale],
@@ -1120,15 +1146,14 @@ export default function AdminUsers() {
                     ['survey', 'שאלון', ClipboardList],
                     ['bot', 'בוט', Bot],
                   ] as const).map(([v, label, Icon]) => (
-                    <TabsTrigger key={v} value={v} className="h-9 flex-1 gap-1.5 rounded-[12px] px-3 text-label font-semibold data-[state=active]:bg-card data-[state=active]:shadow-sm">
+                    <TabsTrigger key={v} value={v} className="flex h-auto min-h-[44px] flex-col gap-0.5 rounded-[12px] px-0 py-1 text-[11px] font-semibold data-[state=active]:bg-card data-[state=active]:shadow-sm sm:min-h-0 sm:flex-row sm:gap-1.5 sm:py-2 sm:text-label">
                       <Icon className="h-4 w-4" />{label}
                     </TabsTrigger>
                   ))}
                 </TabsList>
-              </div>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="sm:min-h-0 sm:flex-1 sm:overflow-y-auto">
             {/* ── Tab 1: Details (personal, process, danger zone) ── */}
             <TabsContent value="personal" className="mt-0 min-h-full">
               <DetailsTab
@@ -1148,7 +1173,7 @@ export default function AdminUsers() {
             </TabsContent>
 
             {/* ── Tab 2: Body / Weight ── */}
-            <TabsContent value="body" className="mt-0 px-6 pb-6 pt-5 space-y-4">
+            <TabsContent value="body" className="mt-0 px-4 pb-6 pt-4 space-y-4 sm:px-6 sm:pt-5">
               <div className="grid grid-cols-3 gap-3">
                 {[
                   { label: 'משקל התחלתי (ק"ג)', key: 'initial_weight' },
@@ -1281,7 +1306,7 @@ export default function AdminUsers() {
             </TabsContent>
 
             {/* ── Tab 3: Habits ── */}
-            <TabsContent value="habits" className="mt-0 px-6 pb-6 pt-5 space-y-4">
+            <TabsContent value="habits" className="mt-0 px-4 pb-6 pt-4 space-y-4 sm:px-6 sm:pt-5">
               {/* Global habits */}
               <div className="space-y-3">
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">הרגלים כלליים</p>
@@ -1405,7 +1430,10 @@ export default function AdminUsers() {
             </TabsContent>
 
             {/* ── Tab 4: Workout Plan ── */}
-            <TabsContent value="workout" className="mt-0 px-6 pb-6 pt-5 space-y-4">
+            <TabsContent value="workout" className="mt-0 px-4 pb-6 pt-4 space-y-4 sm:px-6 sm:pt-5">
+              {/* The workout bot: a plan it built (waiting for us), or build one */}
+              <TraineePlanBot userId={editingUser.id} hasDays={planDays.length > 0} onApplied={reloadWorkoutPlan} />
+
               {/* Toggle */}
               <div className="flex items-center justify-between p-3 bg-muted/50 rounded-xl">
                 <div>
@@ -1913,7 +1941,7 @@ export default function AdminUsers() {
             </TabsContent>
 
             {/* ── Tab 5: Questionnaires: the opening one, then the weekly ones ── */}
-            <TabsContent value="survey" className="mt-0 space-y-6 px-6 pb-6 pt-5">
+            <TabsContent value="survey" className="mt-0 space-y-6 px-4 pb-6 pt-4 sm:px-6 sm:pt-5">
               <section className="space-y-3">
                 <h3 className="text-card-title">שאלון פתיחה</h3>
                 <OnboardingAnswersTab userId={editingUser.id} />

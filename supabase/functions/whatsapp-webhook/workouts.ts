@@ -33,7 +33,7 @@ interface Plan { id: string; ownerId: string | null; days: PlanDay[]; exercises:
 /** E1/D1 → ids, kept with the changes so they apply to what the coach saw. */
 type Refs = Record<string, { id: string; name: string; day?: string }>;
 
-async function loadPlan(db: SupabaseClient, userId: string): Promise<Plan | null> {
+export async function loadPlan(db: SupabaseClient, userId: string): Promise<Plan | null> {
   const { data: a } = await db.from('user_workout_assignments').select('plan_id, start_date').eq('user_id', userId).eq('is_active', true).order('created_at', { ascending: false }).limit(1).maybeSingle();
   if (!a) return null;
   const [{ data: plan }, { data: days }, { data: watched }] = await Promise.all([
@@ -67,7 +67,7 @@ async function loadPlan(db: SupabaseClient, userId: string): Promise<Plan | null
 }
 
 /** Short names for the plan's days and exercises; ones already named keep their name. */
-function makeRefs(plan: Plan, prev: Refs = {}): Refs {
+export function makeRefs(plan: Plan, prev: Refs = {}): Refs {
   const refs: Refs = {};
   const byId = new Map(Object.entries(prev).map(([k, v]) => [v.id, k]));
   let d = Math.max(0, ...Object.keys(prev).filter((k) => k.startsWith('D')).map((k) => Number(k.slice(1)) || 0));
@@ -85,7 +85,7 @@ function makeRefs(plan: Plan, prev: Refs = {}): Refs {
 const target = (e: { timed: boolean; repsMin: number; repsMax: number }) =>
   `${e.repsMin === e.repsMax ? e.repsMin : `${e.repsMin}–${e.repsMax}`} ${e.timed ? 'שניות' : 'חזרות'}`;
 
-function planText(plan: Plan, refs: Refs): string {
+export function planText(plan: Plan, refs: Refs): string {
   const refOf = new Map(Object.entries(refs).map(([k, v]) => [v.id, k]));
   return plan.days.map((day) => {
     const list = plan.exercises.filter((x) => x.dayId === day.id);
@@ -165,8 +165,19 @@ export async function startReview(db: SupabaseClient, userId: string, chatId: st
 }
 
 /** For the bot's prompt in the trainee's group: the open review's brief, or how to open one. */
+/** Asking for more / other workouts: the workout bot builds them (planBuilder.ts). Test group only. */
+const PLAN_REQUEST_TEXT = `# אם הוא מבקש עוד אימונים או אימון אחר
+אם הלקוח מבקש במפורש אימון נוסף, עוד ימי אימון, אימון לבית / לחופשה / לחדר כושר, או תוכנית אחרת (לא שינוי קטן בתרגיל אחד, ולא קושי באימון: לזה יש בדיקת אימון): אם חסר פרט חשוב לבנייה (איפה הוא יתאמן, איזה ציוד יש לו, כמה זמן יש לו), שואלים קודם, בהודעה אחת. כשיש מספיק: עונים לו שאנחנו בונים לו את זה ושזה יגיע אליו לאפליקציה בקרוב, ומוסיפים בסוף [בקשת_אימון]. מול הלקוח האימונים פשוט שלנו: לא מספרים לו על בוט או על אישור של מאמן.`;
+
 export async function reviewSection(db: SupabaseClient, userId: string | null, chatId: string): Promise<string> {
   if (!userId || chatId !== TEST_GROUP_ID) return '';
+  const inner = await reviewInner(db, userId, chatId);
+  const open = await openReview(db, userId);
+  // In the middle of a review, the review leads; otherwise a request for workouts can come up any time.
+  return open ? inner : [inner, PLAN_REQUEST_TEXT].filter(Boolean).join('\n\n');
+}
+
+async function reviewInner(db: SupabaseClient, userId: string, chatId: string): Promise<string> {
   const review = await openReview(db, userId);
   // In front of the client the workouts are simply ours: no "the coaches will check / approve".
   const ours = 'מול הלקוח, האימונים פשוט שלנו ("אנחנו"): לא כותבים לו שמעבירים למאמנים, שמחכים לאישור, או שמשהו "עוד לא נבדק". ההתייעצות עם המאמן קורית בפרטי, בלי לספר לו.';

@@ -26,6 +26,7 @@ import type { ActivityKind } from '@/lib/activityKinds';
 import { Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { loadMyWorkout } from '@/lib/myWorkouts';
+import { ExtraWorkoutOffer } from '@/components/workouts/ExtraWorkoutOffer';
 import { startOfWeek } from 'date-fns';
 
 type View = 'week' | 'calendar' | 'history';
@@ -36,7 +37,7 @@ const VIEWS: { value: View; label: string }[] = [
 ];
 
 export default function AppWorkouts() {
-  const { user, currentWeek, currentDay } = useAuth();
+  const { user, profile, currentWeek, currentDay } = useAuth();
   const { plan, planDays, isLoading } = useWorkoutPlan();
   const { sessions, logSession, deleteSession, isLoading: isSessionsLoading } = useWorkoutSession();
   const { start } = useActiveWorkout();
@@ -174,6 +175,13 @@ export default function AppWorkouts() {
             onBuildWorkout={(day) => setSheet({ open: true, date: new Date(`${day}T12:00:00`), build: true })}
           />
           <WatchConnectCard connected={watch.connected} isBusy={watch.isBusy} onConnect={watch.connect} />
+          {/* Weeks 9–10: an extra workout (pull-ups / abs), once */}
+          <ExtraWorkoutOffer
+            userId={user.id}
+            currentWeek={currentWeek}
+            gender={(profile as { gender?: string | null } | null)?.gender}
+            hasPlan={planDays.length > 0}
+          />
         </>
       )}
 

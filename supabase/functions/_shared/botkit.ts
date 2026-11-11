@@ -18,7 +18,7 @@ const PRICES: Record<string, [number, number, number, number]> = {
 const TRANSCRIBE_PER_MIN = 0.006;
 
 export interface Usage {
-  kind: 'reply' | 'profile' | 'embed' | 'transcribe' | 'eval' | 'judge' | 'review';
+  kind: 'reply' | 'profile' | 'embed' | 'transcribe' | 'eval' | 'judge' | 'review' | 'plan';
   model: string;
   chatId?: string | null;
   userId?: string | null;
