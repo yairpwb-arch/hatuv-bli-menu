@@ -265,11 +265,14 @@ export default function AdminContent() {
     }
   };
 
+  const lastSort = Math.max(-Infinity, ...content.filter((c) => c.part_number < 5).map((c) => c.sort_order ?? -Infinity));
+
   const partNames: Record<number, string> = {
     1: 'חלק 1',
     2: 'חלק 2',
     3: 'חלק 3',
-    5: 'הבסיס לשינוי הרגלים',
+    4: 'חלק 4',
+    5:'הבסיס לשינוי הרגלים',
   };
 
   return (
@@ -311,7 +314,11 @@ export default function AdminContent() {
                 {content.map((item) => (
                   <TableRow key={item.id}>
                     <TableCell>{item.sort_order}</TableCell>
-                    <TableCell>{partNames[item.part_number]}</TableCell>
+                    <TableCell>
+                      {partNames[item.part_number]}
+                      {/* The last content of the program: its closing. */}
+                      {item.part_number < 5 && item.sort_order === lastSort && <span className="block text-xs font-semibold text-primary">סיום</span>}
+                    </TableCell>
                     <TableCell>{item.week_range}</TableCell>
                     <TableCell className="font-medium">{item.title}</TableCell>
                     <TableCell>{item.unlock_day}</TableCell>
@@ -374,6 +381,7 @@ export default function AdminContent() {
                     <SelectItem value="1">חלק 1 - בניית היסודות</SelectItem>
                     <SelectItem value="2">חלק 2 - אדפטציה ושדרוג</SelectItem>
                     <SelectItem value="3">חלק 3 - הטמעה ושיפור</SelectItem>
+                    <SelectItem value="4">חלק 4 - המאמנים של עצמכם</SelectItem>
                     <SelectItem value="5">הבסיס לשינוי הרגלים</SelectItem>
                   </SelectContent>
                 </Select>
@@ -410,6 +418,13 @@ export default function AdminContent() {
                         <SelectItem value="מבוא">מבוא</SelectItem>
                         <SelectItem value="שבועות 16-18">שבועות 16-18</SelectItem>
                         <SelectItem value="שבועות 19-24">שבועות 19-24</SelectItem>
+                      </>
+                    )}
+                    {formData.part_number === 4 && (
+                      <>
+                        <SelectItem value="שבועות 25–28">שבועות 25–28</SelectItem>
+                        <SelectItem value="שבועות 29–32">שבועות 29–32</SelectItem>
+                        <SelectItem value="שבועות 33–36">שבועות 33–36</SelectItem>
                       </>
                     )}
                     {formData.part_number === 5 && (

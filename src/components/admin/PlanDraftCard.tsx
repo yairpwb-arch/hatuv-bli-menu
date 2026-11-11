@@ -28,6 +28,7 @@ export interface PlanDraft {
   error: string | null;
   created_at: string;
   decided_at: string | null;
+  decided_by?: string | null;
 }
 
 const STAGE: Record<DraftDay['stage'], string> = { '1': 'נפתח עם סרטון האימונים הראשון (שבוע 5–6)', '2': 'נפתח עם סרטון האימונים השני (שבוע 9–10)', now: 'נפתח מיד' };

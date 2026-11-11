@@ -12,6 +12,7 @@
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 import { buildPrompt, maxParts, runModel, toReply } from './brain.ts';
 import { TEST_GROUP_ID, alertPhones, deliver, sendAndLog } from '../_shared/wa.ts';
+import { pendingPlan, planCoachTurn } from './planBuilder.ts';
 
 type Row = Record<string, any>;
 const DAY = 86400_000;
@@ -173,8 +174,33 @@ export async function reviewSection(db: SupabaseClient, userId: string | null, c
   if (!userId || chatId !== TEST_GROUP_ID) return '';
   const inner = await reviewInner(db, userId, chatId);
   const open = await openReview(db, userId);
+  const asked = await planRequestStatus(db, userId);
   // In the middle of a review, the review leads; otherwise a request for workouts can come up any time.
-  return open ? inner : [inner, PLAN_REQUEST_TEXT].filter(Boolean).join('\n\n');
+  return (open ? [inner, asked] : [inner, asked, PLAN_REQUEST_TEXT]).filter(Boolean).join('\n\n');
+}
+
+/** A workout the trainee asked for in the group: still being built, or already in the app. */
+async function planRequestStatus(db: SupabaseClient, userId: string): Promise<string> {
+  const { data: d } = await db.from('bot_workout_plans').select('status, request, created_at, decided_at')
+    .eq('user_id', userId).eq('kind', 'request').not('chat_id', 'is', null)
+    .gte('created_at', new Date(Date.now() - 14 * DAY).toISOString())
+    .order('created_at', { ascending: false }).limit(1).maybeSingle();
+  if (!d) return '';
+  const when = (t: string) => new Date(t).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const ask = `מה הוא ביקש (מהשיחה):\n${String(d.request ?? '').slice(-600)}`;
+  // 'failed' too: for him it simply isn't ready yet (the coaches see the failure in the admin).
+  if (d.status === 'building' || d.status === 'pending' || d.status === 'failed') {
+    return `# האימון שהוא ביקש: בבנייה, עוד לא באפליקציה\n` +
+      `ב-${when(d.created_at)} הוא ביקש אימון ואנחנו בונים לו אותו. האימון עוד לא נכנס לאפליקציה.\n${ask}\n` +
+      `- אם הוא שואל אם זה הגיע / איפה האימון: עונים ישר שעוד לא, שאנחנו עדיין בונים לו אותו (את האימון שהוא ביקש, במילים שלו), ושברגע שזה מוכן זה ייכנס לאפליקציה ונעדכן אותו כאן. לא אומרים "אנחנו לא רואים", ולא שואלים אותו אם זה הגיע.\n` +
+      `- לא מוסיפים שוב [בקשת_אימון] על אותה בקשה. רק אם הוא מבקש משהו אחר או משנה את הבקשה.`;
+  }
+  if (d.status === 'approved' && d.decided_at && Date.now() - new Date(d.decided_at).getTime() < 5 * DAY) {
+    return `# האימון שהוא ביקש: כבר באפליקציה\n` +
+      `ב-${when(d.decided_at)} האימון שהוא ביקש נכנס לאפליקציה (בדף האימונים), והודענו לו כאן.\n${ask}\n` +
+      `- אם הוא שואל: אומרים שזה כבר באפליקציה, בדף האימונים.`;
+  }
+  return '';
 }
 
 async function reviewInner(db: SupabaseClient, userId: string, chatId: string): Promise<string> {
@@ -433,6 +459,12 @@ export async function coachTurn(db: SupabaseClient, coachChat: string, text: str
   const interview = ((asking ?? []) as Row[]).find((r) => !r.coach_chat || r.coach_chat === coachChat) ?? null;
   const review = active ?? interview;
   const say = (t: string, userId: string | null = review?.user_id ?? null) => sendAndLog(db, coachChat, userId, t);
+
+  // A plan the workout bot built waits: the coach answers it (unless a review was sent to them after it).
+  const waitingPlan = await pendingPlan(db);
+  if (waitingPlan && (!active || new Date(waitingPlan.created_at).getTime() > new Date(active.sent_at ?? 0).getTime())) {
+    return planCoachTurn(db, coachChat, text, waitingPlan);
+  }
 
   // The queue: who's waiting.
   if (/(מי בתור|מה בתור|מי מחכה|כמה מחכים|התור)/.test(text)) {

@@ -345,7 +345,8 @@ Deno.serve(async (req) => {
     if (job === 'plans') return json(await jobPlans(db));
     if (job === 'build_plan' && body.user_id) {
       // The first plan if there are no workout days yet, else a request (add / replace days).
-      const { data: a } = await db.from('user_workout_assignments').select('plan_id').eq('user_id', body.user_id).eq('is_active', true).limit(1).maybeSingle();
+      // The latest plan, on or off (the first plan the bot built waits switched off).
+      const { data: a } = await db.from('user_workout_assignments').select('plan_id').eq('user_id', body.user_id).order('is_active', { ascending: false }).order('created_at', { ascending: false }).limit(1).maybeSingle();
       const { count } = a ? await db.from('workout_plan_days').select('id', { count: 'exact', head: true }).eq('plan_id', a.plan_id) : { count: 0 };
       const kind = body.kind === 'initial' || body.kind === 'request' ? body.kind : (count ?? 0) > 0 ? 'request' : 'initial';
       return json(await startBuild(db, body.user_id, { kind, request: body.request ?? null, note: body.note ?? null }));

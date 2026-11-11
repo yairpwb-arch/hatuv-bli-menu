@@ -11,7 +11,7 @@
 import Anthropic from 'npm:@anthropic-ai/sdk';
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 import { claudeUsage, logUsage, setting } from '../_shared/botkit.ts';
-import { TEST_GROUP_ID, alertPhones, sendAndLog, sendMessage } from '../_shared/wa.ts';
+import { TEST_GROUP_ID, alertPhones, sendAndLog } from '../_shared/wa.ts';
 import { loadPlan, makeRefs, planText } from './workouts.ts';
 
 type Row = Record<string, any>;
@@ -148,12 +148,18 @@ const SYSTEM = `אתה המאמן הבונה תוכניות אימון של "ח�
 - מתאימים לציוד ולמקום (בית / חדר כושר / בחוץ), לזמן שיש לו לאימון, לניסיון ולרמה שלו (מהשאלון: כמה מתח / שכיבות סמיכה / סקוואטים הוא מצליח).
 - פציעה או מצב רפואי בשאלון: לא נותנים תרגיל שמעמיס על האזור. כותבים את זה במפורש בהסבר למאמן.
 - סטים, טווח חזרות ומנוחה ריאליים. תרגיל בזמן (פלאנק, חבל, קרדיו): is_duration=true וה"חזרות" הן שניות.
-- שמות לימי האימון: קצרים ובעברית (למשל "אימון A · גוף מלא").
+- שמות לימי האימון: קצרים ובעברית (למשל "אימון A · גוף מלא"). כשיש בקשה, השם משקף אותה (למשל "רגליים · בית").
+- בקשה של המתאמן או של המאמן היא חובה, לא המלצה. קודם מוציאים מהשיחה כל דבר שהוא ביקש במפורש: אזור או שריר לחזק (רגליים, בטן, גב…), תרגיל מסוים (סקוואט, מתח…), מקום, ציוד, זמן. כל אחד מהם חייב להופיע באימון שבונים:
+  - תרגיל שביקש בשמו: נמצא באימון (או הגרסה שלו מהספרייה שמתאימה לציוד שלו).
+  - אזור שביקש לחזק: הדגש של האימון. לפחות חצי מהתרגילים לאזור הזה, ואם ביקש רק אותו, כמעט הכול.
+  - לא מעתיקים יום קיים שלו ומחליפים ציוד: בונים את מה שהוא ביקש.
+  - אם בקשה סותרת את העקרונות או פציעה: מתאימים אותה (לא מוותרים עליה בשקט), וכותבים למאמן מה ולמה.
 
 # מה מחזירים
 JSON בלבד, בלי שום טקסט לפניו או אחריו:
 {
   "template": "שם התבנית שממנה התחלת, או null",
+  "asked": ["כל דבר שהמתאמן ביקש, ואיך הוא מופיע באימון. למשל: 'סקוואטים: סקוואט, סקוואט רחב, סקוואט קפיצה' או 'לחזק רגליים: 5 מתוך 6 תרגילים'. רשימה ריקה אם אין בקשה"],
   "rationale": "למאמן, 3–6 שורות: למה התוכנית הזו מתאימה למתאמן הזה, מה נלקח מהשאלון, ממה נזהרת",
   "days": [
     { "stage": "1" | "2" | "now", "name": "...", "replaces": "D2 או null", "exercises": [
@@ -210,7 +216,9 @@ export async function buildDraft(db: SupabaseClient, draftId: string): Promise<R
         track?.key.startsWith('beginner') ? 'האימון הראשון הוא ההיכרות שלו עם אימוני כוח: פשוט, בטוח, ושאפשר להצליח בו.' : '',
         'כל הימים מותאמים לתשובות שלו בשאלון: מקום, ציוד, זמן, רמה ופציעות.',
       ].filter(Boolean).join('\n')
-    : `בקשה${draft.chat_id ? ' של המתאמן בקבוצה' : ' של המאמן'}: "${draft.request ?? ''}".\nבנה רק את מה שצריך: ימים חדשים עם stage "now" (נפתחים מיד), או יום שמחליף יום קיים ("replaces": "D2", עם כל התרגילים של היום החדש). ${hasDays ? 'לא נוגעים בימים שלא ביקשו לשנות.' : 'אין לו עדיין ימי אימון.'}`;
+    : `בקשה${draft.chat_id ? ' של המתאמן בקבוצה (השיחה, מהישן לחדש)' : ' של המאמן'}:\n"""\n${draft.request ?? ''}\n"""\n` +
+      `כל מה שהוא ביקש בשיחה הזו (אזור לחזק, תרגילים מסוימים, מקום, ציוד, זמן) חייב להיות באימון, ורשום ב-"asked" איך. ` +
+      `גם דברים שאמר בתחילת השיחה, לא רק בהודעה האחרונה.\nבנה רק את מה שצריך: ימים חדשים עם stage "now" (נפתחים מיד), או יום שמחליף יום קיים ("replaces": "D2", עם כל התרגילים של היום החדש). ${hasDays ? 'לא נוגעים בימים שלא ביקשו לשנות.' : 'אין לו עדיין ימי אימון.'}`;
 
   const user = [
     `# העקרונות של הצוות\n${k.principles || '(לא נכתבו)'}`,
@@ -275,10 +283,21 @@ export async function buildDraft(db: SupabaseClient, draftId: string): Promise<R
     });
   }
 
-  const rationale = [track ? `מסלול: ${track.label}` : extra ? extra.label : '', String(out.rationale ?? '').trim(), dropped.length ? `(הושמטו ${dropped.length} תרגילים שלא נמצאו בספרייה)` : ''].filter(Boolean).join('\n');
+  const asked = (Array.isArray(out.asked) ? out.asked : []).map((s: unknown) => String(s).trim()).filter(Boolean).slice(0, 8);
+  const rationale = [track ? `מסלול: ${track.label}` : extra ? extra.label : '', asked.length ? `מה שביקש ואיך זה באימון:\n${asked.map((s: string) => `• ${s}`).join('\n')}` : '', String(out.rationale ?? '').trim(), dropped.length ? `(הושמטו ${dropped.length} תרגילים שלא נמצאו בספרייה)` : ''].filter(Boolean).join('\n');
   await db.from('bot_workout_plans').update({
     status: 'pending', plan: { days }, rationale, template: out.template ? String(out.template).slice(0, 120) : null, model: PLAN_MODEL, error: null,
   }).eq('id', draftId);
+  // The first plan goes straight into the trainee's plan, switched off: the coaches see it in the admin
+  // (the weeks 5–6 day and the weeks 9–10 days) and switch it on when it's right.
+  if (draft.kind === 'initial' && !hasDays) {
+    const r = await approveDraft(db, draftId, null, { activate: false });
+    if (!r.error) {
+      await tellCoaches(db, { ...draft, status: 'approved' }, who.name, days);
+      return { built: draftId, days: days.length, placed: 'off' };
+    }
+    console.error('[plan] placing the first plan failed', r.error); // stays pending: approve it as before
+  }
   await tellCoaches(db, draft, who.name, days);
   return { built: draftId, days: days.length };
 }
@@ -287,9 +306,18 @@ export async function buildDraft(db: SupabaseClient, draftId: string): Promise<R
 async function tellCoaches(db: SupabaseClient, draft: Row, name: string, days: BuiltDay[]) {
   const { data: g } = await db.from('whatsapp_groups').select('chat_id').eq('user_id', draft.user_id).maybeSingle();
   const phones = await alertPhones(db, g?.chat_id ?? '');
-  const what = draft.kind === 'initial' ? 'תוכנית ראשונה (אחרי שאלון הפתיחה)' : EXTRAS[draft.request ?? ''] ? EXTRAS[draft.request].label : `לפי בקשה: "${(draft.request ?? '').slice(0, 120)}"`;
-  const text = `🏋️ הבוט בנה תוכנית אימון ל${name}\n${what}\n${days.map((d) => `• ${d.name} (${d.exercises.length} תרגילים)`).join('\n')}\n\nמחכה לאישור: אדמין ← משתמשים ← ${name} ← אימון`;
-  for (const p of phones) await sendMessage(`${p}@c.us`, text);
+  const what = draft.kind === 'initial' ? 'תוכנית ראשונה (אחרי שאלון הפתיחה)' : EXTRAS[draft.request ?? ''] ? EXTRAS[draft.request].label : `לפי בקשה: "…${(draft.request ?? '').slice(-160)}"`;
+  const list = days.map((d) => `• ${d.name} (${d.exercises.length} תרגילים${d.stage === '1' ? ', נפתח בשבוע 5–6' : d.stage === '2' ? ', נפתח בשבוע 9–10' : ''})`).join('\n');
+  if (draft.status === 'approved') {
+    const off = `🏋️ הבוט בנה תוכנית אימון ל${name}\n${what}\n${list}\n\n` +
+      `היא כבר בתוכנית שלו באדמין, כבויה: הוא עוד לא רואה אותה. אפשר לערוך שם, וכשהיא מוכנה מדליקים את "תוכנית אימון פעילה".\n(אדמין ← משתמשים ← ${name} ← אימון)`;
+    for (const p of phones) await sendAndLog(db, `${p}@c.us`, draft.user_id, off);
+    return;
+  }
+  const text =
+    `🏋️ הבוט בנה תוכנית אימון ל${name}\n${what}\n${list}\n\n` +
+    `לאישור כתבו כאן "מאשר". רוצים שינוי? כתבו מה לשנות ואבנה מחדש. לביטול: "דחייה".\n(כל התרגילים: אדמין ← משתמשים ← ${name} ← אימון)`;
+  for (const p of phones) await sendAndLog(db, `${p}@c.us`, draft.user_id, text);
 }
 
 // ── Starting a build ──────────────────────────────────────────────────────────
@@ -333,21 +361,22 @@ export async function jobPlans(db: SupabaseClient): Promise<Row> {
 /** The trainee asked in the group for more / other workouts. */
 export async function requestFromGroup(db: SupabaseClient, chatId: string, userId: string | null) {
   if (!userId || chatId !== TEST_GROUP_ID) return;
-  // Their last messages are the request.
-  const { data: recent } = await db.from('whatsapp_messages').select('sender, text').eq('chat_id', chatId).order('created_at', { ascending: false }).limit(8);
-  const theirs: string[] = [];
-  for (const m of (recent ?? []) as Row[]) {
-    if (m.sender === 'client' && m.text) theirs.unshift(m.text);
-    else if (m.sender === 'client') continue;
-    else if (theirs.length) break;
-  }
-  await startBuild(db, userId, { kind: 'request', request: theirs.join('\n').slice(0, 1000), chatId });
+  // The request is the recent conversation (the ask, our questions, their answers), not only the last line.
+  const { data: recent } = await db.from('whatsapp_messages').select('sender, text, created_at').eq('chat_id', chatId)
+    // A day back: the ask often comes hours before the last message (and "did it arrive?" after it).
+    .gte('created_at', new Date(Date.now() - 24 * 3600_000).toISOString()).order('created_at', { ascending: false }).limit(25);
+  const talk = ((recent ?? []) as Row[]).reverse().filter((m) => m.text)
+    .map((m) => `${m.sender === 'client' ? 'המתאמן' : 'אנחנו'}: ${m.text}`).join('\n');
+  // Too long: the newest part is kept (it holds the ask and the answers to our questions).
+  await startBuild(db, userId, { kind: 'request', request: talk.slice(-3000), chatId });
 }
 
 // ── Approving ─────────────────────────────────────────────────────────────────
 
 /** A coach approved: the plan is written into the app (the trainee's own plan). */
-export async function approveDraft(db: SupabaseClient, draftId: string, adminId: string | null): Promise<Row> {
+export async function approveDraft(db: SupabaseClient, draftId: string, adminId: string | null, opts: { activate?: boolean } = {}): Promise<Row> {
+  // activate: false: the days go into the trainee's plan, but the plan stays off (the coach switches it on).
+  const activate = opts.activate !== false;
   const { data: draft } = await db.from('bot_workout_plans').select('*').eq('id', draftId).maybeSingle();
   if (!draft) return { error: 'no draft' };
   if (draft.status !== 'pending') return { error: `status is ${draft.status}` };
@@ -363,14 +392,14 @@ export async function approveDraft(db: SupabaseClient, draftId: string, adminId:
   const { data: a } = await db.from('user_workout_assignments').select('id, plan_id, is_active, workout_plans(user_id)').eq('user_id', userId).order('created_at', { ascending: false }).limit(1).maybeSingle();
   if (a && (a as Row).workout_plans?.user_id === userId) {
     planId = (a as Row).plan_id;
-    if (!(a as Row).is_active) await db.from('user_workout_assignments').update({ is_active: true }).eq('id', (a as Row).id);
+    if (activate && !(a as Row).is_active) await db.from('user_workout_assignments').update({ is_active: true }).eq('id', (a as Row).id);
   } else {
     const { data: p } = await db.from('profiles').select('full_name').eq('id', userId).maybeSingle();
     const { data: plan, error } = await db.from('workout_plans').insert({ name: `תוכנית של ${p?.full_name ?? 'המתאמן'}`, user_id: userId, duration_weeks: 12, is_active: true }).select('id').single();
     if (error || !plan) return { error: error?.message ?? 'no plan' };
     planId = plan.id;
-    if (a) await db.from('user_workout_assignments').update({ is_active: false }).eq('user_id', userId);
-    await db.from('user_workout_assignments').insert({ user_id: userId, plan_id: planId, is_active: true, start_date: new Date().toISOString().slice(0, 10) });
+    if (a && activate) await db.from('user_workout_assignments').update({ is_active: false }).eq('user_id', userId);
+    await db.from('user_workout_assignments').insert({ user_id: userId, plan_id: planId, is_active: activate, start_date: new Date().toISOString().slice(0, 10) });
   }
 
   const { data: existing } = await db.from('workout_plan_days').select('id, day_number').eq('plan_id', planId).order('day_number');
@@ -402,4 +431,44 @@ export async function approveDraft(db: SupabaseClient, draftId: string, adminId:
     await sendAndLog(db, draft.chat_id, userId, `האימון החדש שלך מוכן באפליקציה 💪\n${days.map((d) => `• ${d.name}`).join('\n')}\nאפשר למצוא אותו בדף האימונים.`);
   }
   return { approved: draftId, days: days.length };
+}
+
+// ── The coach answers in private ──────────────────────────────────────────────
+
+const REJECT = /(לא מאשר|לא לאשר|דחה|דחייה|דחיה|לבטל|תבטל|בטל את)/;
+const APPROVE = /^\s*(מאשר|מאושר|אישור|אשר|אושר|כן|סגור|יאללה|סבבה|👍|✅)/;
+
+/** The newest plan waiting for a coach (and when it was sent to them). */
+export async function pendingPlan(db: SupabaseClient): Promise<Row | null> {
+  const { data } = await db.from('bot_workout_plans').select('*').in('status', ['pending', 'building']).order('created_at', { ascending: false }).limit(1).maybeSingle();
+  return (data as Row | null) ?? null;
+}
+
+/**
+ * A coach wrote in private while a plan waits: "מאשר" writes it into the app,
+ * "דחייה" drops it, anything else is a note and the plan is built again.
+ */
+export async function planCoachTurn(db: SupabaseClient, coachChat: string, text: string, draft: Row) {
+  const { data: p } = await db.from('profiles').select('full_name').eq('id', draft.user_id).maybeSingle();
+  const name = p?.full_name ?? 'המתאמן';
+  const say = (t: string) => sendAndLog(db, coachChat, draft.user_id, t);
+
+  if (draft.status === 'building') return say(`אני עוד בונה את התוכנית של ${name}. עוד דקה היא אצלך.`);
+  if (REJECT.test(text)) {
+    await db.from('bot_workout_plans').update({ status: 'rejected', decided_at: new Date().toISOString() }).eq('id', draft.id).eq('status', 'pending');
+    return say(`בוטל. התוכנית של ${name} לא נכנסה לאפליקציה.`);
+  }
+  if (APPROVE.test(text)) {
+    const r = await approveDraft(db, draft.id, null);
+    if (r.error) return say(`לא הצלחתי להכניס את התוכנית של ${name} (${r.error}).`);
+    const days = ((draft.plan?.days ?? []) as BuiltDay[]);
+    const when = days.some((d) => d.stage !== 'now') ? 'הימים ייפתחו לו עם סרטוני האימונים.' : 'הימים כבר פתוחים לו באפליקציה.';
+    const more = await pendingPlan(db);
+    return say(`✅ התוכנית של ${name} נכנסה לאפליקציה. ${when}${more ? `\n\nמחכה עוד תוכנית: של ${more.user_id === draft.user_id ? name : 'מתאמן נוסף'}.` : ''}`);
+  }
+  if (text.trim().length < 3) return say(`התוכנית של ${name} מחכה. "מאשר" כדי להכניס אותה, או כתבו מה לשנות.`);
+  await say(`בונה מחדש את התוכנית של ${name} לפי מה שכתבת…`);
+  const note = [draft.note, text.trim()].filter(Boolean).join('\n');
+  const r = await startBuild(db, draft.user_id, { kind: draft.kind, request: draft.request, note, chatId: draft.chat_id });
+  if (r.error) return say(`הבנייה נכשלה (${r.error}). אפשר לנסות שוב מהאדמין.`);
 }

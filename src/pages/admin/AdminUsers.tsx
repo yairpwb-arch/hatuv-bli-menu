@@ -371,6 +371,7 @@ export default function AdminUsers() {
     return () => io.disconnect();
   }, [headerEl]);
   const [deletingUser, setDeletingUser] = useState<User | null>(null);
+  const [deletingDay, setDeletingDay] = useState<WorkoutPlanDay | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
   // Add-user form
@@ -639,8 +640,8 @@ export default function AdminUsers() {
       setCurrentAssignmentId(any.id);
       setCurrentPlanId(any.plan_id);
       setPlanActive(!!active);
-      if (active) await loadPlanDays(any.plan_id);
-      else { setPlanDays([]); setPlanExercisesMap({}); }
+      // Off too: the days stay visible (e.g. the plan the bot built after the questionnaire, before it's switched on).
+      await loadPlanDays(any.plan_id);
     } else {
       setCurrentAssignmentId(null);
       setCurrentPlanId(null);
@@ -734,8 +735,6 @@ export default function AdminUsers() {
           .eq('id', currentAssignmentId);
       }
       setPlanActive(false);
-      setPlanDays([]);
-      setPlanExercisesMap({});
       toast({ title: 'הצלחה', description: 'תוכנית האימון הושבתה' });
     }
     setIsTogglingPlan(false);
@@ -763,7 +762,8 @@ export default function AdminUsers() {
   };
 
   const handleDeleteDay = async (dayId: string) => {
-    await (supabase as any).from('workout_plan_days').delete().eq('id', dayId);
+    const { error } = await (supabase as any).from('workout_plan_days').delete().eq('id', dayId);
+    if (error) return toast({ title: 'לא נמחק, נסו שוב', variant: 'destructive' });
     setPlanDays(prev => prev.filter(d => d.id !== dayId));
     setPlanExercisesMap(prev => { const next = { ...prev }; delete next[dayId]; return next; });
   };
@@ -1439,7 +1439,11 @@ export default function AdminUsers() {
                 <div>
                   <p className="font-medium text-sm">תוכנית אימון פעילה</p>
                   <p className="text-xs text-muted-foreground">
-                    {planActive ? 'תוכנית קיימת — ערוך ימים ותרגילים למטה' : 'אין תוכנית — הפעל כדי ליצור'}
+                    {planActive
+                      ? 'תוכנית קיימת — ערוך ימים ותרגילים למטה'
+                      : planDays.length > 0
+                        ? 'כבויה: המתאמן עוד לא רואה אותה. הדלק כשהיא מוכנה'
+                        : 'אין תוכנית — הפעל כדי ליצור'}
                   </p>
                 </div>
                 <Switch
@@ -1449,8 +1453,13 @@ export default function AdminUsers() {
                 />
               </div>
 
-              {planActive && (
+              {(planActive || planDays.length > 0) && (
                 <div className="space-y-3">
+                  {!planActive && (
+                    <p className="rounded-xl border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+                      התוכנית כבויה. כך היא תיראה כשתדליקו: כל יום נפתח לפי מה שמסומן לידו (מיד, אחרי סרטון 5–6 או אחרי סרטון 9–10).
+                    </p>
+                  )}
                   {/* Days list */}
                   {planDays.map(day => (
                     <div key={day.id} className="border border-border rounded-xl overflow-hidden">
@@ -1493,7 +1502,8 @@ export default function AdminUsers() {
                             <Copy className="h-3.5 w-3.5" />
                           </button>
                           <button
-                            onClick={e => { e.stopPropagation(); handleDeleteDay(day.id); }}
+                            onClick={e => { e.stopPropagation(); setDeletingDay(day); }}
+                            title="מחק יום אימון"
                             className="p-1 text-muted-foreground hover:text-destructive transition-colors"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
@@ -2033,6 +2043,30 @@ export default function AdminUsers() {
           </Tabs>
         )}
       </ClientDrawer>
+
+      {/* ── Delete Workout Day Confirmation ── */}
+      <AlertDialog open={!!deletingDay} onOpenChange={(o) => { if (!o) setDeletingDay(null); }}>
+        <AlertDialogContent dir="rtl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>מחיקת יום אימון</AlertDialogTitle>
+            <AlertDialogDescription>
+              למחוק את <span className="font-semibold text-foreground">{deletingDay?.name}</span>
+              {deletingDay ? ` (${(planExercisesMap[deletingDay.id] || []).length} תרגילים)` : ''}?<br />
+              כל התרגילים של היום יימחקו והוא יורד מהלו"ז של המתאמן. אי אפשר לבטל.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-row-reverse gap-2">
+            <AlertDialogCancel>ביטול</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => { if (deletingDay) handleDeleteDay(deletingDay.id); setDeletingDay(null); }}
+            >
+              <Trash2 className="h-4 w-4 ml-1" />
+              מחק יום
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* ── Delete User Confirmation Dialog ── */}
       <AlertDialog open={!!deletingUser} onOpenChange={(o) => { if (!o) setDeletingUser(null); }}>
