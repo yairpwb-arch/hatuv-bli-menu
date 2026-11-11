@@ -3,20 +3,53 @@ import { Capacitor } from '@capacitor/core';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 
+/** A profile photo needs no more than this (the longest side, in pixels). */
+const AVATAR_PX = 1024;
+
 /**
- * Profile photo: native camera/gallery picker on the phone, file input on the
- * web. Uploads to profile_photos/<user>/avatar.<ext> and saves the URL on the
- * profile (cache-busted so the new picture shows right away).
+ * Any photo (a full-size iPhone shot too) as a JPEG of at most 1024px:
+ * small to upload, and never too big. The original if it can't be read.
+ */
+async function shrink(file: File): Promise<{ body: Blob; ext: string }> {
+  const fallback = { body: file as Blob, ext: (file.name.split('.').pop() || 'jpg').toLowerCase() };
+  try {
+    const url = URL.createObjectURL(file);
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = reject;
+      i.src = url;
+    }).finally(() => setTimeout(() => URL.revokeObjectURL(url), 0));
+    const scale = Math.min(1, AVATAR_PX / Math.max(img.naturalWidth, img.naturalHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+    canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.85));
+    return blob ? { body: blob, ext: 'jpg' } : fallback;
+  } catch (err) {
+    console.warn('[avatar] could not shrink, uploading the original', err);
+    return fallback;
+  }
+}
+
+/**
+ * Profile photo: the camera / gallery sheet on the phone (PhotoSourceButtons),
+ * file input on the web. Uploads to profile_photos/<user>/avatar.<ext> and
+ * saves the URL on the profile (cache-busted so the new picture shows right away).
  */
 export function useAvatarUpload(userId: string | undefined, onUpdated: (url: string) => void) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isPickingSource, setIsPickingSource] = useState(false);
 
-  const upload = async (body: Blob | File, ext: string) => {
+  const upload = async (file: File) => {
     if (!userId) return;
+    if (file.type && !file.type.startsWith('image/')) return void toast.error('נא לבחור קובץ תמונה');
     setIsUploading(true);
     try {
+      const { body, ext } = await shrink(file);
+      if (body.size > 10 * 1024 * 1024) throw new Error('too big');
       const path = `${userId}/avatar.${ext}`;
       const { error } = await supabase.storage
         .from('profile_photos')
@@ -30,7 +63,7 @@ export function useAvatarUpload(userId: string | undefined, onUpdated: (url: str
       toast.success('תמונת הפרופיל עודכנה');
     } catch (err) {
       console.error('Error uploading avatar:', err);
-      toast.error('שגיאה בהעלאת התמונה');
+      toast.error('שגיאה בהעלאת התמונה, נסו שוב');
     } finally {
       setIsUploading(false);
     }
@@ -39,43 +72,21 @@ export function useAvatarUpload(userId: string | undefined, onUpdated: (url: str
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
-    if (!file) return;
-    if (!file.type.startsWith('image/')) return void toast.error('נא לבחור קובץ תמונה');
-    if (file.size > 5 * 1024 * 1024) return void toast.error('גודל הקובץ חייב להיות עד 5MB');
-    upload(file, file.name.split('.').pop() || 'jpg');
+    if (file) void upload(file);
   };
 
-  const pickNative = async (source: 'CAMERA' | 'PHOTOS') => {
-    setIsPickingSource(false);
-    try {
-      const { Camera, CameraSource, CameraResultType } = await import('@capacitor/camera');
-      await Camera.requestPermissions({ permissions: ['camera', 'photos'] });
-      const image = await Camera.getPhoto({
-        quality: 90,
-        allowEditing: false,
-        resultType: CameraResultType.Base64,
-        source: source === 'CAMERA' ? CameraSource.Camera : CameraSource.Photos,
-      });
-      if (!image.base64String) return;
-      const fmt = image.format ?? 'jpeg';
-      const bytes = Uint8Array.from(atob(image.base64String), (c) => c.charCodeAt(0));
-      await upload(new Blob([bytes], { type: `image/${fmt}` }), fmt);
-    } catch (err) {
-      // Cancelling the picker throws too — only report real failures.
-      if (!String(err).toLowerCase().includes('cancel')) console.error('[avatar] picker failed', err);
-    }
+  /** Opens the camera / gallery sheet on the phone, the file picker on the web. */
+  const start = () => {
+    if (isUploading) return;
+    if (Capacitor.isNativePlatform()) setIsPickingSource(true);
+    else fileInputRef.current?.click();
   };
 
-  /** Opens the native source sheet on the phone, the file picker on the web. */
-  const start = () => (Capacitor.isNativePlatform() ? setIsPickingSource(true) : fileInputRef.current?.click());
-
-  /** A photo already picked (the source sheet's camera / gallery buttons). */
+  /** A photo already picked (the sheet's camera / gallery buttons). */
   const uploadFile = (file: File) => {
     setIsPickingSource(false);
-    if (!file.type.startsWith('image/')) return void toast.error('נא לבחור קובץ תמונה');
-    if (file.size > 5 * 1024 * 1024) return void toast.error('גודל הקובץ חייב להיות עד 5MB');
-    upload(file, file.name.split('.').pop() || 'jpg');
+    void upload(file);
   };
 
-  return { fileInputRef, onFileChange, start, isUploading, isPickingSource, setIsPickingSource, pickNative, uploadFile };
+  return { fileInputRef, onFileChange, start, isUploading, isPickingSource, setIsPickingSource, uploadFile };
 }

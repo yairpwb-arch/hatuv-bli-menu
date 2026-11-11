@@ -190,10 +190,13 @@ export default function AppProfile() {
       {/* Who I am */}
       <Card className="flex flex-col items-center gap-3 text-center">
         <div className="relative">
-          <Avatar className="h-[88px] w-[88px]">
-            {profile.avatar_url && <AvatarImage src={profile.avatar_url} alt="" className="object-cover" />}
-            <AvatarFallback className="bg-primary-tint text-stat text-primary-soft">{initials(profile.full_name)}</AvatarFallback>
-          </Avatar>
+          {/* The whole picture opens the camera / gallery, not only the small button. */}
+          <button type="button" onClick={avatar.start} aria-label="הוספת תמונת פרופיל" className="block rounded-full transition-transform active:scale-[0.97]">
+            <Avatar className="h-[88px] w-[88px]">
+              {profile.avatar_url && <AvatarImage src={profile.avatar_url} alt="" className="object-cover" />}
+              <AvatarFallback className="bg-primary-tint text-stat text-primary-soft">{initials(profile.full_name)}</AvatarFallback>
+            </Avatar>
+          </button>
           <button
             type="button"
             onClick={avatar.start}
