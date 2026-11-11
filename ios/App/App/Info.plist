@@ -72,8 +72,8 @@
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>האפליקציה מבקשת גישה לעדכון נתוני בריאות עבור מעקב הצעדים היומיים שלך</string>
 	<key>NSCameraUsageDescription</key>
-	<string>האפליקציה מבקשת גישה למצלמה כדי לצלם תמונת פרופיל</string>
+	<string>כדי לצלם תמונות התקדמות ותמונת פרופיל. התמונות פרטיות: רק אתה והמאמנים רואים אותן.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>האפליקציה מבקשת גישה לגלריה כדי לבחור תמונת פרופיל</string>
+	<string>כדי לבחור מהגלריה תמונות התקדמות ותמונת פרופיל. התמונות פרטיות: רק אתה והמאמנים רואים אותן.</string>
 </dict>
 </plist>
