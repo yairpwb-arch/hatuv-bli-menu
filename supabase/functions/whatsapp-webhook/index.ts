@@ -24,6 +24,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 import { brainReady, composeReply } from './brain.ts';
 import { afterReply, coachTurn, reviewCoaches } from './workouts.ts';
 import { requestFromGroup } from './planBuilder.ts';
+import { setTodayTimes } from './schedule.ts';
 import { logUsage } from '../_shared/botkit.ts';
 import { TEST_GROUP_ID, alertHandoff, coachPhones, deliver, digits, readChat, sendTyping, sleep } from '../_shared/wa.ts';
 
@@ -217,7 +218,7 @@ async function handle(body: any) {
 
   await readChat(chatId);
   await sendTyping(chatId, 8000);
-  const { parts, handoff, review, planRequest } = await composeReply(supabase, chatId, userId, msg.text);
+  const { parts, handoff, review, planRequest, todayTimes } = await composeReply(supabase, chatId, userId, msg.text);
   // The test group always gets the answer; a real group in draft mode would get only our alert.
   const toGroup = isTest || !group?.draft_mode;
   if (handoff) await alertHandoff(supabase, chatId, userId, parts.join('\n'), toGroup);
@@ -225,6 +226,8 @@ async function handle(body: any) {
   if (toGroup) await afterReply(supabase, chatId, userId, review);
   // Asked for more / other workouts: the workout bot builds them, a coach approves.
   if (toGroup && planRequest) await requestFromGroup(supabase, chatId, userId);
+  // He said when he'll train / walk today: the app's calendar moves there.
+  if (toGroup && todayTimes?.length) await setTodayTimes(supabase, userId, todayTimes);
 }
 
 Deno.serve(async (req) => {

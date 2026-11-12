@@ -14,6 +14,7 @@ import { buildPrompt, composeReply, maxParts, runModel, toReply } from '../whats
 import { TEST_GROUP_ID, alertHandoff, deliver, readChat, sendTyping } from '../_shared/wa.ts';
 import { REVIEW_OPEN_TASK, afterReply, openReview, reviewDue, reviewTimeouts, startReview } from '../whatsapp-webhook/workouts.ts';
 import { requestFromGroup } from '../whatsapp-webhook/planBuilder.ts';
+import { setTodayTimes } from '../whatsapp-webhook/schedule.ts';
 
 type Row = Record<string, any>;
 const MIN = 60_000;
@@ -109,12 +110,14 @@ export async function replies(db: SupabaseClient) {
     if (!latest) continue;
     await readChat(p.chat_id);
     await sendTyping(p.chat_id, 8000);
-    const { parts, handoff, review, planRequest } = await composeReply(db, p.chat_id, p.user_id, latest);
+    const { parts, handoff, review, planRequest, todayTimes } = await composeReply(db, p.chat_id, p.user_id, latest);
     if (handoff) await alertHandoff(db, p.chat_id, p.user_id, parts.join('\n'), true);
     await deliver(db, p.chat_id, p.user_id, parts);
     await afterReply(db, p.chat_id, p.user_id, review);
     // Asked for more / other workouts: the workout bot builds them, a coach approves.
     if (planRequest) await requestFromGroup(db, p.chat_id, p.user_id);
+    // He said when he'll train / walk today: the app's calendar moves there.
+    if (todayTimes?.length) await setTodayTimes(db, p.user_id, todayTimes);
     answered++;
   }
   return { answered };
@@ -268,12 +271,15 @@ export async function proactive(db: SupabaseClient) {
       }
     }
 
-    if (!kind && !sentSince('after', 14 * HOUR)) {
+    if (!kind) {
       for (const item of await todaysPlan(db, g.user_id)) {
-        if (!at(new Date(todayAt(item.time, now).getTime() + 2 * HOUR))) continue;
-        // Already talked about it today: no need to ask.
+        const planned = todayAt(item.time, now);
+        if (!at(new Date(planned.getTime() + 2 * HOUR))) continue;
+        // Asked already since this time. A time he moved it to today (e.g. "at 18:00") gets its own check.
+        if (recent.some((r) => r.kind === 'after' && new Date(r.sent_at).getTime() >= planned.getTime())) continue;
+        // Already talked about it since then: no need to ask.
         const { data: mentioned } = await db.from('whatsapp_messages').select('id').eq('chat_id', g.chat_id).eq('sender', 'client')
-          .gte('created_at', midnight).or('text.ilike.%אימון%,text.ilike.%התאמנ%,text.ilike.%הליכ%,text.ilike.%הלכתי%').limit(1);
+          .gte('created_at', planned.toISOString()).or('text.ilike.%אימון%,text.ilike.%התאמנ%,text.ilike.%הליכ%,text.ilike.%הלכתי%').limit(1);
         if ((mentioned ?? []).length) break;
         const done = await doneToday(db, g.user_id, item.kind);
         kind = 'after';

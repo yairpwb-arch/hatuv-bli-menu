@@ -9,6 +9,7 @@ import Anthropic from 'npm:@anthropic-ai/sdk';
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 import { claudeUsage, costOf, embed, logUsage, setting, vectorLiteral } from '../_shared/botkit.ts';
 import { REVIEW_END_TAG, REVIEW_START_TAG, reviewSection } from './workouts.ts';
+import { TODAY_TIME_RE, type TodayTime, readTodayTimes } from './schedule.ts';
 
 // Chosen after the model test (Haiku 5.5 vs Sonnet 5.5).
 export const MODEL = 'claude-sonnet-5-5';
@@ -35,6 +36,12 @@ const OBSTACLES = `# כשהלקוח נתקע במכשול (גובר על הסג�
 - "מבינים", "קורה", "יש ימים כאלה": לכל היותר פעם אחת בשיחה, ורק אם זה באמת מוסיף. אם כבר נאמר, לא חוזרים עליו: ישר לפתרון.
 - לא רק תומכים ומרגיעים: מותר, ולפעמים צריך, להגיד לו את האמת ישר, בקצרה ובלי להעליב. למשל: "תכלס, יום עם ישיבות הוא בדיוק היום שבו צריך לתכנן מראש, אחרת זה יחזור כל שבוע." ואז ישר לפתרון.
 - מסיימים בשאלה שמזיזה אותו לפעולה (כן / לא, או בחירה), לא בשאלה פתוחה וכללית.`;
+
+/** He said when he'll train / walk today: the app's calendar moves there (schedule.ts). */
+const TODAY_TIME = `# כשהלקוח אומר מתי היום יעשה את האימון או ההליכה
+אם הלקוח אומר שעה ברורה שבה הוא יעשה היום את האימון או את ההליכה ("ב-18:00 אעשה אותו", "אלך בשש בערב"), מוסיפים בסוף ההודעה [שעה_היום אימון 18:00] או [שעה_היום הליכה 18:00] (שעה בפורמט 24 שעות; "בשש" לפי ההקשר: בערב = 18:00). זה מעדכן אוטומטית את השעה של היום באפליקציה, ונבדוק איתו אחרי השעה הזו.
+- רק להיום, ורק כשהוא אמר שעה (לא "אחר כך" / "בערב" בלי שעה: אז אפשר לשאול באיזו שעה).
+- אפשר לכתוב לו בקצרה שרשמנו לו את זה באפליקציה ל-18:00.`;
 
 export const HANDOFF_TAG = '[העבר]';
 /** The client asked for more / other workouts: the workout bot builds them (planBuilder.ts). */
@@ -151,6 +158,8 @@ export interface Reply {
   review?: 'start' | 'finish' | null;
   /** The client asked for more / other workouts ([בקשת_אימון]). */
   planRequest?: boolean;
+  /** He said when he'll train / walk today ([שעה_היום אימון 18:00]). */
+  todayTimes?: TodayTime[];
 }
 
 export interface PromptParts {
@@ -193,7 +202,7 @@ export async function buildPrompt(
   const now = new Date().toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', weekday: 'long', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
 
   return {
-    system: `${rules?.trim() || FALLBACK_RULES}\n\n# תדריך הסגנון של המאמנים\n${guide ?? ''}\n\n${OBSTACLES}`,
+    system: `${rules?.trim() || FALLBACK_RULES}\n\n# תדריך הסגנון של המאמנים\n${guide ?? ''}\n\n${OBSTACLES}\n\n${TODAY_TIME}`,
     user:
       `# עכשיו\n${now}\n\n# נתוני הלקוח מהאפליקציה\n${ctx}\n\n` +
       (known ? `# מה שאנחנו יודעים על הלקוח\n${known}\n\n` : '') +
@@ -287,11 +296,15 @@ export function toReply(text: string, max = 2): Reply {
   const handoff = text.includes(HANDOFF_TAG);
   const review = text.includes(REVIEW_END_TAG) ? 'finish' : text.includes(REVIEW_START_TAG) ? 'start' : null;
   const planRequest = text.includes(PLAN_REQUEST_TAG);
-  const clean = [HANDOFF_TAG, REVIEW_START_TAG, REVIEW_END_TAG, PLAN_REQUEST_TAG].reduce((t, tag) => t.split(tag).join(''), text).trim();
+  const todayTimes = readTodayTimes(text);
+  const clean = [HANDOFF_TAG, REVIEW_START_TAG, REVIEW_END_TAG, PLAN_REQUEST_TAG]
+    .reduce((t, tag) => t.split(tag).join(''), text)
+    .replace(TODAY_TIME_RE, '')
+    .trim();
   const all = clean.split(/\n\s*---\s*\n/).map((s) => s.trim()).filter(Boolean);
   // At most `max` messages: anything after the last joins it, so nothing is lost.
   const parts = all.length > max ? [...all.slice(0, max - 1), all.slice(max - 1).join('\n')] : all;
-  return { parts, handoff, review, planRequest };
+  return { parts, handoff, review, planRequest, todayTimes };
 }
 
 /** The bot's reply to the latest client message(s). */
