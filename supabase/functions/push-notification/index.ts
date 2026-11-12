@@ -177,7 +177,11 @@ async function sendPush(
       }),
     });
     const json = await res.json();
-    console.log(`[push] OneSignal iOS batch: recipients=${json.recipients ?? 0} errors=${JSON.stringify(json.errors ?? [])}`);
+    // OneSignal no longer returns a recipients count, only the notification id: an id without
+    // errors means it went out (the app's test button counts `recipients`).
+    const ok = !!json.id && !(Array.isArray(json.errors) ? json.errors.length : json.errors);
+    json.recipients = json.recipients ?? (ok ? ios.length : 0);
+    console.log(`[push] OneSignal iOS batch: id=${json.id ?? '-'} recipients=${json.recipients} errors=${JSON.stringify(json.errors ?? [])}`);
     results.push(json);
   }
 
