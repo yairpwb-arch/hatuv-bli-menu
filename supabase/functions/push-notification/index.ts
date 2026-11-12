@@ -366,11 +366,6 @@ function localNow(timezone: string | null): Local {
   return { weekday: local.getDay(), minutes: local.getHours() * 60 + local.getMinutes(), date: iso(local), yesterday: iso(before) };
 }
 
-const isAt = (now: Local, weekday: number, hour: number, minute = 0) => {
-  const t = hour * 60 + minute;
-  return now.weekday === weekday && now.minutes >= t && now.minutes < t + TICK_WINDOW_MIN;
-};
-
 interface StageVideo { id: string; unlock_day: number; part_number: number; week_range: string; title: string }
 
 async function handleTick() {
@@ -395,9 +390,19 @@ async function handleTick() {
     const now = localNow(u.timezone);
     const day = getDayInProgram(startDate);
     const prefOn = (key: string) => u.prefs?.[key] !== false;
+    // A fixed time inside his quiet hours would never be sent (he's skipped then):
+    // a morning one moves to his wake-up, an evening one to half an hour before bed.
+    const bedMin = toMinutes(u.profiles?.sleep_time, '23:00');
+    const wakeMin = toMinutes(u.profiles?.wake_time, '07:00');
+    const quietAt = (t: number) => (bedMin <= wakeMin ? t >= bedMin && t < wakeMin : t >= bedMin || t < wakeMin);
+    const at = (weekday: number, hour: number, minute = 0) => {
+      let t = hour * 60 + minute;
+      if (quietAt(t)) t = t >= 12 * 60 ? (bedMin - 30 + 1440) % 1440 : wakeMin;
+      return now.weekday === weekday && now.minutes >= t && now.minutes < t + TICK_WINDOW_MIN;
+    };
 
     // ── A new week / part: what opened in the last week, and whether it was watched ──
-    const stageTime = isAt(now, SATURDAY, 17, 30) || isAt(now, SATURDAY, 21) || isAt(now, SUNDAY, 10);
+    const stageTime = at(SATURDAY, 17, 30) || at(SATURDAY, 21) || at(SUNDAY, 10);
     if (stageTime && prefOn('new_content')) {
       const newest = videos.filter((v) => v.unlock_day <= day && v.unlock_day > day - 7);
       if (newest.length > 0) {
@@ -410,26 +415,26 @@ async function handleTick() {
         const unwatched = newest.filter((v) => !seenIds.has(v.id));
         const first = newest[0];
         const isPart = first.title.startsWith('חלק ');
-        if (isAt(now, SATURDAY, 17, 30)) {
+        if (at(SATURDAY, 17, 30)) {
           await send(u, 'new_stage', isPart ? 'נפתח לך חלק חדש' : 'נפתח לך שבוע חדש', `הסרטון של ${first.week_range} מחכה לך בתכנים.`);
-        } else if (unwatched.length > 0 && isAt(now, SATURDAY, 21)) {
+        } else if (unwatched.length > 0 && at(SATURDAY, 21)) {
           await send(u, 'new_stage_nudge', 'הסרטון החדש עוד מחכה לך', 'כמה דקות עכשיו, ומחר מתחילים את ההרגלים החדשים.');
-        } else if (unwatched.length > 0 && isAt(now, SUNDAY, 10)) {
+        } else if (unwatched.length > 0 && at(SUNDAY, 10)) {
           await send(u, 'new_stage_nudge_2', 'היום מתחילים הרגלים חדשים', `עוד לא ראית את הסרטון של ${first.week_range}. כדאי לראות אותו לפני שממשיכים.`);
         }
       }
     }
 
     // ── Thursday evening: tomorrow is weigh-in day (kept from the old schedule) ──
-    if (isAt(now, THURSDAY, 20) && prefOn('weigh')) {
+    if (at(THURSDAY, 20) && prefOn('weigh')) {
       await send(u, 'weigh_reminder', 'מחר בבוקר שקילה', 'שישי בבוקר, לפני האוכל ואחרי השירותים.');
     }
 
     // ── Friday: weighing, and the weekly survey for whoever hasn't filled it in ──
-    if (isAt(now, FRIDAY, 8) && prefOn('weigh')) {
+    if (at(FRIDAY, 8) && prefOn('weigh')) {
       await send(u, 'weigh_survey', 'בוקר של שקילה', 'לפני האוכל ואחרי השירותים. ובהמשך היום מחכה לך גם השאלון השבועי.');
     }
-    const surveyNudge = isAt(now, FRIDAY, 12) ? 1 : isAt(now, FRIDAY, 14) ? 2 : 0;
+    const surveyNudge = at(FRIDAY, 12) ? 1 : at(FRIDAY, 14) ? 2 : 0;
     if (surveyNudge && prefOn('weekly_summary')) {
       const { data: filled } = await supabase
         .from('weekly_checkin')
