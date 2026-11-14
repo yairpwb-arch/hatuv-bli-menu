@@ -133,9 +133,15 @@ const TASKS = {
   after_missed:
     'היום היה מתוכנן {item} ב-{time}, ועוד לא סומן שבוצע. שאלה עדינה אחת אם יצא לו היום, בלי לחץ ובלי אשמה. הודעה אחת.',
   friday:
-    'משוב שבועי לפני שבת. הודעה אחת (לכל היותר שתיים): מה עבד טוב השבוע, ספציפי ועם מספרים מהנתונים; ההרגל שהכי כדאי לשפר בשבוע הבא; ושאלה אחת כדי להבין מה מפריע בו. {weight}',
+    'משוב שבועי לפני שבת, כמו שמאמן אמיתי כותב למתאמן שלו אחרי שעבר על השבוע: טבעי, אישי וזורם, לא רשימה של נתונים ולא משפטים טלגרפיים ("השבוע עשית הליכה של 30 דקות וחלבון קיבל 8" זה לא טוב). ' +
+    'אין הגבלת אורך בהודעה הזו: כתוב כמה שצריך כדי לעבור באמת על השבוע. אפשר עד 3–4 הודעות מופרדות ב---. ' +
+    'עבור על כל הנתונים: השאלון השבועי (הציונים שלו לכל הרגל), סימוני ההרגלים באפליקציה, צעדים, אימונים, משקל. ' +
+    '1) מה עבד טוב, ספציפי ולמה זה חשוב. ' +
+    '2) מה לא עבד: כל ההרגלים שהיו חלשים השבוע (ציון נמוך או מעט סימונים), לא רק אחד. לכל אחד בקצרה מה קרה ומה עושים בשבוע הבא, עם פתרון קונקרטי. אם יש הרבה, מתחילים מהחשובים. ' +
+    '3) שאלה אחת בסוף על מה שהכי מפריע לו, כדי להבין ולעזור. {weight}',
   shabbat:
-    'הודעת "שבת שלום" קצרה ואישית ללקוח, עם משהו קטן מהשבוע שלו. לא אותה הודעה לכולם. הודעה אחת, בלי שאלה.',
+    'הודעת "שבת שלום" קצרה וטבעית, כמו שמאמן כותב: "שבת שלום, תנוח ותן בראש 💪". {trend} ' +
+    'לא מציינים כמה ירד מתחילת התהליך ולא זורקים נתון שלא קשור. הודעה אחת, בלי שאלה.',
 };
 
 /** What the client logged lately: the latest moment of any update, and today's activity. */
@@ -197,24 +203,48 @@ async function doneToday(db: SupabaseClient, userId: string, kind: 'workout' | '
 async function weekData(db: SupabaseClient, userId: string) {
   const il = israel();
   const since = (days: number) => new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
-  const [weights, steps, acts] = await Promise.all([
+  const [weights, steps, acts, prof, ticks] = await Promise.all([
     db.from('weight_log').select('weight, recorded_at').eq('user_id', userId).gte('recorded_at', since(35)).order('recorded_at'),
     db.from('steps_log').select('date, steps').eq('user_id', userId).gte('date', since(7)).gt('steps', 0),
     db.from('activities').select('kind, custom_name, day, duration_min').eq('user_id', userId).eq('status', 'done').gte('day', since(7)),
+    db.from('profiles').select('start_date').eq('id', userId).maybeSingle(),
+    db.from('daily_habits_log').select('habit_id, completed_at').eq('user_id', userId).gte('completed_at', since(6)),
   ]);
+  // Each habit of this stage: on how many of the last 7 days he ticked it (the app's daily check-ins).
+  let habitsLine = '';
+  const start = prof.data?.start_date as string | undefined;
+  if (start) {
+    const day = Math.floor((Date.now() - new Date(`${start}T00:00:00`).getTime()) / 86400_000) + 1;
+    const { data: defs } = await db.from('habit_definitions').select('id, name, is_bonus, day_start, day_end')
+      .lte('day_start', day).or(`day_end.gte.${day},day_end.is.null`).or(`user_id.is.null,user_id.eq.${userId}`);
+    const done = new Map<string, number>();
+    for (const t of (ticks.data ?? []) as Row[]) done.set(t.habit_id, (done.get(t.habit_id) ?? 0) + 1);
+    const hs = ((defs ?? []) as Row[]).filter((h) => h.day_end !== 0);
+    if (hs.length) {
+      habitsLine = 'סימוני ההרגלים באפליקציה ב-7 הימים האחרונים (בכמה ימים סימן שעשה, מתוך הימים שההרגל היה פתוח): ' +
+        hs.map((h) => `${h.name}${h.is_bonus ? ' (בונוס)' : ''}: ${done.get(h.id) ?? 0}/${Math.min(7, Math.max(1, day - h.day_start + 1))}`).join('; ') + '.';
+    }
+  }
   const ws = (weights.data ?? []) as Row[];
   const weighedToday = ws.some((w) => w.recorded_at === il.date);
+  // This week's change: the latest weigh-in against the one before it (about a week earlier).
+  const lastW = ws[ws.length - 1];
+  const prevW = [...ws].reverse().find((w) => !!lastW && w.recorded_at <= since(5) && w.recorded_at < lastW.recorded_at);
+  const change = lastW && prevW && lastW.recorded_at >= since(7) ? Math.round((lastW.weight - prevW.weight) * 10) / 10 : null;
   const st = (steps.data ?? []) as Row[];
   const avg = st.length ? Math.round(st.reduce((s, x) => s + x.steps, 0) / st.length) : null;
   const ac = (acts.data ?? []) as Row[];
   return {
     weighedToday,
+    change,
     text: [
       `שקילות ב-5 השבועות האחרונים: ${ws.map((w) => `${w.recorded_at} ${w.weight}`).join(', ') || 'אין'}.`,
       `נשקל היום: ${weighedToday ? 'כן' : 'לא'}.`,
+      change != null ? `השינוי במשקל השבוע: ${change > 0 ? '+' : ''}${change} ק"ג (${prevW!.recorded_at} → ${lastW!.recorded_at}).` : 'אין שינוי שבועי במשקל לחשב (חסרה שקילה).',
+      habitsLine,
       `צעדים ב-7 הימים האחרונים: ${avg != null ? `ממוצע ${avg} (${st.length} ימים עם נתונים)` : 'אין נתונים'}.`,
       `אימונים והליכות השבוע: ${ac.map((a) => `${a.day} ${a.custom_name ?? a.kind}${a.duration_min ? ` ${a.duration_min} דק'` : ''}`).join(', ') || 'לא סומנו'}.`,
-    ].join('\n'),
+    ].filter(Boolean).join('\n'),
   };
 }
 
@@ -265,8 +295,14 @@ export async function proactive(db: SupabaseClient) {
       const botJustTalked = msgs.some((m) => m.sender === 'bot' && new Date(m.created_at).getTime() > now.getTime() - 15 * MIN);
       const saidAlready = msgs.some((m) => m.sender !== 'client' && /שבת שלום|חג שמח/.test(m.text ?? ''));
       if (!botJustTalked && !saidAlready) {
+        // Only this week's weight says something: down → well done; up / same → a nudge to improve.
+        const { change } = await weekData(db, g.user_id);
         kind = 'shabbat';
-        task = TASKS.shabbat;
+        task = TASKS.shabbat.replace('{trend}', change == null
+          ? 'בלי להתייחס למשקל.'
+          : change < 0
+          ? `הוא ירד השבוע ${Math.abs(change)} ק"ג: אפשר להוסיף "כל הכבוד על ההתקדמות השבוע".`
+          : 'המשקל לא ירד השבוע: אפשר להוסיף משפט קצר ומעודד שבשבוע הבא משפרים (בלי דרמה ובלי מספרים).');
         query = 'שבת שלום';
       }
     }
@@ -311,9 +347,20 @@ export async function proactive(db: SupabaseClient) {
     }
 
     if (!kind) continue;
+    // His answer to our last question never came (e.g. "did you get to the workout?"): we go back to it first.
+    const { data: lastMsgs } = await db.from('whatsapp_messages').select('sender, text, created_at').eq('chat_id', g.chat_id)
+      .gte('created_at', new Date(now.getTime() - 3 * 86400_000).toISOString()).order('created_at', { ascending: false }).limit(3);
+    const lastMsg = ((lastMsgs ?? []) as Row[]).find((m) => m.text);
+    if (lastMsg && lastMsg.sender === 'bot' && /\?/.test(lastMsg.text) && kind !== 'friday' && kind !== 'shabbat') {
+      task =
+        `ההודעה האחרונה שלנו נשארה בלי תשובה: "${String(lastMsg.text).slice(0, 300)}". ` +
+        'פותחים בזה: חוזרים לשאלה הזו בקצרה ובטבעיות (למשל אם עשה בסוף את האימון, ואם לא, מה קרה), לפני כל דבר אחר. ' +
+        `אחר כך, אם זה עדיין מתאים: ${task}`;
+    }
     const prompt = await buildPrompt(db, g.chat_id, g.user_id, query, false, undefined, undefined, task, extra);
     const { text, refused, model } = await runModel(db, prompt, { chatId: g.chat_id, userId: g.user_id });
-    const { parts, handoff } = refused ? { parts: [], handoff: false } : toReply(text, maxParts(model));
+    // Friday's feedback has room to go over the whole week.
+    const { parts, handoff } = refused ? { parts: [], handoff: false } : toReply(text, kind === 'friday' ? 4 : maxParts(model));
     if (!parts.length) {
       // The opening never went out: no review hanging open.
       if (opensReview) await db.from('bot_workout_reviews').update({ status: 'cancelled', closed_at: new Date().toISOString() }).eq('user_id', g.user_id).eq('status', 'interview');

@@ -37,6 +37,13 @@ const OBSTACLES = `# כשהלקוח נתקע במכשול (גובר על הסג�
 - לא רק תומכים ומרגיעים: מותר, ולפעמים צריך, להגיד לו את האמת ישר, בקצרה ובלי להעליב. למשל: "תכלס, יום עם ישיבות הוא בדיוק היום שבו צריך לתכנן מראש, אחרת זה יחזור כל שבוע." ואז ישר לפתרון.
 - מסיימים בשאלה שמזיזה אותו לפעולה (כן / לא, או בחירה), לא בשאלה פתוחה וכללית.`;
 
+/** Answer what he just wrote, and let him have the last word. */
+const FOCUS = `# עונים על מה שהוא כתב עכשיו, ולא חייבים את המילה האחרונה
+- עונים נקודתית על ההודעה האחרונה שלו. לא מחזירים לשיחה נושאים קודמים שכבר נסגרו (אימון שהוא כבר אמר מתי יעשה, שאלה שכבר ענה עליה). לדוגמה: "עשיתי 6200 צעדים היום" → "כל הכבוד! 💪", בלי "האימון עדיין מתוכנן ל-18:00?".
+- לא כל הודעה צריכה תשובה. כשהוא סוגר נושא ("כן", "סבבה", "תודה", "אוקיי", 👍) ואין מה להוסיף באמת: [שקט]. מותר שהמתאמן יגיד את המשפט האחרון.
+- לא מוסיפים שאלה או "מחכים לשמוע" בסוף כל הודעה. שאלה רק כשבאמת צריך ממנו משהו.
+- אורך: אין הגבלת מילים (גובר על "קצר" בכללים). כשיש מה להגיד (ניתוח, הסבר, כמה דברים לשפר, שאלה שדורשת תשובה מלאה), כותבים את כל מה שצריך, בשפה טבעית וזורמת, לא בקיצור טלגרפי ולא כרשימת נתונים. בשיחה רגילה ("כן", "עשיתי") קצר, כי ככה מדברים.`;
+
 /** He said when he'll train / walk today: the app's calendar moves there (schedule.ts). */
 const TODAY_TIME = `# כשהלקוח אומר מתי היום יעשה את האימון או ההליכה
 אם הלקוח אומר שעה ברורה שבה הוא יעשה היום את האימון או את ההליכה ("ב-18:00 אעשה אותו", "אלך בשש בערב"), מוסיפים בסוף ההודעה [שעה_היום אימון 18:00] או [שעה_היום הליכה 18:00] (שעה בפורמט 24 שעות; "בשש" לפי ההקשר: בערב = 18:00). זה מעדכן אוטומטית את השעה של היום באפליקציה, ונבדוק איתו אחרי השעה הזו.
@@ -202,7 +209,7 @@ export async function buildPrompt(
   const now = new Date().toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', weekday: 'long', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
 
   return {
-    system: `${rules?.trim() || FALLBACK_RULES}\n\n# תדריך הסגנון של המאמנים\n${guide ?? ''}\n\n${OBSTACLES}\n\n${TODAY_TIME}`,
+    system: `${rules?.trim() || FALLBACK_RULES}\n\n# תדריך הסגנון של המאמנים\n${guide ?? ''}\n\n${FOCUS}\n\n${OBSTACLES}\n\n${TODAY_TIME}`,
     user:
       `# עכשיו\n${now}\n\n# נתוני הלקוח מהאפליקציה\n${ctx}\n\n` +
       (known ? `# מה שאנחנו יודעים על הלקוח\n${known}\n\n` : '') +
@@ -245,7 +252,7 @@ export async function runModel(
 }
 
 /** How many messages an answer may be: Terra writes 2–3 short ones (its own rules), Claude up to 2. */
-export const maxParts = (model: string) => (model.startsWith('gpt-') ? 3 : 2);
+export const maxParts = (model: string) => (model.startsWith('gpt-') ? 4 : 3);
 
 /**
  * An OpenAI model (for the model test only), the same prompt: the system part as
