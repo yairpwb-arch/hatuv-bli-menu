@@ -11,6 +11,7 @@ import { AddPhotoSheet } from '@/components/profile/AddPhotoSheet';
 import { MEASUREMENTS_CHANGED, MeasurementsSheet, PHOTOS_CHANGED } from '@/components/profile/MeasurementsCard';
 import { isMeasureDue, useMeasurements } from '@/hooks/useMeasurements';
 import { successHaptic } from '@/lib/native';
+import { WEIGHT_CHANGED, saveDayWeight } from '@/lib/weightLog';
 
 // body_measurements / body_photos aren't in the generated types yet.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -213,7 +214,7 @@ export function ProgressReminder() {
 }
 
 /** Window event: a weight was saved outside the screens that show it. */
-export const WEIGHT_CHANGED = 'weight-changed';
+export { WEIGHT_CHANGED };
 
 /** Today's weight, straight from the reminder (one weigh-in per day). */
 function WeightSheet({ open, userId, start, onClose }: { open: boolean; userId: string; start: number | null; onClose: () => void }) {
@@ -226,16 +227,11 @@ function WeightSheet({ open, userId, start, onClose }: { open: boolean; userId: 
   const save = async () => {
     if (value == null || value < 30 || value > 300) return;
     setSaving(true);
-    const today = format(new Date(), 'yyyy-MM-dd');
-    const { data: todays } = await db.from('weight_log').select('id').eq('user_id', userId).eq('recorded_at', today).limit(1);
-    const { error } = todays?.[0]
-      ? await db.from('weight_log').update({ weight: value }).eq('id', todays[0].id)
-      : await db.from('weight_log').insert({ user_id: userId, weight: value, recorded_at: today });
+    const { error } = await saveDayWeight(userId, value);
     setSaving(false);
     if (error) return void toast.error('לא נשמר, נסו שוב');
     successHaptic();
     toast.success('המשקל נשמר');
-    window.dispatchEvent(new Event(WEIGHT_CHANGED));
     onClose();
   };
 

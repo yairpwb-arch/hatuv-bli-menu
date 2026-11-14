@@ -10,6 +10,7 @@ import { Answers, activeQuestions, derivePlan, isAnswered, otherKey, picksOther 
 import type { OnboardingRow } from '@/hooks/useOnboarding';
 import { OnboardingFrame } from './OnboardingFrame';
 import { NumberField, OptionList } from './inputs';
+import { saveDayWeight } from '@/lib/weightLog';
 import { Angle, MeasureKey, MeasurementsStep, PhotosStep } from './BodySteps';
 
 const NUMBER_DEFAULTS: Record<string, number> = { age: 30, height: 170, weight: 75, max_pullups: 0, max_pushups: 0, max_squats: 0 };
@@ -76,7 +77,7 @@ export function Questionnaire({ userId, initialName, row, save, onDone }: Questi
       // date was already set (e.g. by an admin or at checkout).
       supabase.from('profiles').update({ start_date: nextSaturday() }).eq('id', userId).is('start_date', null),
       // First weigh-in = starting point on the progress screen (the trigger syncs current_weight too).
-      supabase.from('weight_log').insert({ user_id: userId, weight: final.weight as number, recorded_at: today }),
+      saveDayWeight(userId, final.weight as number, today),
       Object.values(m).some((v) => v != null)
         ? db.from('body_measurements').insert({
             user_id: userId,

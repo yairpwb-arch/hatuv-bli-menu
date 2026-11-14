@@ -28,6 +28,7 @@ import { showUndo } from '@/lib/undoToast';
 import type { Habit } from '@/hooks/useHabits';
 import { isNight } from '@/lib/sleepSchedule';
 import { TodayAgenda } from '@/components/home/TodayAgenda';
+import { WEIGHT_CHANGED, saveDayWeight, weighedOn } from '@/lib/weightLog';
 import { formatNumber } from '@/components/progress/format';
 
 const STEPS_PER_MINUTE = 100;
@@ -153,6 +154,18 @@ export default function AppHome() {
     },
   });
   const surveyPending = isFriday && surveyQuery.data === false;
+  // Weighed in already today (here, in the weekly survey, the reminder or the progress page): no card.
+  const weighedQuery = useQuery({
+    queryKey: ['weighed-today', user?.id, format(now, 'yyyy-MM-dd')],
+    enabled: !!user && isWeighInDay,
+    queryFn: () => weighedOn(user!.id),
+  });
+  useEffect(() => {
+    const again = () => void weighedQuery.refetch();
+    window.addEventListener(WEIGHT_CHANGED, again);
+    return () => window.removeEventListener(WEIGHT_CHANGED, again);
+  }, [weighedQuery.refetch]); // eslint-disable-line react-hooks/exhaustive-deps
+  const showWeighCard = isWeighInDay && weighedQuery.data === false;
   const [searchParams, setSearchParams] = useSearchParams();
   const [surveyOpen, setSurveyOpen] = useState(false);
   useEffect(() => {
@@ -200,7 +213,8 @@ export default function AppHome() {
       toast({ title: 'שגיאה', description: 'אנא הזן משקל תקין', variant: 'destructive' });
       return;
     }
-    const { error } = await supabase.from('weight_log').insert({ user_id: user.id, weight: weightNum });
+    // One weigh-in per day: today's weight is replaced, not added again.
+    const { error } = await saveDayWeight(user.id, weightNum);
     if (error) {
       toast({ title: 'שגיאה', description: 'לא ניתן לשמור את המשקל', variant: 'destructive' });
       return;
@@ -276,7 +290,7 @@ export default function AppHome() {
       <StepsCompact steps={todaySteps ?? 0} goal={stepGoal} onStartWalk={() => navigate('/app/walk')} />
 
       {/* Weigh-in day */}
-      {isWeighInDay && (
+      {showWeighCard && (
         <Card className="flex items-center justify-between gap-3 border-primary/40">
           <div className="flex items-center gap-3">
             <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-pill bg-primary-tint">

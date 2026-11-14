@@ -14,6 +14,7 @@ import { MEASURES, MeasurementsStep, type MeasureKey } from '@/components/onboar
 import { MeasureValues, isMeasureDue, saveMeasurements } from '@/hooks/useMeasurements';
 import { MEASUREMENTS_CHANGED } from '@/components/profile/MeasurementsCard';
 import { cn } from '@/lib/utils';
+import { saveDayWeight } from '@/lib/weightLog';
 import { selectionHaptic, successHaptic } from '@/lib/native';
 import {
   HABIT_SCALE, IMPROVE, PROGRESS_AMOUNT, SurveyItem, T, WORKOUT_FEEL, YES_NO,
@@ -57,6 +58,11 @@ function clearDraft(userId: string, week: number) {
   }
 }
 
+/** Survey questions for habits whose name is a rule rather than something to rate (by visual key). */
+const SURVEY_TITLE: Record<string, string> = {
+  routine_sleep: 'שינה: הלכת לישון וקמת בשעות הקבועות שלך',
+};
+
 export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props) {
   const { user, profile, currentDay, planDays: programDays } = useAuth();
   const gender = (profile as { gender?: string | null } | null)?.gender ?? null;
@@ -76,7 +82,23 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
   const [lastMeasure, setLastMeasure] = useState<{ at: string; values: MeasureValues } | null>(null);
 
   // The habits asked about: this week's, the ones the trainee ticks (bonus ones left out).
-  const surveyHabits = useMemo(() => habits.filter((h) => !h.is_bonus), [habits]);
+  // The same habit twice (one added by hand next to the program's, e.g. "מנת חלבון בכל ארוחה"
+  // beside "חלבון בכל ארוחה"): asked once.
+  const surveyHabits = useMemo(() => {
+    const norm = (s: string) => s.replace(/[^\p{L}\p{N} ]/gu, '').replace(/\s+/g, ' ').trim();
+    const kept: typeof habits = [];
+    for (const h of habits.filter((x) => !x.is_bonus)) {
+      const n = norm(h.name);
+      const twin = kept.find((k) => {
+        const m = norm(k.name);
+        return (!!h.visual_key && h.visual_key === k.visual_key) || (Math.min(n.length, m.length) >= 8 && (n.includes(m) || m.includes(n)));
+      });
+      if (!twin) kept.push(h);
+    }
+    return kept;
+  }, [habits]);
+  /** A clear question where the habit's name is a rule, not a question (the sleep formula). */
+  const titleOf = (h: (typeof habits)[number]) => SURVEY_TITLE[h.visual_key ?? ''] ?? h.name;
   const askWorkouts = planDays.length > 0 && hasWorkoutQuestions(currentWeek, workoutsFromWeek);
 
   useEffect(() => {
@@ -162,7 +184,7 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
     const measured = (answers.measurements ?? {}) as MeasureValues;
     const measuredText = MEASURES.filter((x) => measured[x.key] != null).map((x) => `${x.label} ${measured[x.key]}`).join(' · ');
     if (measureDue && measuredText) items.push({ key: 'measurements', question: 'היקפים (ס"מ)', answer: measuredText });
-    for (const h of surveyHabits) items.push({ key: `habit:${h.id}`, question: h.name, answer: answers[`habit:${h.id}`] as number });
+    for (const h of surveyHabits) items.push({ key: `habit:${h.id}`, question: titleOf(h), answer: answers[`habit:${h.id}`] as number });
     if (askWorkouts) {
       for (const d of planDays) {
         items.push({ key: `workout:${d.id}`, question: T.workoutFeel(d.name), answer: labelOf(WORKOUT_FEEL, answers[`workout:${d.id}`]) });
@@ -201,10 +223,7 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
     }
 
     // Today's weight: one weigh-in per day (the trigger keeps profiles.current_weight in step).
-    const { data: todays } = await db.from('weight_log').select('id').eq('user_id', user.id).eq('recorded_at', today).limit(1);
-    const w = todays?.[0]
-      ? await db.from('weight_log').update({ weight }).eq('id', todays[0].id)
-      : await db.from('weight_log').insert({ user_id: user.id, weight, recorded_at: today });
+    const w = await saveDayWeight(user.id, weight, today);
     if (w.error) toast.error('השאלון נשמר, אבל המשקל לא עודכן');
 
     // The two-monthly measurements, into the measurements history (profile + admin).
@@ -275,8 +294,8 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
                 <p className="text-label text-muted-foreground">{T.habitsHint}</p>
               </div>
               {surveyHabits.map((h) => (
-                <Question key={h.id} title={h.name} invalid={bad(`habit:${h.id}`)} small>
-                  <Scale value={answers[`habit:${h.id}`] as number | undefined} onChange={(v) => set(`habit:${h.id}`, v)} label={h.name} />
+                <Question key={h.id} title={titleOf(h)} invalid={bad(`habit:${h.id}`)} small>
+                  <Scale value={answers[`habit:${h.id}`] as number | undefined} onChange={(v) => set(`habit:${h.id}`, v)} label={titleOf(h)} />
                 </Question>
               ))}
             </section>

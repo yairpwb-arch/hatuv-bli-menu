@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { format, differenceInDays, nextFriday } from 'date-fns';
 import { he } from 'date-fns/locale';
 import { successHaptic } from '@/lib/native';
+import { saveDayWeight } from '@/lib/weightLog';
 
 interface WeighInCardProps {
   userId: string;
@@ -44,15 +45,9 @@ export function WeighInCard({ userId, currentWeight, onWeightAdded }: WeighInCar
     try {
       const dateString = format(today, 'yyyy-MM-dd');
       
-      const { error: logError } = await supabase
-        .from('weight_log')
-        .insert({
-          user_id: userId,
-          weight: weightValue,
-          recorded_at: dateString,
-        });
-
-      if (logError) throw logError;
+      // One weigh-in per day: that day's weight is replaced, not added again.
+      const { error: logError } = await saveDayWeight(userId, weightValue, dateString);
+      if (logError) throw new Error(logError);
 
       // profiles.current_weight is kept in sync by the weight_log trigger
       successHaptic();

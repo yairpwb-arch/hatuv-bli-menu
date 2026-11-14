@@ -24,6 +24,7 @@ import { StepsCard } from '@/components/progress/StepsCard';
 import { BeforeNowCard, ProgressPhoto } from '@/components/progress/BeforeNowCard';
 import { withSignedUrls } from '@/lib/bodyPhotos';
 import { guideBody } from '@/lib/guideBlocks';
+import { saveDayWeight } from '@/lib/weightLog';
 import { openExternalLink } from '@/lib/externalLink';
 import {
   WeightEntry, formatKg, formatNumber, parseDay, sortWeights, weightOnOrBefore,
@@ -168,12 +169,9 @@ export default function AppProgress() {
 
     setIsSubmitting(true);
     try {
-      const { error } = await supabase.from('weight_log').insert({
-        user_id: user.id,
-        weight: weightValue,
-        recorded_at: format(new Date(), 'yyyy-MM-dd'),
-      });
-      if (error) throw error;
+      // One weigh-in per day: today's weight is replaced, not added again.
+      const { error } = await saveDayWeight(user.id, weightValue);
+      if (error) throw new Error(error);
 
       // profiles.current_weight is kept in sync by the weight_log trigger
       successHaptic();
