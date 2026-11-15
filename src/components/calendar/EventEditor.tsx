@@ -35,6 +35,8 @@ const TYPES: { value: EventType; label: string; title: string }[] = [
   { value: 'other', label: 'אחר', title: '' },
 ];
 const DAY_LETTERS = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'];
+/** A repeating workout that isn't one of the plan's (a run, yoga…): a plain calendar event, no exercises. */
+const OTHER_WORKOUT = '__other';
 type RepeatMode = 'none' | 'daily' | 'weekly';
 
 const chip = (on: boolean) =>
@@ -89,12 +91,15 @@ export function EventEditor({ open, onOpenChange, event, defaultDate, actions }:
   };
 
   const repeating = repeat !== 'none';
-  // A repeating walk / workout goes into the training plan (no end date there).
-  const planRepeat = repeating && !event && (type === 'walk' || type === 'workout');
+  // A repeating walk / plan workout goes into the training plan (no end date there);
+  // any other repeating workout stays a calendar event of its own.
+  const askPlanDay = repeating && !event && type === 'workout';
+  const planRepeat = repeating && !event && (type === 'walk' || (type === 'workout' && planDayId !== OTHER_WORKOUT));
   const weekdays = repeat === 'daily' ? [0, 1, 2, 3, 4, 5, 6] : days;
   const workoutDayProblem = planRepeat && type === 'workout' && (repeat === 'daily' || days.length !== 1);
   const valid =
     title.trim().length > 0 && !!date && !!time && (!repeating || weekdays.length > 0) &&
+    (!askPlanDay || !!planDayId) &&
     (!planRepeat || type !== 'workout' || (!!planDayId && !workoutDayProblem));
 
   const input = (): EventInput => {
@@ -202,9 +207,9 @@ export function EventEditor({ open, onOpenChange, event, defaultDate, actions }:
             )}
           </fieldset>
 
-          {planRepeat && type === 'workout' && (
+          {askPlanDay && (
             <div className="space-y-1.5">
-              <Label htmlFor="ev-plan">איזה אימון מהתוכנית</Label>
+              <Label htmlFor="ev-plan">איזה אימון</Label>
               <select
                 id="ev-plan"
                 value={planDayId}
@@ -215,6 +220,7 @@ export function EventEditor({ open, onOpenChange, event, defaultDate, actions }:
                 {(planDays ?? []).map((d: { id: string; name: string }) => (
                   <option key={d.id} value={d.id}>{d.name}</option>
                 ))}
+                <option value={OTHER_WORKOUT}>אימון אחר (ריצה, יוגה…), בלי תרגילים</option>
               </select>
               {workoutDayProblem && <p className="text-label text-muted-foreground">אימון מהתוכנית משובץ ליום אחד בשבוע. בחרו יום אחד.</p>}
             </div>

@@ -116,6 +116,8 @@ interface HeaderData {
   walksThisWeek: number;
   part: number | null;
   group: GroupRow | null;
+  /** The latest stage that opened for him (its content, bonus ones aside): how much he watched. */
+  latestContent: { week: string; total: number; watched: number; missing: string[] } | null;
 }
 
 /** Everything the header shows, loaded for one client. */
@@ -133,7 +135,7 @@ export function useClientHeader(user: PanelUser | null, refreshKey: number) {
         db.from('workout_session_logs').select('id', { count: 'exact', head: true }).eq('user_id', user.id).gte('completed_at', weekStart.toISOString()),
         db.from('activities').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'done').is('session_id', null)
           .not('kind', 'in', '(walk,hike)').gte('started_at', weekStart.toISOString()),
-        db.from('program_content').select('unlock_day, part_number').is('archived_at', null).lte('unlock_day', Math.max(day, 0)),
+        db.from('program_content').select('id, title, week_range, unlock_day, part_number, is_bonus').is('archived_at', null).lte('unlock_day', Math.max(day, 0)),
         // Walks: logged as activities (GPS / by hand), or ticked as the plan's walk.
         db.from('activities').select('day').eq('user_id', user.id).eq('status', 'done').in('kind', ['walk', 'hike']).gte('started_at', weekStart.toISOString()),
         db.from('activity_log').select('completed_at').eq('user_id', user.id).eq('activity_type', 'walk').gte('completed_at', ymd(weekStart)),
@@ -145,7 +147,23 @@ export function useClientHeader(user: PanelUser | null, refreshKey: number) {
         const { data: m } = await db.from('whatsapp_messages').select('created_at, sender').eq('chat_id', g.chat_id).order('created_at', { ascending: false }).limit(1).maybeSingle();
         if (m) lastMessage = { at: m.created_at, sender: m.sender };
       }
-      const parts = ((content.data ?? []) as { part_number: number }[]).map((c) => c.part_number).filter((n) => n < 5);
+      const opened = (content.data ?? []) as { id: string; title: string; week_range: string; unlock_day: number; part_number: number; is_bonus: boolean }[];
+      const parts = opened.map((c) => c.part_number).filter((n) => n < 5);
+      // The latest stage that opened for him, and which of its items he marked watched.
+      let latestContent: HeaderData['latestContent'] = null;
+      const program = opened.filter((c) => c.part_number < 5 && !c.is_bonus);
+      if (day >= 1 && program.length) {
+        const lastDay = Math.max(...program.map((c) => c.unlock_day));
+        const items = program.filter((c) => c.unlock_day === lastDay);
+        const { data: seen } = await db.from('content_progress').select('content_id').eq('user_id', user.id).in('content_id', items.map((c) => c.id));
+        const seenIds = new Set(((seen ?? []) as { content_id: string }[]).map((r) => r.content_id));
+        latestContent = {
+          week: items[0].week_range,
+          total: items.length,
+          watched: items.filter((c) => seenIds.has(c.id)).length,
+          missing: items.filter((c) => !seenIds.has(c.id)).map((c) => c.title),
+        };
+      }
       if (gone) return;
       setData({
         firstWeight: user.initial_weight ?? w[0]?.weight ?? null,
@@ -161,6 +179,7 @@ export function useClientHeader(user: PanelUser | null, refreshKey: number) {
         })(),
         part: parts.length ? Math.max(...parts) : null,
         group: g,
+        latestContent,
       });
     })();
     return () => {
@@ -225,7 +244,7 @@ export function ClientHeader({ user, data, onClose }: { user: PanelUser; data: H
           <X className="h-5 w-5" />
         </button>
       </div>
-      <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] sm:mx-0 sm:grid sm:grid-cols-4 sm:gap-2 sm:overflow-visible sm:px-0 [&::-webkit-scrollbar]:hidden [&>*]:w-[42%] [&>*]:shrink-0 sm:[&>*]:w-auto">
+      <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] sm:mx-0 sm:grid sm:grid-cols-5 sm:gap-2 sm:overflow-visible sm:px-0 [&::-webkit-scrollbar]:hidden [&>*]:w-[42%] [&>*]:shrink-0 sm:[&>*]:w-auto">
         <Stat
           label="משקל"
           value={
@@ -242,6 +261,16 @@ export function ClientHeader({ user, data, onClose }: { user: PanelUser; data: H
             ) : change === 0 ? 'ללא שינוי' : undefined
           }
           tone={change != null && change < 0 ? 'good' : 'muted'}
+        />
+        <Stat
+          label={data?.latestContent ? `תכני ${data.latestContent.week}` : 'תכני השבוע האחרון'}
+          value={
+            !data?.latestContent ? '—'
+              : data.latestContent.watched === data.latestContent.total ? 'צפה בהכול'
+              : `${data.latestContent.watched} מתוך ${data.latestContent.total}`
+          }
+          sub={data?.latestContent?.missing.length ? `לא צפה: ${data.latestContent.missing.join(' · ')}` : undefined}
+          tone={data?.latestContent && data.latestContent.watched === data.latestContent.total ? 'good' : 'muted'}
         />
         <Stat label="שקילה אחרונה" value={data?.lastWeighIn ? ago(data.lastWeighIn) : 'עוד לא נשקל'} sub={data?.lastWeighIn ? dmy(data.lastWeighIn) : undefined} />
         <Stat

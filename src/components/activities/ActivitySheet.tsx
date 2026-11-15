@@ -184,6 +184,11 @@ export function ActivitySheet({
               type="button"
               onClick={() => {
                 setKind(k);
+                // Only strength has exercises: a workout built before switching to a run / yoga… is let go.
+                if (!kindInfo(k).strength) {
+                  setBuilt(null);
+                  setStrengthMode('log');
+                }
                 setStep('details');
               }}
               className="flex min-h-[84px] flex-col items-center justify-center gap-1.5 rounded-inner border border-border bg-card-inner px-1 text-center"
@@ -195,7 +200,7 @@ export function ActivitySheet({
         </div>
       )}
 
-      {step === 'build' && user && (
+      {step === 'build' && user && info.strength && (
         <>
           <Header back={() => setStep('details')} />
           <WorkoutBuilder
@@ -220,7 +225,7 @@ export function ActivitySheet({
         <div className="space-y-4 pb-2">
           {!existing && !initialKind && <Header back={() => setStep('kind')} />}
 
-          {built && (
+          {built && info.strength && (
             <div className="flex items-center justify-between gap-3 rounded-inner border border-success/40 bg-success/10 px-4 py-3">
               <p className="min-w-0 truncate text-body">
                 האימון: <span className="font-bold">{built.name}</span>
