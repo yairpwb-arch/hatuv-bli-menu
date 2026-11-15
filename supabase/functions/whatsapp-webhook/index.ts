@@ -220,6 +220,10 @@ async function handle(body: any) {
   await readChat(chatId);
   await sendTyping(chatId, 8000);
   const { parts, handoff, review, planRequest, todayTimes, watched } = await composeReply(supabase, chatId, userId, msg.text);
+  // He wrote more (or a photo arrived) while this was written: that message's own run
+  // answers everything together, so nothing he sent is left unanswered.
+  const { data: during } = await supabase.from('whatsapp_messages').select('id').eq('chat_id', chatId).eq('sender', 'client').gt('created_at', at).limit(1);
+  if ((during ?? []).length) return;
   // The test group always gets the answer; a real group in draft mode would get only our alert.
   const toGroup = isTest || !group?.draft_mode;
   if (handoff) await alertHandoff(supabase, chatId, userId, parts.join('\n'), toGroup);

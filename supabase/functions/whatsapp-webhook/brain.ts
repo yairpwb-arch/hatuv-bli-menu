@@ -39,9 +39,12 @@ const OBSTACLES = `# כשהלקוח נתקע במכשול (גובר על הסג�
 - מסיימים בשאלה שמזיזה אותו לפעולה (כן / לא, או בחירה), לא בשאלה פתוחה וכללית.`;
 
 /** Answer what he just wrote, and let him have the last word. */
-const FOCUS = `# עונים על מה שהוא כתב עכשיו, ולא חייבים את המילה האחרונה
-- עונים נקודתית על ההודעה האחרונה שלו. לא מחזירים לשיחה נושאים קודמים שכבר נסגרו (אימון שהוא כבר אמר מתי יעשה, שאלה שכבר ענה עליה). לדוגמה: "עשיתי 6200 צעדים היום" → "כל הכבוד! 💪", בלי "האימון עדיין מתוכנן ל-18:00?".
-- לא כל הודעה צריכה תשובה. כשהוא סוגר נושא ("כן", "סבבה", "תודה", "אוקיי", 👍) ואין מה להוסיף באמת: [שקט]. מותר שהמתאמן יגיד את המשפט האחרון.
+const FOCUS = `# עונים על כל מה שהוא כתב מאז ההודעה האחרונה שלך, כמו בן אדם
+- קודם כל: עוברים על כל ההודעות שהלקוח שלח מאז ההודעה האחרונה שלך (לא רק האחרונה), וגם על כל תמונה. כל דבר שהוא אמר או שאל מקבל התייחסות, בצורה כזו או אחרת: בתשובה אחת זורמת שמחברת הכול, לא תשובה נפרדת לכל הודעה. אם הוא שאל משהו ("לא ראית את התמונה?") עונים על זה ישירות.
+- תמונה שהוא שלח מצורפת להודעה הזו: מסתכלים עליה ומגיבים על מה שרואים בה בפועל, כמו מאמן (למשל בארוחה: מה טוב בה, איפה החלבון, ואם יש מה לשפר). לא אומרים שלא ראינו או שפספסנו תמונה. אם אין תמונה מצורפת למרות שכתוב [תמונה], מבקשים בפשטות שישלח אותה שוב.
+- כותבים כמו מאמן אנושי בוואטסאפ, לא כמו בוט: לא מחזירים לו את המילים שלו ("מלא עוף, הולך טיל" ← לא). מגיבים לתוכן: מה זה אומר, למה זה טוב, מה הלאה. בלי משפטים כלליים ריקים.
+- לא מחזירים לשיחה נושאים קודמים שכבר נסגרו (אימון שהוא כבר אמר מתי יעשה, שאלה שכבר ענה עליה). לדוגמה: "עשיתי 6200 צעדים היום" → "כל הכבוד! 💪", בלי "האימון עדיין מתוכנן ל-18:00?".
+- לא כל הודעה צריכה תשובה. כשכל מה שהוא כתב מאז ההודעה האחרונה שלך רק סוגר נושא ("כן", "סבבה", "תודה", "אוקיי", 👍) ואין מה להוסיף באמת: [שקט]. מותר שהמתאמן יגיד את המשפט האחרון.
 - לא מוסיפים שאלה או "מחכים לשמוע" בסוף כל הודעה. שאלה רק כשבאמת צריך ממנו משהו.
 - אורך: אין הגבלת מילים (גובר על "קצר" בכללים). כשיש מה להגיד (ניתוח, הסבר, כמה דברים לשפר, שאלה שדורשת תשובה מלאה), כותבים את כל מה שצריך, בשפה טבעית וזורמת, לא בקיצור טלגרפי ולא כרשימת נתונים. בשיחה רגילה ("כן", "עשיתי") קצר, כי ככה מדברים.`;
 
@@ -161,6 +164,47 @@ async function recentChat(db: SupabaseClient, chatId: string, everyoneIsClient: 
     .join('\n');
 }
 
+export interface Img {
+  media_type: string;
+  data: string;
+}
+
+const toBase64 = (buf: ArrayBuffer) => {
+  const b = new Uint8Array(buf);
+  let s = '';
+  for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000));
+  return btoa(s);
+};
+
+/**
+ * The photos the client sent since our last message (up to 3, the last 6 hours), so the
+ * model sees them and doesn't answer "[תמונה]" blind. Green API's link; one that fails is skipped.
+ */
+async function recentImages(db: SupabaseClient, chatId: string): Promise<Img[]> {
+  const { data: lastBot } = await db.from('whatsapp_messages').select('created_at').eq('chat_id', chatId).eq('sender', 'bot')
+    .order('created_at', { ascending: false }).limit(1).maybeSingle();
+  const sixHours = new Date(Date.now() - 6 * 3600_000).toISOString();
+  const since = lastBot?.created_at && lastBot.created_at > sixHours ? lastBot.created_at : sixHours;
+  const { data } = await db.from('whatsapp_messages').select('media_url').eq('chat_id', chatId).eq('sender', 'client')
+    .eq('type', 'image').not('media_url', 'is', null).gt('created_at', since).order('created_at', { ascending: false }).limit(3);
+  const urls = ((data ?? []) as Row[]).map((m) => m.media_url as string).reverse();
+  const out = await Promise.all(urls.map(async (url): Promise<Img | null> => {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const type = (res.headers.get('content-type') ?? 'image/jpeg').split(';')[0].trim();
+      const media_type = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(type) ? type : 'image/jpeg';
+      const buf = await res.arrayBuffer();
+      if (buf.byteLength > 3_500_000) return null; // over the API's limit once encoded
+      return { media_type, data: toBase64(buf) };
+    } catch (e) {
+      console.error('[brain] image fetch failed', e instanceof Error ? e.message : e);
+      return null;
+    }
+  }));
+  return out.filter((i): i is Img => !!i);
+}
+
 export interface Reply {
   /** The messages to send (the hand-off tag already removed); empty = stay quiet. */
   parts: string[];
@@ -179,6 +223,8 @@ export interface Reply {
 export interface PromptParts {
   system: string;
   user: string;
+  /** The client's recent photos (a live reply only). */
+  images?: Img[];
 }
 
 /** Everything the model gets for one answer (also used by the model test). */
@@ -198,7 +244,7 @@ export async function buildPrompt(
   extra?: string,
 ): Promise<PromptParts> {
   const day = testClient ? testClient.day : await programDay(db, userId);
-  const [rules, guide, examples, ctx, program, profileRow, chat, review] = await Promise.all([
+  const [rules, guide, examples, ctx, program, profileRow, chat, review, images] = await Promise.all([
     setting<string>(db, 'rules'),
     setting<string>(db, 'style_guide'),
     db.rpc('match_bot_examples', { q: latest, k: 12 }),
@@ -208,6 +254,8 @@ export async function buildPrompt(
     chatOverride != null ? Promise.resolve(chatOverride) : recentChat(db, chatId, everyoneIsClient),
     // A workout review (asking the client about their workouts); not in the model test.
     testClient || day == null || day < 1 ? Promise.resolve('') : reviewSection(db, userId, chatId),
+    // His photos since our last message: an answer to him only (not a message we start, not the test).
+    task || chatOverride != null ? Promise.resolve([] as Img[]) : recentImages(db, chatId),
   ]);
   const ex = ((examples.data ?? []) as Row[])
     .map((e, i) => `דוגמה ${i + 1}:${e.context ? `\n(לפני כן המאמן כתב: ${e.context})` : ''}\nלקוח: ${e.client}\nמאמן: ${e.coach}`)
@@ -227,7 +275,9 @@ export async function buildPrompt(
       `# השיחה בקבוצה (האחרונה בסוף)\n${chat || '(אין עדיין הודעות)'}\n\n` +
       (task
         ? `# ההודעה שאתה יוזם עכשיו\n${task}\nרק את הטקסט שיישלח, בלי הסברים. אם אין טעם לשלוח עכשיו, כתוב רק: [שקט]`
-        : `כתוב את התשובה שלך להודעות האחרונות של הלקוח. רק את הטקסט שיישלח, בלי הסברים.`),
+        : (images.length ? `התמונות שהלקוח שלח מאז ההודעה האחרונה שלך מצורפות להודעה הזו (${images.length}, לפי הסדר). ` : '') +
+          `כתוב את התשובה שלך לכל ההודעות שהלקוח שלח מאז ההודעה האחרונה שלך (לא רק לאחרונה). רק את הטקסט שיישלח, בלי הסברים.`),
+    images,
   };
 }
 
@@ -246,7 +296,12 @@ export async function runModel(
     max_tokens: 4000,
     output_config: { effort: 'low' },
     system: [{ type: 'text', text: prompt.system, cache_control: { type: 'ephemeral' } }],
-    messages: [{ role: 'user', content: prompt.user }],
+    messages: [{
+      role: 'user',
+      content: prompt.images?.length
+        ? [...prompt.images.map((i) => ({ type: 'image', source: { type: 'base64', ...i } })), { type: 'text', text: prompt.user }]
+        : prompt.user,
+    }],
   };
   // Sonnet: if its safeguards decline, the request is rerun on a fallback model in the same call.
   const r = (model.startsWith('claude-sonnet-5-5')

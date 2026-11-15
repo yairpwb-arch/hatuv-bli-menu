@@ -103,15 +103,27 @@ export async function replies(db: SupabaseClient) {
     const { data: mine } = await db.from('bot_pending_replies').delete().eq('chat_id', p.chat_id).eq('due_at', p.due_at).select('chat_id');
     if (!mine?.length) continue;
     if (p.chat_id !== TEST_GROUP_ID) continue; // real groups: never
-    const { data: since } = await db.from('whatsapp_messages').select('sender, text').eq('chat_id', p.chat_id).gte('created_at', p.first_at).order('created_at');
+    const { data: since } = await db.from('whatsapp_messages').select('sender, text, created_at').eq('chat_id', p.chat_id).gte('created_at', p.first_at).order('created_at');
     const msgs = (since ?? []) as Row[];
     // One of us answered meanwhile (or the bot already did): quiet.
     if (msgs.some((m) => m.sender === 'coach' || m.sender === 'bot')) continue;
-    const latest = [...msgs].reverse().find((m) => m.sender === 'client' && m.text)?.text;
+    let latest = [...msgs].reverse().find((m) => m.sender === 'client' && m.text)?.text;
     if (!latest) continue;
+    let seenUntil = msgs[msgs.length - 1].created_at as string;
     await readChat(p.chat_id);
     await sendTyping(p.chat_id, 8000);
-    const { parts, handoff, review, planRequest, todayTimes, watched } = await composeReply(db, p.chat_id, p.user_id, latest);
+    let r = await composeReply(db, p.chat_id, p.user_id, latest);
+    // He wrote more (or a photo arrived) while it was written: written again, over everything.
+    const { data: more } = await db.from('whatsapp_messages').select('text, created_at').eq('chat_id', p.chat_id).eq('sender', 'client').gt('created_at', seenUntil).order('created_at');
+    if ((more ?? []).length) {
+      const m = more as Row[];
+      latest = [...m].reverse().find((x) => x.text)?.text ?? latest;
+      seenUntil = m[m.length - 1].created_at;
+      r = await composeReply(db, p.chat_id, p.user_id, latest!);
+    }
+    // Those messages may have queued a reply of their own: this one covers them.
+    await db.from('bot_pending_replies').delete().eq('chat_id', p.chat_id).lte('first_at', seenUntil);
+    const { parts, handoff, review, planRequest, todayTimes, watched } = r;
     if (handoff) await alertHandoff(db, p.chat_id, p.user_id, parts.join('\n'), true);
     await deliver(db, p.chat_id, p.user_id, parts);
     await afterReply(db, p.chat_id, p.user_id, review);
