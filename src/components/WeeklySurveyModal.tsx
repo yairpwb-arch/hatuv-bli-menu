@@ -15,6 +15,7 @@ import { MeasureValues, isMeasureDue, saveMeasurements } from '@/hooks/useMeasur
 import { MEASUREMENTS_CHANGED } from '@/components/profile/MeasurementsCard';
 import { cn } from '@/lib/utils';
 import { saveDayWeight } from '@/lib/weightLog';
+import { type TextRow, customAnswerText, customAnswered, customOptions, textsFor, useQuestionnaireTexts } from '@/lib/questionnaireTexts';
 import { selectionHaptic, successHaptic } from '@/lib/native';
 import {
   HABIT_SCALE, IMPROVE, PROGRESS_AMOUNT, SurveyItem, T, WORKOUT_FEEL, YES_NO,
@@ -59,9 +60,7 @@ function clearDraft(userId: string, week: number) {
 }
 
 /** Survey questions for habits whose name is a rule rather than something to rate (by visual key). */
-const SURVEY_TITLE: Record<string, string> = {
-  routine_sleep: 'שינה: הלכת לישון וקמת בשעות הקבועות שלך',
-};
+const SLEEP_TITLE = 'שינה: הלכת לישון וקמת בשעות הקבועות שלך';
 
 export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props) {
   const { user, profile, currentDay, planDays: programDays } = useAuth();
@@ -98,7 +97,40 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
     return kept;
   }, [habits]);
   /** A clear question where the habit's name is a rule, not a question (the sleep formula). */
-  const titleOf = (h: (typeof habits)[number]) => SURVEY_TITLE[h.visual_key ?? ''] ?? h.name;
+  // The texts as the coaches edited them (admin → שאלונים), over the code's defaults.
+  const { data: textRows } = useQuestionnaireTexts();
+  const tx = textsFor(textRows, 'weekly');
+  const tw = textsFor(textRows, 'workout');
+  const W = {
+    weight: say(tx.title('weight', T.weight), gender),
+    weightHint: tx.subtitle('weight', T.weightHint),
+    measure: tx.title('measurements', 'מדידת היקפים'),
+    habits: say(tx.title('habits', T.habitsTitle), gender),
+    habitsHint: tx.subtitle('habits', T.habitsHint),
+    sleep: say(tx.title('habit_sleep', SLEEP_TITLE), gender),
+    section: tw.title('section', T.workoutsTitle),
+    feel: (name: string) => say(tw.title('workout_feel', T.workoutFeel), gender).split('{name}').join(name),
+    feelHint: tw.subtitle('workout_feel'),
+    feelOpts: tw.options('workout_feel', WORKOUT_FEEL),
+    progressed: say(tw.title('progressed', T.progressed), gender),
+    progressedHint: tw.subtitle('progressed'),
+    progressedOpts: tw.options('progressed', YES_NO),
+    which: say(tw.title('progressed_which', T.progressedWhich), gender),
+    whichHint: tw.subtitle('progressed_which', 'בוחרים תרגיל, ואז בכמה'),
+    amountOpts: tw.options('progressed_which', PROGRESS_AMOUNT),
+    improve: say(tw.title('improve', T.improve), gender),
+    improveHint: tw.subtitle('improve', T.improveHint),
+    improveOpts: tw.options('improve', IMPROVE),
+    share: say(tw.title('share', T.share), gender),
+    shareHint: tw.subtitle('share', T.shareHint),
+  };
+  const askProgressed = !tw.hidden('progressed');
+  const askImprove = !tw.hidden('improve');
+  const askShare = !tw.hidden('share');
+  const customWeekly = tx.custom;
+  const customWorkout = tw.custom;
+  /** A clear question where the habit's name is a rule, not a question (the sleep formula). */
+  const titleOf = (h: (typeof habits)[number]) => (h.visual_key === 'routine_sleep' ? W.sleep : h.name);
   const askWorkouts = planDays.length > 0 && hasWorkoutQuestions(currentWeek, workoutsFromWeek);
 
   useEffect(() => {
@@ -158,15 +190,18 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
   const weight = answers.weight as number | undefined;
   if (weight == null || weight < 30 || weight > 300) missing.push('weight');
   for (const h of surveyHabits) if (answers[`habit:${h.id}`] == null) missing.push(`habit:${h.id}`);
+  const needs = (rows: TextRow[]) => { for (const r of rows) if (r.required && !customAnswered(r, answers[`custom:${r.key}`])) missing.push(`custom:${r.key}`); };
+  needs(customWeekly);
   if (askWorkouts) {
     for (const d of planDays) if (!answers[`workout:${d.id}`]) missing.push(`workout:${d.id}`);
-    if (!answers.progressed) missing.push('progressed');
-    if (progressedYes) {
+    if (askProgressed && !answers.progressed) missing.push('progressed');
+    needs(customWorkout);
+    if (askProgressed && progressedYes) {
       if (progressedList.length === 0) missing.push('progressed_exercises');
       for (const n of progressedList) if (!answers[`progress:${n}`]) missing.push('progressed_exercises');
     }
-    if (improveList.length === 0) missing.push('improve');
-    if (improveList.includes('other') && String(answers.improve_other ?? '').trim().length < 2) missing.push('improve');
+    if (askImprove && improveList.length === 0) missing.push('improve');
+    if (askImprove && improveList.includes('other') && String(answers.improve_other ?? '').trim().length < 2) missing.push('improve');
   }
   const bad = (key: string) => attempted && missing.includes(key);
 
@@ -180,32 +215,42 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
     setIsSaving(true);
 
     // The answers as asked, readable as is (admin screen, coaching bot).
-    const items: SurveyItem[] = [{ key: 'weight', question: T.weight, answer: weight! }];
+    const items: SurveyItem[] = [{ key: 'weight', question: W.weight, answer: weight! }];
+    const addCustom = (rows: TextRow[]) => {
+      for (const r of rows) {
+        const v = answers[`custom:${r.key}`];
+        if (customAnswered(r, v)) items.push({ key: `custom:${r.key}`, question: say(r.title ?? '', gender), answer: customAnswerText(r, v) });
+      }
+    };
     const measured = (answers.measurements ?? {}) as MeasureValues;
     const measuredText = MEASURES.filter((x) => measured[x.key] != null).map((x) => `${x.label} ${measured[x.key]}`).join(' · ');
     if (measureDue && measuredText) items.push({ key: 'measurements', question: 'היקפים (ס"מ)', answer: measuredText });
     for (const h of surveyHabits) items.push({ key: `habit:${h.id}`, question: titleOf(h), answer: answers[`habit:${h.id}`] as number });
+    addCustom(customWeekly);
     if (askWorkouts) {
       for (const d of planDays) {
-        items.push({ key: `workout:${d.id}`, question: T.workoutFeel(d.name), answer: labelOf(WORKOUT_FEEL, answers[`workout:${d.id}`]) });
+        items.push({ key: `workout:${d.id}`, question: W.feel(d.name), answer: labelOf(W.feelOpts, answers[`workout:${d.id}`]) });
       }
-      items.push({ key: 'progressed', question: say(T.progressed, gender), answer: labelOf(YES_NO, answers.progressed) });
-      if (progressedYes) {
+      if (askProgressed) items.push({ key: 'progressed', question: W.progressed, answer: labelOf(W.progressedOpts, answers.progressed) });
+      if (askProgressed && progressedYes) {
         items.push({
           key: 'progressed_exercises',
-          question: say(T.progressedWhich, gender),
-          answer: progressedList.map((n) => `${n}: ${labelOf(PROGRESS_AMOUNT, answers[`progress:${n}`])}`).join(' · '),
+          question: W.which,
+          answer: progressedList.map((n) => `${n}: ${labelOf(W.amountOpts, answers[`progress:${n}`])}`).join(' · '),
         });
       }
-      items.push({
-        key: 'improve',
-        question: say(T.improve, gender),
-        answer: improveList
-          .map((v) => (v === 'other' ? `אחר: ${String(answers.improve_other ?? '').trim()}` : labelOf(IMPROVE, v)))
-          .join(' · '),
-      });
+      if (askImprove) {
+        items.push({
+          key: 'improve',
+          question: W.improve,
+          answer: improveList
+            .map((v) => (v === 'other' ? `אחר: ${String(answers.improve_other ?? '').trim()}` : labelOf(W.improveOpts, v)))
+            .join(' · '),
+        });
+      }
+      addCustom(customWorkout);
       const share = String(answers.share ?? '').trim();
-      if (share) items.push({ key: 'share', question: say(T.share, gender), answer: share });
+      if (askShare && share) items.push({ key: 'share', question: W.share, answer: share });
     }
 
     const payload = {
@@ -262,7 +307,7 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
       ) : (
         <div className="space-y-8 pb-2">
           {/* Weight */}
-          <Question title={T.weight} hint={T.weightHint} invalid={bad('weight')}>
+          <Question title={W.weight} hint={W.weightHint} invalid={bad('weight')}>
             <NumberField value={weight} onChange={(v) => set('weight', v)} unit='ק"ג' min={30} max={300} step={0.1} decimals compact />
           </Question>
 
@@ -270,7 +315,7 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
           {measureDue && (
             <section className="space-y-3 rounded-card border border-primary/40 bg-primary-tint/40 p-4">
               <div>
-                <h3 className="text-card-title">{lastMeasure ? 'עברו חודשיים: מודדים היקפים שוב' : 'מדידת היקפים'}</h3>
+                <h3 className="text-card-title">{lastMeasure ? `עברו חודשיים: ${W.measure}` : W.measure}</h3>
                 <p className="text-label text-muted-foreground">
                   סרט מדידה רך, צמוד לגוף בלי ללחוץ. פעם בחודשיים, כדי לראות שינוי גם כשהמשקל לא זז.
                   {' '}אין סרט מדידה עכשיו? אפשר לדלג, ונזכיר לך.
@@ -290,8 +335,8 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
           {surveyHabits.length > 0 && (
             <section className="space-y-5">
               <div>
-                <h3 className="text-card-title">{T.habitsTitle}</h3>
-                <p className="text-label text-muted-foreground">{T.habitsHint}</p>
+                <h3 className="text-card-title">{W.habits}</h3>
+                {W.habitsHint && <p className="text-label text-muted-foreground">{W.habitsHint}</p>}
               </div>
               {surveyHabits.map((h) => (
                 <Question key={h.id} title={titleOf(h)} invalid={bad(`habit:${h.id}`)} small>
@@ -301,22 +346,29 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
             </section>
           )}
 
+          {/* Questions the coaches added */}
+          {customWeekly.map((r) => (
+            <CustomQuestion key={r.key} row={r} gender={gender} value={answers[`custom:${r.key}`]} onChange={(v) => set(`custom:${r.key}`, v)} invalid={bad(`custom:${r.key}`)} />
+          ))}
+
           {/* Workout progress, every second week */}
           {askWorkouts && (
             <section className="space-y-6">
-              <h3 className="text-card-title">{T.workoutsTitle}</h3>
+              <h3 className="text-card-title">{W.section}</h3>
               {planDays.map((d) => (
-                <Question key={d.id} title={T.workoutFeel(d.name)} invalid={bad(`workout:${d.id}`)}>
-                  <OptionList options={WORKOUT_FEEL} value={answers[`workout:${d.id}`] as string | undefined} onChange={(v) => set(`workout:${d.id}`, v)} />
+                <Question key={d.id} title={W.feel(d.name)} hint={W.feelHint} invalid={bad(`workout:${d.id}`)}>
+                  <OptionList options={W.feelOpts} value={answers[`workout:${d.id}`] as string | undefined} onChange={(v) => set(`workout:${d.id}`, v)} />
                 </Question>
               ))}
 
-              <Question title={say(T.progressed, gender)} invalid={bad('progressed')}>
-                <OptionList options={YES_NO} value={answers.progressed as string | undefined} onChange={(v) => set('progressed', v)} />
-              </Question>
+              {askProgressed && (
+                <Question title={W.progressed} hint={W.progressedHint} invalid={bad('progressed')}>
+                  <OptionList options={W.progressedOpts} value={answers.progressed as string | undefined} onChange={(v) => set('progressed', v)} />
+                </Question>
+              )}
 
-              {progressedYes && (
-                <Question title={say(T.progressedWhich, gender)} hint="בוחרים תרגיל, ואז בכמה" invalid={bad('progressed_exercises')}>
+              {askProgressed && progressedYes && (
+                <Question title={W.which} hint={W.whichHint} invalid={bad('progressed_exercises')}>
                   <div className="flex flex-wrap gap-2">
                     {exerciseNames.map((n) => {
                       const on = progressedList.includes(n);
@@ -343,7 +395,7 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
                     <div key={n} className="mt-4 space-y-2 rounded-inner bg-card-inner p-3">
                       <p className="text-body font-semibold">{n}</p>
                       <div className="grid grid-cols-2 gap-2">
-                        {PROGRESS_AMOUNT.map((o) => {
+                        {W.amountOpts.map((o) => {
                           const on = answers[`progress:${n}`] === o.value;
                           return (
                             <button
@@ -369,8 +421,9 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
                 </Question>
               )}
 
-              <Question title={say(T.improve, gender)} hint={T.improveHint} invalid={bad('improve')}>
-                <OptionList options={IMPROVE} multiple value={improveList} onChange={(v) => set('improve', v)} />
+              {askImprove && (
+              <Question title={W.improve} hint={W.improveHint} invalid={bad('improve')}>
+                <OptionList options={W.improveOpts} multiple value={improveList} onChange={(v) => set('improve', v)} />
                 {improveList.includes('other') && (
                   <Input
                     value={String(answers.improve_other ?? '')}
@@ -381,10 +434,17 @@ export default function WeeklySurveyModal({ open, onClose, currentWeek }: Props)
                   />
                 )}
               </Question>
+              )}
 
-              <Question title={say(T.share, gender)} hint={T.shareHint}>
-                <Textarea value={String(answers.share ?? '')} onChange={(e) => set('share', e.target.value)} rows={3} aria-label={say(T.share, gender)} />
-              </Question>
+              {customWorkout.map((r) => (
+                <CustomQuestion key={r.key} row={r} gender={gender} value={answers[`custom:${r.key}`]} onChange={(v) => set(`custom:${r.key}`, v)} invalid={bad(`custom:${r.key}`)} />
+              ))}
+
+              {askShare && (
+                <Question title={W.share} hint={W.shareHint}>
+                  <Textarea value={String(answers.share ?? '')} onChange={(e) => set('share', e.target.value)} rows={3} aria-label={W.share} />
+                </Question>
+              )}
             </section>
           )}
 
@@ -407,6 +467,28 @@ function Question({ title, hint, invalid, small, children }: { title: string; hi
       {children}
       {invalid && <p className="text-label text-destructive">צריך לענות על השאלה הזו</p>}
     </div>
+  );
+}
+
+/** A question the coaches added in the admin, by its kind. */
+function CustomQuestion({ row, gender, value, onChange, invalid }: { row: TextRow; gender: string | null; value: unknown; onChange: (v: unknown) => void; invalid?: boolean }) {
+  const title = say(row.title ?? '', gender);
+  const hint = row.subtitle ? say(row.subtitle, gender) : row.required ? undefined : 'לא חובה';
+  return (
+    <Question title={title} hint={hint} invalid={invalid}>
+      {row.kind === 'text' && <Input value={String(value ?? '')} onChange={(e) => onChange(e.target.value)} aria-label={title} className="h-12" />}
+      {row.kind === 'long_text' && <Textarea value={String(value ?? '')} onChange={(e) => onChange(e.target.value)} rows={3} aria-label={title} />}
+      {row.kind === 'number' && (
+        <Input type="number" inputMode="decimal" value={value == null ? '' : String(value)} onChange={(e) => onChange(e.target.value === '' ? undefined : Number(e.target.value))} aria-label={title} className="h-12" dir="ltr" />
+      )}
+      {row.kind === 'scale' && <Scale value={value as number | undefined} onChange={onChange} label={title} />}
+      {(row.kind === 'single' || row.kind === 'yes_no') && (
+        <OptionList options={customOptions(row)} value={value as string | undefined} onChange={onChange} />
+      )}
+      {row.kind === 'multi' && (
+        <OptionList options={customOptions(row)} multiple value={(value as string[] | undefined) ?? []} onChange={onChange} />
+      )}
+    </Question>
   );
 }
 

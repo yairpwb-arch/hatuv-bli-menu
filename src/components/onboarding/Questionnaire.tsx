@@ -11,6 +11,7 @@ import type { OnboardingRow } from '@/hooks/useOnboarding';
 import { OnboardingFrame } from './OnboardingFrame';
 import { NumberField, OptionList } from './inputs';
 import { saveDayWeight } from '@/lib/weightLog';
+import { editOnboarding, useQuestionnaireTexts } from '@/lib/questionnaireTexts';
 import { Angle, MeasureKey, MeasurementsStep, PhotosStep } from './BodySteps';
 
 const NUMBER_DEFAULTS: Record<string, number> = { age: 30, height: 170, weight: 75, max_pullups: 0, max_pushups: 0, max_squats: 0 };
@@ -28,7 +29,10 @@ export function Questionnaire({ userId, initialName, row, save, onDone }: Questi
     ...(initialName ? { name: initialName } : {}),
     ...(row?.answers ?? {}),
   }));
-  const questions = useMemo(() => activeQuestions(answers), [answers]);
+  // The questions as the coaches edited them (admin → שאלונים), with the ones they added.
+  const { data: textRows } = useQuestionnaireTexts();
+  const active = (a: Answers) => editOnboarding(activeQuestions(a), textRows);
+  const questions = useMemo(() => active(answers), [answers, textRows]); // eslint-disable-line react-hooks/exhaustive-deps
   const [index, setIndex] = useState(() => {
     // Resume where the trainee left off.
     const i = questions.findIndex((q) => q.id === row?.current_step);
@@ -108,7 +112,7 @@ export function Questionnaire({ userId, initialName, row, save, onDone }: Questi
         return;
       }
       // Recompute after this answer — it can add or remove follow-up questions.
-      const upcoming = activeQuestions(answers);
+      const upcoming = active(answers);
       const nextIndex = upcoming.findIndex((x) => x.id === q.id) + 1;
       // Saved after every screen so leaving mid-way resumes here.
       await save({ answers, current_step: upcoming[nextIndex]?.id ?? null });

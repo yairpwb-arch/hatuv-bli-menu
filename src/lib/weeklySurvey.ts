@@ -30,7 +30,8 @@ export const T = {
   habitsTitle: 'כמה הצלחת להתמיד בהרגלים השבוע?',
   habitsHint: '1 = בכלל לא, 10 = כל יום',
   workoutsTitle: 'התקדמות באימונים',
-  workoutFeel: (name: string) => `איך היה האימון בכלליות (${name})?`,
+  // {name} = the workout day's name.
+  workoutFeel: 'איך היה האימון בכלליות ({name})?',
   progressed: '{האם הצלחת|האם הצלחת} להעלות בחזרות או במשקלים מאימון קודם בתרגילים מסוימים?',
   progressedWhich: 'באיזה תרגילים ובכמה {עלית|עלית}?',
   improve: 'דברים {שאתה חושב שאתה צריך|שאת חושבת שאת צריכה} לשפר באימונים?',

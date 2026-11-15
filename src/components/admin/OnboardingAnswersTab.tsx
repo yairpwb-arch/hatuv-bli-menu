@@ -5,6 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { MEASURES } from '@/components/onboarding/BodySteps';
 import { Answers, Question, activeQuestions, otherKey, picksOther } from '@/lib/onboarding';
 import { cn } from '@/lib/utils';
+import { editOnboarding, useQuestionnaireTexts } from '@/lib/questionnaireTexts';
 
 interface OnboardingRow {
   answers: Answers;
@@ -53,6 +54,7 @@ function answerText(q: Question, a: Answers): string | null {
 export function OnboardingAnswersTab({ userId }: { userId: string }) {
   const [row, setRow] = useState<OnboardingRow | null>(null);
   const [loading, setLoading] = useState(true);
+  const { data: textRows } = useQuestionnaireTexts();
 
   useEffect(() => {
     setLoading(true);
@@ -78,7 +80,8 @@ export function OnboardingAnswersTab({ userId }: { userId: string }) {
   if (!row) return <p className="py-8 text-center text-sm text-muted-foreground">המתאמן עוד לא התחיל את שאלון הפתיחה</p>;
 
   const answers = row.answers ?? {};
-  const questions = activeQuestions(answers);
+  // As the questionnaire reads now (coaches' edits), with the questions they added.
+  const questions = editOnboarding(activeQuestions(answers), textRows);
   const perms = Object.entries(row.permissions ?? {});
 
   return (
