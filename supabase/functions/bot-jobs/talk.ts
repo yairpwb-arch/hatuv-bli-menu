@@ -15,6 +15,7 @@ import { TEST_GROUP_ID, alertHandoff, deliver, readChat, sendTyping } from '../_
 import { REVIEW_OPEN_TASK, afterReply, openReview, reviewDue, reviewTimeouts, startReview } from '../whatsapp-webhook/workouts.ts';
 import { requestFromGroup } from '../whatsapp-webhook/planBuilder.ts';
 import { setTodayTimes } from '../whatsapp-webhook/schedule.ts';
+import { latestStage, markLatestWatched } from '../whatsapp-webhook/content.ts';
 
 type Row = Record<string, any>;
 const MIN = 60_000;
@@ -110,7 +111,7 @@ export async function replies(db: SupabaseClient) {
     if (!latest) continue;
     await readChat(p.chat_id);
     await sendTyping(p.chat_id, 8000);
-    const { parts, handoff, review, planRequest, todayTimes } = await composeReply(db, p.chat_id, p.user_id, latest);
+    const { parts, handoff, review, planRequest, todayTimes, watched } = await composeReply(db, p.chat_id, p.user_id, latest);
     if (handoff) await alertHandoff(db, p.chat_id, p.user_id, parts.join('\n'), true);
     await deliver(db, p.chat_id, p.user_id, parts);
     await afterReply(db, p.chat_id, p.user_id, review);
@@ -118,6 +119,8 @@ export async function replies(db: SupabaseClient) {
     if (planRequest) await requestFromGroup(db, p.chat_id, p.user_id);
     // He said when he'll train / walk today: the app's calendar moves there.
     if (todayTimes?.length) await setTodayTimes(db, p.user_id, todayTimes);
+    // He said he watched the new content: marked in the app too.
+    if (watched) await markLatestWatched(db, p.user_id);
     answered++;
   }
   return { answered };
@@ -274,6 +277,22 @@ export async function proactive(db: SupabaseClient) {
     if ((coach ?? []).length) continue; // one of us is in the conversation
     const sentSince = (kind: string, ms: number) => recent.some((r) => r.kind === kind && new Date(r.sent_at).getTime() > now.getTime() - ms);
     const at = (t: Date | null) => !!t && now >= t && now.getTime() < t.getTime() + WINDOW;
+
+    // The new stage's content, unwatched: two fixed messages, the coaches' words. Saturday night
+    // (after Shabbat) on the day it opened, and Sunday. Each only if he still hasn't watched.
+    const contentMsg =
+      il.weekday === 6 && il.minutes >= 21 * 60 + 30 && il.minutes < 21 * 60 + 50 ? { daysAgo: 0, text: 'יצא לך לראות היום כבר את התכנים החדשים?' }
+      : il.weekday === 0 && il.minutes >= 19 * 60 && il.minutes < 19 * 60 + 20 ? { daysAgo: 1, text: 'מה קורה? ראית את התכנים?' }
+      : null;
+    if (contentMsg && !sentSince('content', 20 * HOUR)) {
+      const stage = await latestStage(db, g.user_id);
+      if (stage && stage.daysAgo === contentMsg.daysAgo && stage.unwatchedVideos.length > 0) {
+        await deliver(db, g.chat_id, g.user_id, [contentMsg.text]);
+        await db.from('bot_proactive').insert({ chat_id: g.chat_id, user_id: g.user_id, kind: 'content', text: contentMsg.text });
+        sent.push({ chat: g.chat_id, kind: 'content' });
+        continue;
+      }
+    }
 
     // The first that's due, in this order.
     let kind: string | null = null;
