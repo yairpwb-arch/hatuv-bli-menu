@@ -317,7 +317,7 @@ export async function runModel(
 export const maxParts = (model: string) => (model.startsWith('gpt-') ? 4 : 3);
 
 /**
- * An OpenAI model (for the model test only), the same prompt: the system part as
+ * An OpenAI model (the live one when bot_settings.model is gpt-*), the same prompt: the system part as
  * instructions, the message as input. Responses API, low reasoning effort.
  */
 async function runOpenAI(
@@ -338,7 +338,16 @@ async function runOpenAI(
       body: JSON.stringify({
         model,
         instructions,
-        input: prompt.user,
+        // His photos (if any) go with the text, as data URLs.
+        input: prompt.images?.length
+          ? [{
+            role: 'user',
+            content: [
+              ...prompt.images.map((i) => ({ type: 'input_image', image_url: `data:${i.media_type};base64,${i.data}` })),
+              { type: 'input_text', text: prompt.user },
+            ],
+          }]
+          : prompt.user,
         max_output_tokens: 4000,
         ...(withEffort ? { reasoning: { effort: 'low' } } : {}),
       }),
