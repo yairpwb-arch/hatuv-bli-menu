@@ -11,6 +11,7 @@ import { claudeUsage, costOf, embed, logUsage, setting, vectorLiteral } from '..
 import { REVIEW_END_TAG, REVIEW_START_TAG, reviewSection } from './workouts.ts';
 import { TODAY_TIME_RE, type TodayTime, readTodayTimes } from './schedule.ts';
 import { WATCHED_TAG } from './content.ts';
+import { lessonsSection } from './lessons.ts';
 
 // Chosen after the model test (Haiku 5.5 vs Sonnet 5.5).
 export const MODEL = 'claude-sonnet-5-5';
@@ -244,7 +245,7 @@ export async function buildPrompt(
   extra?: string,
 ): Promise<PromptParts> {
   const day = testClient ? testClient.day : await programDay(db, userId);
-  const [rules, guide, examples, ctx, program, profileRow, chat, review, images] = await Promise.all([
+  const [rules, guide, examples, ctx, program, profileRow, chat, review, images, lessons] = await Promise.all([
     setting<string>(db, 'rules'),
     setting<string>(db, 'style_guide'),
     db.rpc('match_bot_examples', { q: latest, k: 12 }),
@@ -256,6 +257,8 @@ export async function buildPrompt(
     testClient || day == null || day < 1 ? Promise.resolve('') : reviewSection(db, userId, chatId),
     // His photos since our last message: an answer to him only (not a message we start, not the test).
     task || chatOverride != null ? Promise.resolve([] as Img[]) : recentImages(db, chatId),
+    // What the coaches taught it (lessons.ts).
+    lessonsSection(db),
   ]);
   const ex = ((examples.data ?? []) as Row[])
     .map((e, i) => `דוגמה ${i + 1}:${e.context ? `\n(לפני כן המאמן כתב: ${e.context})` : ''}\nלקוח: ${e.client}\nמאמן: ${e.coach}`)
@@ -264,7 +267,7 @@ export async function buildPrompt(
   const now = new Date().toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', weekday: 'long', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
 
   return {
-    system: `${rules?.trim() || FALLBACK_RULES}\n\n# תדריך הסגנון של המאמנים\n${guide ?? ''}\n\n${FOCUS}\n\n${OBSTACLES}\n\n${TODAY_TIME}\n\n${WATCHED}`,
+    system: `${rules?.trim() || FALLBACK_RULES}\n\n# תדריך הסגנון של המאמנים\n${guide ?? ''}\n\n${FOCUS}\n\n${OBSTACLES}\n\n${TODAY_TIME}\n\n${WATCHED}${lessons ? `\n\n${lessons}` : ''}`,
     user:
       `# עכשיו\n${now}\n\n# נתוני הלקוח מהאפליקציה\n${ctx}\n\n` +
       (known ? `# מה שאנחנו יודעים על הלקוח\n${known}\n\n` : '') +

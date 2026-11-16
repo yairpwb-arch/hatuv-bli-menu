@@ -117,7 +117,7 @@ export function WorkoutBuilder({ userId, onRun, onPlan }: {
     );
     if (ins.error) return toast.error('לא נשמר, נסו שוב');
     setSavedId(id);
-    toast('נשמר ב"האימונים שלי"');
+    toast('נשמר ב"אימונים בטיוטה"');
   };
 
   const stepper = (value: number, onChange: (v: number) => void, label: string, min = 1, step = 1, show: (v: number) => string = String) => (
@@ -136,7 +136,7 @@ export function WorkoutBuilder({ userId, onRun, onPlan }: {
     <div className="space-y-4 pb-2">
       {mine.length > 0 && items.length === 0 && (
         <div className="space-y-2">
-          <p className="text-label font-semibold text-muted-foreground">האימונים שלי</p>
+          <p className="text-label font-semibold text-muted-foreground">אימונים בטיוטה</p>
           <div className="flex flex-wrap gap-2">
             {mine.map((w) => (
               <button key={w.id} type="button" onClick={() => loadMine(w)} className="min-h-[44px] rounded-pill border border-border px-4 text-label font-semibold">

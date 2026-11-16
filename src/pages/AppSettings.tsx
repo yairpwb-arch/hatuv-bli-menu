@@ -75,7 +75,7 @@ function Row({
 // (The daily habit reminder is gone: nothing sends it any more.)
 type PrefKey = 'steps' | 'weigh' | 'workout_walk' | 'weekly_summary' | 'new_content';
 const PREF_ROWS: { key: PrefKey; label: string; description?: string }[] = [
-  { key: 'workout_walk', label: 'תזכורות אימון והליכה', description: 'שעתיים לפני השעה ביומן' },
+  { key: 'workout_walk', label: 'תזכורות אימון והליכה', description: 'שעתיים לפני השעה ביומן, ערב לפני אימון, ותזכורת לקבוע ימים' },
   { key: 'steps', label: 'תזכורת צעדים', description: '4 שעות לפני השינה, כשחסר ליעד' },
   { key: 'weigh', label: 'תזכורת שקילה', description: 'חמישי בערב ושישי בבוקר' },
   { key: 'weekly_summary', label: 'שאלון שבועי', description: 'יום שישי בצהריים, אם עוד לא מילאת' },

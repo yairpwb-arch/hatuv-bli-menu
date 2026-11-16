@@ -306,6 +306,23 @@ export async function proactive(db: SupabaseClient) {
       }
     }
 
+    // Every 3 months from the start (days 91, 181, …), at noon: "חבר מביא חבר", and how to get
+    // there in the app. The app sends a push at the same time that opens the page directly.
+    const day = Math.floor((Date.parse(`${todayYmd}T00:00:00Z`) - Date.parse(`${profile.start_date}T00:00:00Z`)) / 86400_000) + 1;
+    if (day > 1 && (day - 1) % 90 === 0 && il.minutes >= 12 * 60 && il.minutes < 12 * 60 + 20 && !sentSince('referral', 20 * HOUR)) {
+      const { data: reward } = await db.from('app_settings').select('value').eq('key', 'referral_reward').maybeSingle();
+      const first = String(profile.full_name ?? '').trim().split(/\s+/)[0];
+      const text =
+        `${first ? `${first}, ` : ''}כבר ${((day - 1) / 90) * 3} חודשים בתהליך 💪\n` +
+        `מכירים מישהו שזה יכול לעזור לו? יש לנו "חבר מביא חבר": ${reward?.value?.trim() ? `על כל חבר שמצטרף דרככם מקבלים ${reward.value.trim()}.` : 'על כל חבר שמצטרף דרככם יש מתנה.'}\n\n` +
+        `איך מגיעים: באפליקציה לוחצים על תמונת הפרופיל שלכם למעלה ← "חבר מביא חבר", כותבים את השם והטלפון שלו, ואנחנו כבר מדברים איתו.\n` +
+        `(שלחנו גם התראה לטלפון: לחיצה עליה פותחת ישר את הדף.)`;
+      await deliver(db, g.chat_id, g.user_id, [text]);
+      await db.from('bot_proactive').insert({ chat_id: g.chat_id, user_id: g.user_id, kind: 'referral', text });
+      sent.push({ chat: g.chat_id, kind: 'referral' });
+      continue;
+    }
+
     // The first that's due, in this order.
     let kind: string | null = null;
     let task = '';

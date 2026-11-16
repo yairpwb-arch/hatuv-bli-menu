@@ -107,7 +107,9 @@ export default function AppContent() {
       const withDateGate = (contentResult.data || []).map((item) => ({
         ...item,
         dateUnlocked: currentDay >= item.unlock_day,
-        isCompleted: completedIds.has(item.id),
+        // Watched counts only for what's open now: a start date moved later (a restart)
+        // leaves old "watched" marks on content that's locked again.
+        isCompleted: completedIds.has(item.id) && currentDay >= item.unlock_day,
         daysUntilUnlock: Math.max(0, item.unlock_day - currentDay),
       }));
       setAllContent(applySequentialGate(withDateGate) as ContentItem[]);

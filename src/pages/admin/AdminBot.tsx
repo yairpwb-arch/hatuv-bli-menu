@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { he } from 'date-fns/locale';
-import { History, Loader2, RefreshCw, Save } from 'lucide-react';
+import { History, Loader2, Plus, RefreshCw, Save, Trash2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ModelTest } from '@/components/admin/ModelTest';
 
@@ -36,6 +37,7 @@ export default function AdminBot() {
       <Tabs defaultValue="settings">
         <TabsList>
           <TabsTrigger value="settings">הנחיות</TabsTrigger>
+          <TabsTrigger value="lessons">לקחים</TabsTrigger>
           <TabsTrigger value="costs">עלויות</TabsTrigger>
           <TabsTrigger value="handoffs">העברות</TabsTrigger>
           <TabsTrigger value="eval">מבחן מודלים</TabsTrigger>
@@ -44,6 +46,7 @@ export default function AdminBot() {
           {EDITABLE.map((e) => <SettingEditor key={e.key} settingKey={e.key} label={e.label} hint={e.hint} />)}
           <KnowledgeStatus />
         </TabsContent>
+        <TabsContent value="lessons" className="pt-4"><Lessons /></TabsContent>
         <TabsContent value="costs" className="pt-4"><Costs /></TabsContent>
         <TabsContent value="handoffs" className="pt-4"><Handoffs /></TabsContent>
         <TabsContent value="eval" className="pt-4"><ModelTest /></TabsContent>
@@ -255,6 +258,88 @@ function Handoffs() {
           <p className="whitespace-pre-wrap"><span className="text-muted-foreground">הבוט: </span>{r.bot_text || '—'}</p>
         </div>
       ))}
+    </div>
+  );
+}
+
+/**
+ * What the coaches taught the bot (bot_lessons): from a talk in private, from a correction
+ * in a group, or written here. Each active one goes into every answer of the bot.
+ */
+function Lessons() {
+  const [rows, setRows] = useState<Row[] | null>(null);
+  const [draft, setDraft] = useState('');
+  const [saving, setSaving] = useState(false);
+  const load = async () => {
+    const { data, error } = await db.from('bot_lessons').select('*').order('created_at', { ascending: false }).limit(200);
+    if (error) toast({ title: 'לא הצלחנו לטעון את הלקחים', description: error.message, variant: 'destructive' });
+    setRows((data ?? []) as Row[]);
+  };
+  useEffect(() => { load(); }, []);
+
+  const add = async () => {
+    if (!draft.trim()) return;
+    setSaving(true);
+    const { error } = await db.from('bot_lessons').insert({ lesson: draft.trim(), source: 'admin' });
+    setSaving(false);
+    if (error) return toast({ title: 'לא נשמר', description: error.message, variant: 'destructive' });
+    setDraft('');
+    load();
+  };
+  const toggle = async (r: Row, active: boolean) => {
+    setRows((list) => list?.map((x) => (x.id === r.id ? { ...x, active } : x)) ?? null);
+    const { error } = await db.from('bot_lessons').update({ active }).eq('id', r.id);
+    if (error) { toast({ title: 'לא נשמר', description: error.message, variant: 'destructive' }); load(); }
+  };
+  const remove = async (r: Row) => {
+    if (!window.confirm(`למחוק את הלקח?\n"${r.lesson}"`)) return;
+    const { error } = await db.from('bot_lessons').delete().eq('id', r.id);
+    if (error) return toast({ title: 'לא נמחק', description: error.message, variant: 'destructive' });
+    load();
+  };
+
+  const from: Record<string, string> = { private: 'בפרטי', group: 'תיקון בקבוצה', admin: 'נכתב כאן' };
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2 rounded-xl border border-border p-4">
+        <p className="text-sm text-muted-foreground">
+          הבוט לומד מכם בשתי דרכים: כשכותבים לו בפרטי איך לענות ("אל תענה ככה", "מעכשיו…"), וכשמאמן כותב בקבוצה מיד אחרי הבוט ומתקן אותו.
+          כל לקח פעיל נכנס לכל תשובה שלו. אפשר גם לכתוב לקח כאן.
+        </p>
+        <Textarea value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="למשל: כשמתאמן שולח תמונה של ארוחה, להתייחס קודם לחלבון שבה" rows={2} />
+        <Button size="sm" onClick={add} disabled={saving || !draft.trim()}>
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} הוסף לקח
+        </Button>
+      </div>
+      {!rows ? (
+        <Loader2 className="mx-auto h-6 w-6 animate-spin text-primary" />
+      ) : rows.length === 0 ? (
+        <p className="py-8 text-center text-sm text-muted-foreground">עוד אין לקחים</p>
+      ) : (
+        rows.map((r) => (
+          <div key={r.id} className={`space-y-2 rounded-xl border border-border p-4 text-sm ${r.active ? '' : 'opacity-60'}`}>
+            <div className="flex items-start gap-3">
+              <p className="flex-1 whitespace-pre-wrap font-medium">{r.lesson}</p>
+              <Switch checked={r.active} onCheckedChange={(v) => toggle(r, v)} aria-label="פעיל" />
+              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => remove(r)} aria-label="מחק">
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <Badge variant="outline">{from[r.source] ?? r.source}</Badge>
+              <span>{format(new Date(r.created_at), 'dd/MM HH:mm')}</span>
+              {!r.active && <span>כבוי</span>}
+            </div>
+            {r.example && (
+              <div className="space-y-1 rounded-lg bg-muted/50 p-2 text-xs">
+                {r.example.client && <p><span className="text-muted-foreground">המתאמן: </span>{r.example.client}</p>}
+                {r.example.bot && <p><span className="text-muted-foreground">הבוט: </span>{r.example.bot}</p>}
+                {r.example.coach && <p><span className="text-muted-foreground">המאמן: </span>{r.example.coach}</p>}
+              </div>
+            )}
+          </div>
+        ))
+      )}
     </div>
   );
 }

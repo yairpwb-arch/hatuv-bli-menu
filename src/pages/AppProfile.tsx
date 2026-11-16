@@ -114,7 +114,8 @@ export default function AppProfile() {
     setLatestWeight(weightRes.data?.weight ?? null);
 
     const content = (contentRes.data || []) as { id: string; title: string; unlock_day: number; part_number: number }[];
-    const ids = new Set(content.map((c) => c.id));
+    // Watched counts only for what's open now (a restart leaves old marks on locked content).
+    const ids = new Set(content.filter((c) => c.unlock_day <= contentDay).map((c) => c.id));
     setLessons({
       done: new Set((progressRes.data || []).map((p) => p.content_id).filter((id) => ids.has(id))).size,
       total: content.length,

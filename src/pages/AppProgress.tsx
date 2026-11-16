@@ -22,6 +22,7 @@ import { WeightHeroCard } from '@/components/progress/WeightHeroCard';
 import { WeightTrendCard } from '@/components/progress/WeightTrendCard';
 import { StepsCard } from '@/components/progress/StepsCard';
 import { BeforeNowCard, ProgressPhoto } from '@/components/progress/BeforeNowCard';
+import { MeasurementsCard } from '@/components/profile/MeasurementsCard';
 import { withSignedUrls } from '@/lib/bodyPhotos';
 import { guideBody } from '@/lib/guideBlocks';
 import { saveDayWeight } from '@/lib/weightLog';
@@ -121,9 +122,13 @@ export default function AppProgress() {
       // The weighing guide in the app, when it's written there.
       const inApp = ((contentRes.data || []) as { id: string; title: string; body?: unknown }[]).find((c) => c.title.includes('להישקל') && guideBody(c.body));
       setWeighingGuideId(inApp?.id ?? null);
+      // Watched counts only for what's open now (a restart leaves old marks on locked content).
+      const start = profileRes.data?.start_date;
+      const day = start ? Math.floor((Date.now() - new Date(`${start}T00:00:00`).getTime()) / 86400_000) + 1 : 0;
       const contentIds = new Set((contentRes.data || []).map((c) => c.id));
+      const openIds = new Set((contentRes.data || []).filter((c) => c.unlock_day <= day).map((c) => c.id));
       const done = new Set(
-        (progressRes.data || []).map((p) => p.content_id).filter((id) => contentIds.has(id)),
+        (progressRes.data || []).map((p) => p.content_id).filter((id) => openIds.has(id)),
       ).size;
       setLessons({ done, total: contentIds.size });
       setWorkoutsThisMonth(workoutsRes.count ?? 0);
@@ -278,6 +283,9 @@ export default function AppProgress() {
           onOpenAll={() => navigate('/app/profile')}
         />
       )}
+
+      {/* Body measurements: the latest, the change, and adding new ones */}
+      {user && <MeasurementsCard userId={user.id} />}
 
       {/* Weight entry */}
       <Dialog open={isWeightModalOpen} onOpenChange={setIsWeightModalOpen}>

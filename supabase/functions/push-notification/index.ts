@@ -358,6 +358,8 @@ function stepGoalFor(day: number, startDate: string, rows: { date: string; steps
   );
 }
 const HOURS_BEFORE_BED = 4;
+/** "חבר מביא חבר": every 3 months from the start (the bot's WhatsApp message too, bot-jobs/talk.ts). */
+const REFERRAL_EVERY_DAYS = 90;
 
 type Local = { weekday: number; minutes: number; date: string; yesterday: string };
 
@@ -368,6 +370,42 @@ function localNow(timezone: string | null): Local {
   const before = new Date(local);
   before.setDate(before.getDate() - 1);
   return { weekday: local.getDay(), minutes: local.getHours() * 60 + local.getMinutes(), date: iso(local), yesterday: iso(before) };
+}
+
+/**
+ * The trainee's open workouts and walks, as the app shows them (useWorkoutPlan / useWeekPlan):
+ * the active plan's days (one built ahead waits for its video), their weekdays, and the walks
+ * opened by their videos. Plus the fixed workout times from the calendar.
+ */
+async function openActivities(userId: string) {
+  const [content, progress, assignment, schedule, walks, placements] = await Promise.all([
+    supabase.from('program_content').select('id, unlocks').not('unlocks', 'is', null).is('archived_at', null),
+    supabase.from('content_progress').select('content_id').eq('user_id', userId),
+    supabase.from('user_workout_assignments').select('plan_id').eq('user_id', userId).eq('is_active', true).maybeSingle(),
+    supabase.from('workout_day_schedule').select('plan_day_id, weekday').eq('user_id', userId),
+    supabase.from('user_walking_schedule').select('walk_number, day_of_week, is_active').eq('user_id', userId),
+    supabase.from('calendar_placements').select('item_key, weekday, start_time, valid_from').eq('user_id', userId).eq('scope', 'weekday'),
+  ]);
+  const watched = new Set(((progress.data ?? []) as any[]).map((p) => p.content_id));
+  const unlocked = new Set(((content.data ?? []) as any[]).filter((c) => watched.has(c.id)).map((c) => c.unlocks as string));
+  const planId = (assignment.data as any)?.plan_id;
+  const { data: dayRows } = planId
+    ? await supabase.from('workout_plan_days').select('id, name, unlocks_with').eq('plan_id', planId)
+    : { data: [] };
+  const days = ((dayRows ?? []) as any[]).filter((d) => !d.unlocks_with || unlocked.has(d.unlocks_with)) as { id: string; name: string }[];
+  const weekdayOf = new Map(((schedule.data ?? []) as any[]).map((r) => [r.plan_day_id as string, r.weekday as number]));
+  const walkRows = (walks.data ?? []) as any[];
+  // A walk is open once its video is watched; it's missing a day if it has none (and wasn't removed).
+  const walksMissing = [1, 2].filter((n) => {
+    if (!unlocked.has(`walk_${n}`)) return false;
+    const row = walkRows.find((w) => w.walk_number === n);
+    return !row || (row.is_active && row.day_of_week == null);
+  }).length;
+  const timeOf = (planDayId: string, weekday: number, day: string) =>
+    ((placements.data ?? []) as any[])
+      .filter((p) => p.item_key === `workout:${planDayId}` && p.weekday === weekday && (p.valid_from ?? '0000') <= day)
+      .sort((a, b) => ((a.valid_from ?? '') < (b.valid_from ?? '') ? 1 : -1))[0]?.start_time?.slice(0, 5) as string | undefined;
+  return { days, weekdayOf, walksMissing, timeOf };
 }
 
 interface StageVideo { id: string; unlock_day: number; part_number: number; week_range: string; title: string }
@@ -450,6 +488,51 @@ async function handleTick() {
         if (surveyNudge === 1) await send(u, 'survey_nudge', 'השאלון השבועי מחכה לך', '2 דקות, וזה עוזר לנו לכוון אותך.');
         else await send(u, 'survey_nudge_2', 'עוד לא מילאת את השאלון השבועי', 'נשאר רק היום. 2 דקות וזה מאחוריך.');
       }
+    }
+
+    // ── Workouts and walks: days not set yet (Sunday and Wednesday, 11:00), and the evening
+    //    before a workout (Friday at 13:00 for a Saturday one, not on Shabbat) ──
+    const tomorrowWd = (now.weekday + 1) % 7;
+    const WEDNESDAY = 3;
+    const missingTime = at(SUNDAY, 11) || at(WEDNESDAY, 11);
+    const eveTime = tomorrowWd === SATURDAY ? at(FRIDAY, 13) : at(now.weekday, 20);
+    if (day >= 1 && prefOn('workout_walk') && (missingTime || eveTime)) {
+      const acts = await openActivities(u.user_id);
+      if (missingTime) {
+        const workoutsMissing = acts.days.filter((d) => !acts.weekdayOf.has(d.id)).length;
+        const parts = [
+          workoutsMissing ? (workoutsMissing === 1 ? 'אימון אחד' : `${workoutsMissing} אימונים`) : '',
+          acts.walksMissing ? (acts.walksMissing === 1 ? 'הליכה אחת' : `${acts.walksMissing} הליכות`) : '',
+        ].filter(Boolean);
+        if (parts.length) {
+          await send(u, 'days_missing', 'עוד לא קבעת ימים', `יש לך ${parts.join(' ו')} בלי יום קבוע בשבוע. כדאי לקבוע עכשיו יום ושעה, ככה זה קורה. לחיצה כאן ←`);
+        }
+      }
+      if (eveTime) {
+        const tomorrow = new Date(`${now.date}T12:00:00Z`);
+        tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+        const tomorrowYmd = tomorrow.toISOString().slice(0, 10);
+        const due = acts.days.filter((d) => acts.weekdayOf.get(d.id) === tomorrowWd);
+        if (due.length) {
+          const d = due[0];
+          const time = acts.timeOf(d.id, tomorrowWd, tomorrowYmd);
+          await send(
+            u,
+            'workout_tomorrow',
+            `מחר: ${d.name}${time ? ` ב-${time}` : ''} 💪`,
+            time
+              ? 'תכינו כבר עכשיו נעליים ובגדים, ותוודאו שהשעה פנויה בלו"ז.'
+              : 'תכינו כבר עכשיו נעליים ובגדים, ותקבעו שעה בלו"ז לאימון.',
+          );
+        }
+      }
+    }
+
+    // ── Every 3 months from the start (days 91, 181, …), at noon: "חבר מביא חבר" ──
+    // The bot writes about it in WhatsApp at the same time; a tap here opens the page.
+    if (day > 1 && (day - 1) % REFERRAL_EVERY_DAYS === 0 && now.weekday !== SATURDAY && at(now.weekday, 12, 30)) {
+      const months = ((day - 1) / REFERRAL_EVERY_DAYS) * 3;
+      await send(u, 'referral', 'חבר מביא חבר 🎁', `${months} חודשים בתהליך! מכיר מישהו שזה יכול לעזור לו? לחיצה כאן ושולחים לו.`);
     }
 
     // ── Steps: 4 hours before bedtime, behind today and also yesterday ──

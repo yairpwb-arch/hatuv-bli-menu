@@ -14,7 +14,7 @@ import { showUndo } from '@/lib/undoToast';
 import { cn } from '@/lib/utils';
 import { BuiltExercise, WorkoutBuilder } from './WorkoutBuilder';
 
-type When = 'now' | 'earlier' | 'date' | 'planned';
+type When = 'now' | 'planned';
 const MINUTES = [15, 30, 45, 60, 90];
 
 const chip = (on: boolean) =>
@@ -80,7 +80,7 @@ export function ActivitySheet({
     setStep(initialStep === 'build' && !existing ? 'build' : existing || initialKind ? 'details' : 'kind');
     setBuilt(null);
     setCustomName(existing?.custom_name ?? '');
-    setWhen(existing ? (baseDay === today ? 'earlier' : 'date') : baseDay > today ? 'planned' : baseDay < today ? 'date' : 'now');
+    setWhen(existing || baseDay !== today ? 'planned' : 'now');
     setDate(baseDay);
     setTime(format(existing ? base : new Date(), 'HH:mm'));
     const m = existing?.duration_min ?? 30;
@@ -100,23 +100,23 @@ export function ActivitySheet({
 
   const info = kindInfo(kind);
   const duration = freeMinutes ? Number(freeMinutes) || null : minutes;
-  const startedAt = (): Date => {
-    if (when === 'now') return new Date();
-    const day = when === 'earlier' ? today : date;
-    return new Date(`${day}T${time || '12:00'}`);
-  };
+  // Two choices: now, or a date and time. A time that has passed is logged as done
+  // (up to 7 days back); a time still ahead goes into the calendar as a plan.
+  const picked = new Date(`${date}T${time || '12:00'}`);
+  const mode: 'now' | 'done' | 'planned' = when === 'now' ? 'now' : existing ? 'done' : repeat || picked > new Date() ? 'planned' : 'done';
+  const startedAt = (): Date => (mode === 'now' ? new Date() : picked);
   const minDate = format(addDays(new Date(), -7), 'yyyy-MM-dd');
-  const dateOk = when !== 'date' || (date >= minDate && date <= today);
-  // A one-off plan is from tomorrow; a recurring one may start today.
-  const plannedOk = when !== 'planned' || (repeat ? date >= today && repeatDays.length > 0 : date > today);
+  const dateOk = mode !== 'done' || (date >= minDate && date <= today);
+  // A recurring plan needs its weekdays.
+  const plannedOk = mode !== 'planned' || !repeat || (date >= today && repeatDays.length > 0);
   const valid = (kind !== 'other' || customName.trim().length > 1) && dateOk && plannedOk;
   const title = kind === 'other' ? customName.trim() : info.label;
-  const offerReplace = !existing && (when === 'now' || when === 'earlier') && replaceable;
+  const offerReplace = !existing && (mode === 'now' || (mode === 'done' && date === today)) && replaceable;
 
   const submit = async () => {
     if (!valid || !user) return;
     setBusy(true);
-    if (when === 'planned') {
+    if (mode === 'planned') {
       const until = repeat && repeatWeeks ? format(addDays(new Date(`${date}T12:00`), repeatWeeks * 7 - 1), 'yyyy-MM-dd') : null;
       const ok = await plan(kind, built?.name ?? title, startedAt(), duration, repeat ? { days: repeatDays, until } : null, built?.id ?? null);
       setBusy(false);
@@ -266,8 +266,6 @@ export function ActivitySheet({
             <div className="flex flex-wrap gap-2">
               {([
                 { v: 'now', label: 'עכשיו' },
-                { v: 'earlier', label: 'מוקדם יותר היום' },
-                { v: 'date', label: 'תאריך אחר' },
                 { v: 'planned', label: 'מתוכנן' },
               ] as const).map((o) => (
                 <button key={o.v} type="button" onClick={() => setWhen(o.v)} className={chip(when === o.v)}>
@@ -277,22 +275,21 @@ export function ActivitySheet({
             </div>
             {when !== 'now' && (
               <div className="grid grid-cols-2 gap-2 [&>*]:min-w-0">
-                {(when === 'date' || when === 'planned') && (
-                  <Input
+                <Input
                     type="date"
                     value={date}
-                    min={when === 'date' ? minDate : repeat ? today : format(addDays(new Date(), 1), 'yyyy-MM-dd')}
-                    max={when === 'date' ? today : undefined}
+                    min={repeat ? today : minDate}
+                    max={existing ? today : undefined}
                     onChange={(e) => setDate(e.target.value)}
                     className="h-12"
                     aria-label="תאריך"
                   />
-                )}
                 <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} className="h-12" aria-label="שעה" />
               </div>
             )}
-            {when === 'date' && !dateOk && <p className="text-label text-muted-foreground">אפשר לרשום עד 7 ימים אחורה</p>}
-            {when === 'planned' && <p className="text-label text-muted-foreground">פעילות מתוכננת נכנסת ליומן</p>}
+            {mode === 'done' && !dateOk && <p className="text-label text-muted-foreground">אפשר לרשום עד 7 ימים אחורה</p>}
+            {mode === 'done' && dateOk && !existing && <p className="text-label text-muted-foreground">הזמן כבר עבר: נרשם כפעילות שבוצעה</p>}
+            {mode === 'planned' && <p className="text-label text-muted-foreground">פעילות מתוכננת נכנסת ליומן</p>}
           </fieldset>
 
           {/* Once, or on fixed weekdays for some weeks */}
@@ -301,7 +298,7 @@ export function ActivitySheet({
               <legend className="text-label font-semibold">חוזר</legend>
               <div role="radiogroup" aria-label="חוזר" className="flex flex-wrap gap-2">
                 {([
-                  { v: false, label: 'פעם אחת' },
+                  { v: false, label: 'חד פעמי' },
                   { v: true, label: 'קבוע' },
                 ] as const).map((o) => (
                   <button
@@ -383,7 +380,7 @@ export function ActivitySheet({
             </div>
           </fieldset>
 
-          {when !== 'planned' && (
+          {mode !== 'planned' && (
             <fieldset className="space-y-2">
               <legend className="text-label font-semibold">עצימות</legend>
               <div className="grid grid-cols-3 gap-2">
@@ -396,7 +393,7 @@ export function ActivitySheet({
             </fieldset>
           )}
 
-          {info.distance && when !== 'planned' && (
+          {info.distance && mode !== 'planned' && (
             <label className="block space-y-2">
               <span className="text-label font-semibold">מרחק ({info.distance === 'm' ? 'מטרים' : 'ק"מ'}, לא חובה)</span>
               <Input
@@ -435,7 +432,7 @@ export function ActivitySheet({
           )}
 
           <PrimaryButton onClick={submit} disabled={!valid || busy}>
-            {busy ? 'שומר...' : when === 'planned' ? 'הוסף ליומן' : 'שמור'}
+            {busy ? 'שומר...' : mode === 'planned' ? 'הוסף ליומן' : 'שמור'}
           </PrimaryButton>
           {existing && !confirmDelete && (
             <button type="button" onClick={() => setConfirmDelete(true)} className="min-h-[44px] w-full text-body font-semibold text-destructive">

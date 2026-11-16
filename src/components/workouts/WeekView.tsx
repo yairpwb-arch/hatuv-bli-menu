@@ -184,7 +184,13 @@ export function WeekView({
         taken: plan.walks.flatMap((w) => (w.day_of_week === null ? [] : [w.day_of_week])),
       }
     : pendingWorkout
-    ? { kind: 'workout', id: pendingWorkout.id, name: pendingWorkout.name, taken: plan.schedule.map((r) => r.weekday) }
+    ? {
+        kind: 'workout',
+        id: pendingWorkout.id,
+        name: pendingWorkout.name,
+        // One workout a day, and a rest day between workouts when the week has room (up to 3).
+        taken: plan.schedule.flatMap((r) => (planDays.length <= 3 ? [(r.weekday + 6) % 7, r.weekday, (r.weekday + 1) % 7] : [r.weekday])),
+      }
     : null;
   const nothingOpenYet = !plan.isLoading && planDays.length === 0 && plan.walks.length === 0 && plan.removedWalks.length === 0;
 

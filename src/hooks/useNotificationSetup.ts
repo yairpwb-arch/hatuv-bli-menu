@@ -29,6 +29,9 @@ function handleNotificationTap(type: string) {
     survey_nudge: '/app?survey=1',
     survey_nudge_2: '/app?survey=1',
     steps_behind: '/app/progress',
+    referral: '/app/referral',
+    days_missing: '/app/workouts',
+    workout_tomorrow: '/app/workouts',
   };
   requestNavigate(routes[type] ?? '/app');
 }

@@ -26,6 +26,7 @@ import { afterReply, coachTurn, reviewCoaches } from './workouts.ts';
 import { requestFromGroup } from './planBuilder.ts';
 import { setTodayTimes } from './schedule.ts';
 import { markLatestWatched } from './content.ts';
+import { learnFromGroup, privateLesson } from './lessons.ts';
 import { logUsage } from '../_shared/botkit.ts';
 import { TEST_GROUP_ID, alertHandoff, coachPhones, deliver, digits, readChat, sendTyping, sleep } from '../_shared/wa.ts';
 
@@ -146,6 +147,8 @@ async function handle(body: any) {
     if ((newer ?? []).length) return;
     await readChat(chatId);
     await sendTyping(chatId, 6000);
+    // Teaching the bot how to answer ("אל תענה ככה"): a lesson; anything else: the review / plan talk.
+    if (await privateLesson(supabase, chatId, senderPhone, msg.text)) return;
     await coachTurn(supabase, chatId, msg.text);
     return;
   }
@@ -182,6 +185,12 @@ async function handle(body: any) {
     wa_message_id: waId,
     created_at: at,
   });
+
+  // A coach wrote in the group right after the bot: maybe a correction to learn from.
+  if (sender === 'coach' && msg.text && brainReady()) {
+    await learnFromGroup(supabase, chatId, senderPhone, at).catch((e) => console.error('[lessons] group failed', e instanceof Error ? e.message : e));
+    return;
+  }
 
   // The bot answers only the client, and only in the test group.
   if (!isTest || type !== 'incomingMessageReceived' || sender !== 'client' || !msg.text || !brainReady()) return;
