@@ -54,7 +54,9 @@ export async function scheduleActivityReminders(events: CalEvent[], enabled: boo
     const notifications = upcoming.map((e, i) => ({
       id: ACTIVITY_IDS[i],
       title: e.type === 'walk' ? 'יש לך הליכה היום' : `יש לך אימון היום: ${e.title}`,
-      body: `בעוד שעתיים, ב-${format(e.start, 'HH:mm')}. אפשר לשנות את השעה בדף האימונים.`,
+      body: e.type === 'walk'
+        ? `בעוד שעתיים, ב-${format(e.start, 'HH:mm')}. מחכים לשמוע איך היה.`
+        : `בעוד שעתיים, ב-${format(e.start, 'HH:mm')}. אפשר לשנות את השעה בדף האימונים.`,
       schedule: { at: new Date(e.start.getTime() - LEAD_MS), allowWhileIdle: true },
       extra: { route: '/app/workouts' },
     }));

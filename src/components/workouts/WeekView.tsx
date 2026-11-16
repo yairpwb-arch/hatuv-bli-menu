@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { BottomSheet, EmptyState, PrimaryButton, SecondaryButton, SectionHeader, SheetActions } from '@/components/ds';
 import type { ActivityRow } from '@/hooks/useActivities';
 import { CalEvent, SeriesScope, useCalendar } from '@/hooks/useCalendar';
-import { savePlacement } from '@/hooks/usePlacements';
+import { fetchPlacements, placementFor, savePlacement, savePlacements } from '@/hooks/usePlacements';
 import { kindInfo } from '@/lib/activityKinds';
 import { CALENDAR_CHANGED } from '@/lib/localReminders';
 import { TimeScope, TimeSheet } from './TimeSheet';
@@ -655,6 +655,17 @@ export function WeekView({
             new Map(p.kind === 'workout' ? [[p.id, weekday]] : []),
             new Map(p.kind === 'walk' ? [[p.id, weekday]] : []),
           );
+          // Its first day gets the base time, unless that day already has a fixed one.
+          if (weekday !== null) {
+            const key = p.kind === 'walk' ? 'walk' : `workout:${p.id}`;
+            const { list } = await fetchPlacements(userId);
+            if (!placementFor(list, key, today, weekday)) {
+              await savePlacements(userId, [{
+                item_key: key, scope: 'weekday', day: null, weekday,
+                start_time: p.kind === 'walk' ? '19:00' : '18:00', duration_min: p.kind === 'walk' ? 30 : 60,
+              }]);
+            }
+          }
           onChanged?.();
           await cal.reload();
         }}

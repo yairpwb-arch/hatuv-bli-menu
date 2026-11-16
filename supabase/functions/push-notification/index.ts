@@ -460,16 +460,16 @@ async function handleTick() {
         if (at(SATURDAY, 17, 30)) {
           await send(u, 'new_stage', isPart ? 'נפתח לך חלק חדש' : 'נפתח לך שבוע חדש', `הסרטון של ${first.week_range} מחכה לך בתכנים.`);
         } else if (unwatched.length > 0 && at(SATURDAY, 21)) {
-          await send(u, 'new_stage_nudge', 'הסרטון החדש עוד מחכה לך', 'כמה דקות עכשיו, ומחר מתחילים את ההרגלים החדשים.');
+          await send(u, 'new_stage_nudge', 'הסרטון החדש עוד מחכה לך', 'יאאלה מחר מתחילים את ההרגלים החדשים.');
         } else if (unwatched.length > 0 && at(SUNDAY, 10)) {
-          await send(u, 'new_stage_nudge_2', 'היום מתחילים הרגלים חדשים', `עוד לא ראית את הסרטון של ${first.week_range}. כדאי לראות אותו לפני שממשיכים.`);
+          await send(u, 'new_stage_nudge_2', 'היום מתחילים הרגלים חדשים', `עוד לא ראית את הסרטון של ${first.week_range}. חובה לראות אותו לפני שממשיכים.`);
         }
       }
     }
 
     // ── Thursday evening: tomorrow is weigh-in day (kept from the old schedule) ──
     if (at(THURSDAY, 20) && prefOn('weigh')) {
-      await send(u, 'weigh_reminder', 'מחר בבוקר שקילה', 'שישי בבוקר, לפני האוכל ואחרי השירותים.');
+      await send(u, 'weigh_reminder', 'מחר בבוקר שקילה', 'בבוקר, לפני האוכל ואחרי השירותים.');
     }
 
     // ── Friday: weighing, and the weekly survey for whoever hasn't filled it in ──
@@ -485,8 +485,8 @@ async function handleTick() {
         .gte('submitted_at', new Date(Date.now() - 24 * 3600_000).toISOString())
         .limit(1);
       if (!filled?.length) {
-        if (surveyNudge === 1) await send(u, 'survey_nudge', 'השאלון השבועי מחכה לך', '2 דקות, וזה עוזר לנו לכוון אותך.');
-        else await send(u, 'survey_nudge_2', 'עוד לא מילאת את השאלון השבועי', 'נשאר רק היום. 2 דקות וזה מאחוריך.');
+        if (surveyNudge === 1) await send(u, 'survey_nudge', 'השאלון השבועי מחכה לך', '2 דקות, וזה עוזר לנו למקד אותך.');
+        else await send(u, 'survey_nudge_2', 'עוד לא מילאת את השאלון השבועי', 'תמלא עכשיו זה כולה 2 דקות.');
       }
     }
 
@@ -529,10 +529,9 @@ async function handleTick() {
     }
 
     // ── Every 3 months from the start (days 91, 181, …), at noon: "חבר מביא חבר" ──
-    // The bot writes about it in WhatsApp at the same time; a tap here opens the page.
-    if (day > 1 && (day - 1) % REFERRAL_EVERY_DAYS === 0 && now.weekday !== SATURDAY && at(now.weekday, 12, 30)) {
-      const months = ((day - 1) / REFERRAL_EVERY_DAYS) * 3;
-      await send(u, 'referral', 'חבר מביא חבר 🎁', `${months} חודשים בתהליך! מכיר מישהו שזה יכול לעזור לו? לחיצה כאן ושולחים לו.`);
+    // Shabbat too. The bot writes about it in WhatsApp the same day; a tap here opens the page.
+    if (day > 1 && (day - 1) % REFERRAL_EVERY_DAYS === 0 && at(now.weekday, 12, 30)) {
+      await send(u, 'referral', 'תביא חבר וקבל 500 שקל מתנה 🎁', 'מכיר מישהו שהתהליך שלנו יכול לעזור לו? שלח אותו אלינו ותרוויח');
     }
 
     // ── Steps: 4 hours before bedtime, behind today and also yesterday ──
@@ -551,7 +550,7 @@ async function handleTick() {
         const stepsOn = (date: string) => rows.find((l) => l.date === date)?.steps ?? 0;
         const today = stepsOn(now.date);
         if (today < goal && stepsOn(now.yesterday) < goal) {
-          await send(u, 'steps_behind', 'עוד קצת צעדים היום', `עוד ${(goal - today).toLocaleString('he-IL')} צעדים ליעד של ${goal.toLocaleString('he-IL')}. יש לך עוד 4 שעות.`);
+          await send(u, 'steps_behind', 'עדיין לא הגעת ליעד צעדים שלך היום!', `חסרים לך ${(goal - today).toLocaleString('he-IL')} צעדים ליעד - אל תוותר לעצמך.`);
         }
       }
     }

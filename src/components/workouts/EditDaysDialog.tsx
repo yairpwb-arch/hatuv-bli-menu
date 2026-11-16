@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { format } from 'date-fns';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,6 +14,8 @@ import { WEEKDAY_SHORT } from './WeekCards';
 /** The calendar's key for an item's time (useCalendar.ts): a plan workout, or the day's walk. */
 const workoutKey = (planDayId: string) => `workout:${planDayId}`;
 const WALK_KEY = 'walk';
+/** The time a day gets when it has none yet (the trainee can change it right there). */
+const BASE_TIME = { workout: '18:00', walk: '19:00' } as const;
 
 const near = (a: number, b: number) => a === b || (a + 1) % 7 === b || (b + 1) % 7 === a;
 
@@ -109,14 +112,17 @@ export function EditDaysDialog({
     if (user) fetchPlacements(user.id).then(({ list }) => setPlacements(list));
   }, [open, planDays, schedule, walks, user]);
 
-  // The time shown for an item on a weekday: set here, else its fixed time from the calendar.
-  const today = new Date().toISOString().slice(0, 10);
+  // The time shown for an item on a weekday: set here, else its fixed time from the calendar,
+  // else the base time (saved with the day, so the first time days are set they get times too).
+  const today = format(new Date(), 'yyyy-MM-dd');
+  const fixedTime = (key: string, wd: number) => {
+    const p = placementFor(placements, key, today, wd);
+    return p?.scope === 'weekday' ? p.start_time : null;
+  };
+  const baseOf = (key: string) => (key === WALK_KEY ? BASE_TIME.walk : BASE_TIME.workout);
   const timeOf = (key: string, wd: number | null) => {
     if (wd === null) return '';
-    const own = times.get(`${key}|${wd}`);
-    if (own !== undefined) return own;
-    const p = placementFor(placements, key, today, wd);
-    return p?.scope === 'weekday' ? p.start_time : '';
+    return times.get(`${key}|${wd}`) ?? fixedTime(key, wd) ?? baseOf(key);
   };
   const setTime = (key: string, wd: number | null, t: string) => {
     if (wd === null) return;
@@ -154,7 +160,8 @@ export function EditDaysDialog({
     const items: Placement[] = [];
     const add = (key: string, wd: number | null, minutes: number) => {
       if (wd === null) return;
-      const t = times.get(`${key}|${wd}`);
+      // Set here; or no fixed time yet on that day: the base time.
+      const t = times.get(`${key}|${wd}`) || (fixedTime(key, wd) ? null : baseOf(key));
       if (t) items.push({ item_key: key, scope: 'weekday', day: null, weekday: wd, start_time: t, duration_min: minutes });
     };
     workoutDraft.forEach((wd, id) => add(workoutKey(id), wd, 60));

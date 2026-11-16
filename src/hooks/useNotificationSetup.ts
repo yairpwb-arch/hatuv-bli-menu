@@ -28,7 +28,7 @@ function handleNotificationTap(type: string) {
     weigh_reminder: '/app/progress',
     survey_nudge: '/app?survey=1',
     survey_nudge_2: '/app?survey=1',
-    steps_behind: '/app/progress',
+    steps_behind: '/app/workouts',
     referral: '/app/referral',
     days_missing: '/app/workouts',
     workout_tomorrow: '/app/workouts',
