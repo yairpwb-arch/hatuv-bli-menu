@@ -69,11 +69,12 @@ export default function AdminDashboard() {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
-      const [usersRes, contentRes, mealsRes, linksRes] = await Promise.all([
+      const [usersRes, contentRes, mealsRes, linksRes, adminsRes] = await Promise.all([
         supabase.from('profiles').select('id, is_active, email', { count: 'exact' }),
         supabase.from('program_content').select('id', { count: 'exact' }).filter('archived_at', 'is', null),
         supabase.from('nutrition_log').select('id', { count: 'exact' }).gte('recorded_at', today.toISOString()),
         (supabase as any).from('app_settings').select('key, value').in('key', ['snacks_book_link', 'weighing_guide_link']),
+        supabase.from('user_roles').select('user_id').eq('role', 'admin'),
       ]);
 
       const linkMap: Record<string, string> = {};
@@ -81,7 +82,9 @@ export default function AdminDashboard() {
       setSnacksLink(linkMap['snacks_book_link'] || '');
       setWeighingLink(linkMap['weighing_guide_link'] || '');
 
-      const nonAdminUsers = usersRes.data?.filter((u) => u.email.toLowerCase() !== ADMIN_EMAIL) || [];
+      // Coaches (every admin) aren't clients.
+      const adminIds = new Set((adminsRes.data ?? []).map((r) => r.user_id));
+      const nonAdminUsers = usersRes.data?.filter((u) => u.email.toLowerCase() !== ADMIN_EMAIL && !adminIds.has(u.id)) || [];
 
       setStats({
         totalUsers: nonAdminUsers.length,
