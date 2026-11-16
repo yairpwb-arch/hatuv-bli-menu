@@ -5,7 +5,7 @@
 //   { job: 'knowledge' }  content changed in the dashboard → its chunks rebuilt;
 //                         then every chunk without an embedding gets one
 //   { job: 'examples' }   yesterday's answers of ours (and approved drafts) join bot_examples
-//   { job: 'profiles' }   a weekly profile (≤200 words) per active client
+//   { job: 'profiles' }   every night: the profile (≤200 words) of each active client who talked since its last update
 //   { job: 'replies' }    a new conversation answered 5 minutes later (talk.ts)
 //   { job: 'proactive' }  messages the bot starts: check-in, after a workout, Friday, Shabbat (talk.ts)
 //   { job: 'plans' }      the workout bot: a plan for each opening questionnaire just finished (planBuilder.ts)
@@ -234,15 +234,20 @@ async function jobProfiles() {
   const weekAgo = new Date(Date.now() - 7 * 86400_000).toISOString();
   let written = 0;
   for (const g of (groups ?? []) as Row[]) {
-    const [{ data: p }, { data: msgs }, { data: prev }, { data: ob }] = await Promise.all([
+    const [{ data: p }, { data: prev }, { data: ob }] = await Promise.all([
       db.from('profiles').select('full_name, is_active').eq('id', g.user_id).maybeSingle(),
-      db.from('whatsapp_messages').select('sender, sender_name, text, created_at').eq('chat_id', g.chat_id).gte('created_at', weekAgo).order('created_at'),
       db.from('client_profiles').select('profile, edited_by, edited_at, updated_at').eq('user_id', g.user_id).maybeSingle(),
       db.from('onboarding_responses').select('answers').eq('user_id', g.user_id).maybeSingle(),
     ]);
     if (!p?.is_active) continue;
+    // What was said since the profile's last update (automatic or by hand); a new profile: the last week.
+    const lastUpdate = [prev?.updated_at, prev?.edited_at].filter(Boolean).sort().pop() as string | undefined;
+    const since = lastUpdate && lastUpdate > weekAgo ? lastUpdate : weekAgo;
+    const { data: msgs } = await db.from('whatsapp_messages').select('sender, sender_name, text, created_at')
+      .eq('chat_id', g.chat_id).gt('created_at', since).order('created_at');
+    // Only after a day he talked: no message of his since the last update, nothing new to learn.
+    if (!((msgs ?? []) as Row[]).some((m) => m.sender === 'client' && m.text)) continue;
     const chat = ((msgs ?? []) as Row[]).filter((m) => m.text).map((m) => `${m.sender === 'client' ? 'לקוח' : m.sender === 'coach' ? 'מאמן' : 'עוזר'}: ${m.text}`).join('\n');
-    if (!chat) continue; // nothing new this week
     const manual = !!prev?.edited_at && (!prev.updated_at || prev.edited_at >= prev.updated_at);
     const goal = (ob as Row | null)?.answers?.goal;
     const r = (await anthropic.messages.create({
@@ -255,7 +260,7 @@ async function jobProfiles() {
         content:
           `לקוח: ${p.full_name ?? ''}\n` +
           (goal ? `מטרה מהשאלון: ${Array.isArray(goal) ? goal.join(', ') : goal}\n` : '') +
-          `\n# התיק הקודם${manual ? ' (נערך ידנית על ידי המאמנים)' : ''}\n${prev?.profile || 'אין'}\n\n# השיחות מהשבוע האחרון\n${chat.slice(-30000)}`,
+          `\n# התיק הקודם${manual ? ' (נערך ידנית על ידי המאמנים)' : ''}\n${prev?.profile || 'אין'}\n\n# השיחות מאז העדכון הקודם\n${chat.slice(-30000)}`,
       }],
     } as any)) as Row;
     await logUsage(db, { kind: 'profile', model: PROFILE_MODEL, chatId: g.chat_id, userId: g.user_id, ...claudeUsage(r) });

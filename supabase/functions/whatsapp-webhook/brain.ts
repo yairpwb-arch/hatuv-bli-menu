@@ -10,7 +10,7 @@ import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4
 import { claudeUsage, costOf, embed, logUsage, setting, vectorLiteral } from '../_shared/botkit.ts';
 import { REVIEW_END_TAG, REVIEW_START_TAG, reviewSection } from './workouts.ts';
 import { TODAY_TIME_RE, type TodayTime, readTodayTimes } from './schedule.ts';
-import { WATCHED_TAG } from './content.ts';
+import { WATCHED_TAG, latestStage } from './content.ts';
 import { lessonsSection } from './lessons.ts';
 
 // Chosen after the model test (Haiku 5.5 vs Sonnet 5.5).
@@ -79,15 +79,21 @@ async function programDay(db: SupabaseClient, userId: string | null): Promise<nu
 /** What the app knows about the client, as short Hebrew lines. */
 async function clientContext(db: SupabaseClient, userId: string | null, day: number | null): Promise<string> {
   if (!userId) return 'אין לקוח משויך לקבוצה הזו (קבוצת ניסיון): אין נתונים מהאפליקציה.';
-  const [profile, onboarding, weights, steps, acts, checkin, schedule, walks] = await Promise.all([
+  const todayIl = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
+  const [profile, onboarding, weights, steps, acts, checkin, schedule, walks, measures, photos, placements, plannedToday, stage] = await Promise.all([
     db.from('profiles').select('full_name, gender, initial_weight, current_weight, target_weight, sleep_time, wake_time').eq('id', userId).maybeSingle(),
     db.from('onboarding_responses').select('answers').eq('user_id', userId).maybeSingle(),
     db.from('weight_log').select('weight, recorded_at').eq('user_id', userId).order('recorded_at', { ascending: false }).limit(6),
     db.from('steps_log').select('date, steps').eq('user_id', userId).gte('date', daysAgo(7)).order('date'),
     db.from('activities').select('kind, custom_name, day, duration_min, status').eq('user_id', userId).gte('day', daysAgo(10)).order('day'),
-    db.from('weekly_checkin').select('week_number, answers').eq('user_id', userId).order('week_number', { ascending: false }).limit(1),
-    db.from('workout_day_schedule').select('weekday, workout_plan_days(name)').eq('user_id', userId),
+    db.from('weekly_checkin').select('week_number, answers').eq('user_id', userId).order('week_number', { ascending: false }).limit(4),
+    db.from('workout_day_schedule').select('plan_day_id, weekday, workout_plan_days(name)').eq('user_id', userId),
     db.from('user_walking_schedule').select('day_of_week, is_active').eq('user_id', userId),
+    db.from('body_measurements').select('measured_at, arm_cm, chest_cm, waist_cm, belly_cm').eq('user_id', userId).order('measured_at'),
+    db.from('transformation_photos').select('taken_at, photo_type').eq('user_id', userId).order('taken_at'),
+    db.from('calendar_placements').select('item_key, scope, day, weekday, start_time, valid_from').eq('user_id', userId),
+    db.from('activities').select('kind, custom_name, started_at').eq('user_id', userId).eq('status', 'planned').eq('day', todayIl),
+    day != null && day >= 1 ? latestStage(db, userId) : Promise.resolve(null),
   ]);
   const p = profile.data as Row | null;
   const lines: string[] = [];
@@ -123,13 +129,51 @@ async function clientContext(db: SupabaseClient, userId: string | null, day: num
       ...wk.map((w) => `הליכה ביום ${WD[w.day_of_week]}`),
     ].join(', ') + '.');
   }
-  const ci = (checkin.data ?? [])[0] as Row | undefined;
-  if (ci?.answers?.items) lines.push(`שאלון שבועי אחרון (שבוע ${ci.week_number}): ` + (ci.answers.items as Row[]).map((i) => `${i.question} → ${i.answer}`).join('; ') + '.');
-  const ob = (onboarding.data as Row | null)?.answers;
+  // Today in the calendar: the plan's workout / walk at their set time, and what he planned himself.
+  const todayWd = new Date(`${todayIl}T12:00:00Z`).getUTCDay();
+  const pls = (placements.data ?? []) as Row[];
+  const timeToday = (key: string) => {
+    const dated = pls.find((p) => p.item_key === key && p.scope === 'date' && p.day === todayIl);
+    const fixed = pls.filter((p) => p.item_key === key && p.scope === 'weekday' && p.weekday === todayWd && (p.valid_from ?? '0000') <= todayIl)
+      .sort((a, b) => ((a.valid_from ?? '') < (b.valid_from ?? '') ? 1 : -1))[0];
+    return ((dated ?? fixed)?.start_time as string | undefined)?.slice(0, 5) ?? null;
+  };
+  const todayItems = [
+    ...sch.filter((s) => s.weekday === todayWd).map((s) => {
+      const t = timeToday(`workout:${s.plan_day_id}`);
+      return `אימון "${s.workout_plan_days?.name ?? ''}"${t ? ` ב-${t}` : ' (בלי שעה קבועה)'}`;
+    }),
+    ...(wk.some((w) => w.day_of_week === todayWd) ? [(() => { const t = timeToday('walk'); return `הליכה${t ? ` ב-${t}` : ' (בלי שעה קבועה)'}`; })()] : []),
+    ...((plannedToday.data ?? []) as Row[]).map((a) =>
+      `${a.custom_name ?? a.kind} שהוא תכנן ב-${new Date(a.started_at).toLocaleTimeString('he-IL', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit' })}`),
+  ];
+  if (todayItems.length) lines.push('ביומן שלו היום: ' + todayItems.join(', ') + '.');
+
+  // The program's content: the latest stage, and whether he watched it.
+  const st2 = stage as Awaited<ReturnType<typeof latestStage>>;
+  if (st2) {
+    lines.push(`תכנים: השלב האחרון שנפתח לו (${st2.week}) נפתח ${st2.daysAgo === 0 ? 'היום' : `לפני ${st2.daysAgo} ימים`}. ` +
+      (st2.unwatched.length ? `עוד לא צפה ב: ${st2.unwatched.map((c) => c.title).join('; ')}.` : 'צפה בכל התכנים שלו.'));
+  }
+
+  // Measurements: the first and the latest, and progress photos (dates only).
+  const ms = (measures.data ?? []) as Row[];
+  const mLine = (m: Row) => `${m.measured_at}: יד ${m.arm_cm ?? '?'}, חזה ${m.chest_cm ?? '?'}, מותניים ${m.waist_cm ?? '?'}, בטן ${m.belly_cm ?? '?'}`;
+  if (ms.length) lines.push(`היקפים (ס"מ): ${ms.length > 1 ? `ראשונה ${mLine(ms[0])}; אחרונה ${mLine(ms[ms.length - 1])}` : mLine(ms[0])}.`);
+  const ph = (photos.data ?? []) as Row[];
+  lines.push(ph.length ? `תמונות התקדמות: ${ph.length}, האחרונה ב-${ph[ph.length - 1].taken_at}.` : 'תמונות התקדמות: עוד לא העלה.');
+
+  // The weekly surveys: the last 4, newest first.
+  for (const ci of (checkin.data ?? []) as Row[]) {
+    if (ci?.answers?.items) lines.push(`שאלון שבועי (שבוע ${ci.week_number}): ` + (ci.answers.items as Row[]).map((i) => `${i.question} → ${i.answer}`).join('; ') + '.');
+  }
+  // The opening questionnaire, all of it.
+  const ob = (onboarding.data as Row | null)?.answers as Row | undefined;
   if (ob) {
-    const pick = ['occupation', 'sleep_hours', 'big_meals', 'small_meals', 'walks', 'trains', 'training_types', 'goal', 'max_pullups', 'max_pushups', 'max_squats', 'injuries', 'injuries_other', 'preferred_location'];
-    const bits = pick.filter((k) => ob[k] != null && ob[k] !== '').map((k) => `${k}=${Array.isArray(ob[k]) ? ob[k].join('/') : ob[k]}`);
-    if (bits.length) lines.push('שאלון פתיחה: ' + bits.join(', ') + '.');
+    const val = (v: unknown): string =>
+      Array.isArray(v) ? v.map(val).join('/') : v && typeof v === 'object' ? JSON.stringify(v) : String(v);
+    const bits = Object.entries(ob).filter(([, v]) => v != null && v !== '' && !(Array.isArray(v) && !v.length)).map(([k, v]) => `${k}=${val(v)}`);
+    if (bits.length) lines.push('שאלון פתיחה (כל התשובות): ' + bits.join(', ') + '.');
   }
   return lines.join('\n') || 'אין נתונים מהאפליקציה.';
 }

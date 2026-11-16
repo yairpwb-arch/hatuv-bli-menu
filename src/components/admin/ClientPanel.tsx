@@ -711,10 +711,10 @@ function ClientProfile({ userId }: { userId: string }) {
     if (error) return toast({ title: 'שגיאה', description: error.message, variant: 'destructive' });
     setSaved(text);
     setMeta((m) => ({ ...m, edited_at: now, edited_by: who.user?.id ?? null }));
-    toast({ title: 'נשמר', description: 'העדכון השבועי הבא של הבוט יתחיל מהגרסה שלך' });
+    toast({ title: 'נשמר', description: 'העדכון הלילי הבא של הבוט יתחיל מהגרסה שלך' });
   };
 
-  // The latest of the two: the weekly automatic one, or a hand edit.
+  // The latest of the two: the nightly automatic one, or a hand edit.
   const manual = !!meta?.edited_at && (!meta.updated_at || meta.edited_at >= meta.updated_at);
   const last = manual ? meta?.edited_at : meta?.updated_at;
   const when = (d: string) => format(new Date(d), 'd.M.yyyy HH:mm');
@@ -724,8 +724,8 @@ function ClientProfile({ userId }: { userId: string }) {
       <SectionHeader title="מה שאנחנו יודעים על הלקוח" />
       <p className="text-label text-muted-foreground">
         {last
-          ? <>עדכון אחרון {when(last)} · {manual ? <>ידני{editor ? ` (${editor})` : ''}</> : 'אוטומטי (העדכון השבועי של הבוט)'}</>
-          : 'עוד אין תיק. הבוט כותב אותו במוצאי שבת, אחרי שבוע של שיחות בקבוצה'}
+          ? <>עדכון אחרון {when(last)} · {manual ? <>ידני{editor ? ` (${editor})` : ''}</> : 'אוטומטי (העדכון הלילי של הבוט)'}</>
+          : 'עוד אין תיק. הבוט כותב אותו בלילה, אחרי יום שהלקוח כתב בקבוצה'}
       </p>
       <Textarea
         value={text}
