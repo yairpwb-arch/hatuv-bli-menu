@@ -91,7 +91,7 @@ export default function AdminExercises() {
 
   // Search by name, muscle or equipment (every word has to match somewhere); A→Z by name.
   const shown = (() => {
-    const words = search.trim().toLowerCase().split(/s+/).filter(Boolean);
+    const words = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
     const hay = (e: Exercise) => [e.name, e.equipment ?? '', ...(e.muscle_groups ?? [])].join(' ').toLowerCase();
     return exercises
       .filter((e) => words.every((w) => hay(e).includes(w)))
