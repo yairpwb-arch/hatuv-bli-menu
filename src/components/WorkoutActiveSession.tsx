@@ -12,6 +12,7 @@ import { restLabel } from '@/lib/hebrewTime';
 import { selectionHaptic, successHaptic, tapHaptic } from '@/lib/native';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { BunnyLoop } from '@/components/content/BunnyPlayer';
 import type { WorkoutPlanDay, WorkoutPlanExercise } from '@/hooks/useWorkoutPlan';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -54,9 +55,6 @@ function formatClock(seconds: number): string {
   return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 }
 
-function isVideoUrl(url: string): boolean {
-  return /\.(mp4|webm|mov|avi)$/i.test(url) || url.includes('/videos/');
-}
 
 function newSessionId(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
@@ -528,8 +526,8 @@ export default function WorkoutActiveSession({ planDay, exercises, onMinimize, o
   }
 
   const ex = currentEx.exercises;
-  const hasMedia = !!ex.media_url;
-  const isVideo = hasMedia && isVideoUrl(ex.media_url!);
+  // The exercise's video: the Bunny collection "Exercise" (exercises.video_id).
+  const videoId = ex.video_id ?? null;
   const tags = [...muscleTags(ex.muscle_groups), ...(equipmentTag(ex.equipment) ? [equipmentTag(ex.equipment)!] : [])];
   const sets = entries[ptr.ex];
   const active = sets[ptr.set];
@@ -559,7 +557,7 @@ export default function WorkoutActiveSession({ planDay, exercises, onMinimize, o
   return (
     <>
       {/* ── Video fullscreen overlay ── */}
-      {videoFullscreen && isVideo && (
+      {videoFullscreen && videoId && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black" onClick={() => setVideoFullscreen(false)}>
           <button
             type="button"
@@ -569,8 +567,8 @@ export default function WorkoutActiveSession({ planDay, exercises, onMinimize, o
           >
             <X className="h-6 w-6" strokeWidth={2} />
           </button>
-          <div className="relative w-full max-w-sm" style={{ aspectRatio: '9/16', maxHeight: '90vh' }} onClick={(e) => e.stopPropagation()}>
-            <video src={ex.media_url!} controls autoPlay playsInline className="h-full w-full object-contain" />
+          <div className="relative w-full max-w-sm px-4" onClick={(e) => e.stopPropagation()}>
+            <BunnyLoop videoId={videoId} title={ex.name} controls />
           </div>
         </div>
       )}
@@ -666,18 +664,14 @@ export default function WorkoutActiveSession({ planDay, exercises, onMinimize, o
             <div className="space-y-card-gap px-4 py-4">
               {/* Media on a dark card — never a white square */}
               <div className="rounded-[16px] bg-surface-raised p-3">
-                {hasMedia ? (
-                  isVideo ? (
-                    <button type="button" className="relative block w-full" onClick={() => setVideoFullscreen(true)} aria-label="הגדלת הסרטון">
-                      <video src={ex.media_url!} className="mx-auto max-h-52 w-full rounded-xl object-contain" autoPlay muted loop playsInline />
-                      <span className="absolute bottom-2 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-pill bg-black/60 px-2.5 py-1 text-label text-white">
-                        <Maximize2 className="h-3.5 w-3.5" strokeWidth={2} />
-                        הגדלה
-                      </span>
-                    </button>
-                  ) : (
-                    <img src={ex.media_url!} alt={ex.name} className="mx-auto max-h-52 w-full rounded-xl object-contain" />
-                  )
+                {videoId ? (
+                  <button type="button" className="relative mx-auto block w-full max-w-[13rem]" onClick={() => setVideoFullscreen(true)} aria-label="הגדלת הסרטון">
+                    <BunnyLoop videoId={videoId} title={ex.name} />
+                    <span className="absolute bottom-2 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-pill bg-black/60 px-2.5 py-1 text-label text-white">
+                      <Maximize2 className="h-3.5 w-3.5" strokeWidth={2} />
+                      הגדלה
+                    </span>
+                  </button>
                 ) : (
                   <div className="flex h-28 items-center justify-center">
                     <Dumbbell className="h-12 w-12 text-muted-foreground/40" strokeWidth={2} />

@@ -66,7 +66,7 @@ export function WorkoutBuilder({ userId, onRun, onPlan }: {
   useEffect(() => {
     (async () => {
       const [ex, my] = await Promise.all([
-        db.from('exercises').select('id, name, description, muscle_groups, equipment, media_url, difficulty').order('name'),
+        db.from('exercises').select('id, name, description, muscle_groups, equipment, media_url, video_id, difficulty').order('name'),
         db.from('my_workouts').select('id, name, my_workout_exercises(*)').eq('user_id', userId).order('created_at', { ascending: false }),
       ]);
       setLibrary((ex.data ?? []) as Exercise[]);

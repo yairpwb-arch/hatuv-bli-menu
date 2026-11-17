@@ -132,3 +132,51 @@ export function BunnyPlayer({ videoId, userId, title, onClose, onEnded }: {
     </div>
   );
 }
+
+/**
+ * An exercise's short square video (the Bunny collection "Exercise"): plays by itself, muted,
+ * in a loop, like a GIF. `controls` shows the player's bar (for the full-screen view).
+ */
+export function BunnyLoop({ videoId, title, controls = false, className }: {
+  videoId: string;
+  title?: string;
+  controls?: boolean;
+  className?: string;
+}) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setSrc(null);
+    setError(false);
+    signedPlayerUrl(videoId).then((link) => {
+      if (cancelled) return;
+      if (!link) return setError(true);
+      const sep = link.url.includes('?') ? '&' : '?';
+      setSrc(`${link.url}${sep}autoplay=true&muted=true&loop=true&preload=true&responsive=true${controls ? '' : '&controls=false'}`);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [videoId, controls]);
+
+  return (
+    <div className={`relative aspect-square w-full overflow-hidden rounded-xl bg-black ${className ?? ''}`}>
+      {error ? (
+        <p className="absolute inset-0 flex items-center justify-center px-4 text-center text-label text-white/70">הסרטון לא נטען</p>
+      ) : src ? (
+        <iframe
+          src={src}
+          title={title ?? 'סרטון התרגיל'}
+          className={`absolute inset-0 h-full w-full border-0 ${controls ? '' : 'pointer-events-none'}`}
+          allow="autoplay; encrypted-media; fullscreen"
+          // Same as BunnyEmbed: Android's WebView referrer is turned away by Bunny.
+          referrerPolicy="no-referrer"
+        />
+      ) : (
+        <Loader2 className="absolute inset-0 m-auto h-7 w-7 animate-spin text-white/60" aria-label="טוען" />
+      )}
+    </div>
+  );
+}

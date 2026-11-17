@@ -39,7 +39,7 @@ Deno.serve(async (req) => {
   if (!userRes.ok) return json({ error: 'Not signed in' }, 401);
   const user = await userRes.json();
 
-  const { action, videoId } = await req.json().catch(() => ({}));
+  const { action, videoId, collection } = await req.json().catch(() => ({}));
 
   if (action === 'sign') {
     if (typeof videoId !== 'string' || !/^[0-9a-f-]{36}$/i.test(videoId)) return json({ error: 'Bad videoId' }, 400);
@@ -56,13 +56,20 @@ Deno.serve(async (req) => {
     }).then((r) => r.json());
     if (!Array.isArray(roles) || roles.length === 0) return json({ error: 'Admins only' }, 403);
     if (!API_KEY) return json({ error: 'BUNNY_API_KEY is not set' }, 500);
-    const res = await fetch(`https://video.bunnycdn.com/library/${LIBRARY}/videos?page=1&itemsPerPage=100&orderBy=title`, {
-      headers: { AccessKey: API_KEY, accept: 'application/json' },
-    });
-    if (!res.ok) return json({ error: `Bunny: ${res.status}` }, 502);
-    const data = await res.json();
+    // One collection (e.g. the exercises), or the whole library; every page.
+    const only = typeof collection === 'string' && /^[0-9a-f-]{36}$/i.test(collection) ? `&collection=${collection}` : '';
+    const items: { guid: string; title: string; length: number; status: number }[] = [];
+    for (let page = 1; page <= 10; page++) {
+      const res = await fetch(`https://video.bunnycdn.com/library/${LIBRARY}/videos?page=${page}&itemsPerPage=100&orderBy=title${only}`, {
+        headers: { AccessKey: API_KEY, accept: 'application/json' },
+      });
+      if (!res.ok) return json({ error: `Bunny: ${res.status}` }, 502);
+      const data = await res.json();
+      items.push(...(data.items ?? []));
+      if (items.length >= (data.totalItems ?? 0) || !(data.items ?? []).length) break;
+    }
     return json({
-      videos: (data.items ?? []).map((v: { guid: string; title: string; length: number; status: number }) => ({
+      videos: items.map((v) => ({
         guid: v.guid,
         title: v.title,
         seconds: Math.round(v.length),

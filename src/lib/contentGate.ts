@@ -18,7 +18,9 @@ export function applySequentialGate<T extends { week_range: string; dateUnlocked
     for (const item of weekItems) {
       result.push({ ...item, isUnlocked: item.dateUnlocked && previousWeekCompleted });
     }
-    previousWeekCompleted = weekItems.every((it) => it.isCompleted);
+    // Passed: every item watched, or anything after it already watched. A trainee never goes back:
+    // content added later to a week he's past (or one that lost its marks) doesn't lock what he reached.
+    previousWeekCompleted = weekItems.every((it) => it.isCompleted) || items.slice(j).some((it) => it.isCompleted);
     i = j;
   }
   return result;

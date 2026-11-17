@@ -19,7 +19,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, Pencil, Trash2, Upload, Video, Image, Dumbbell } from 'lucide-react';
+import { Plus, Pencil, Trash2, Play, Dumbbell } from 'lucide-react';
+import { BunnyLoop } from '@/components/content/BunnyPlayer';
+import { EXERCISE_COLLECTION, exerciseTitle, listBunnyVideos } from '@/lib/bunny';
 
 interface Exercise {
   id: string;
@@ -27,7 +29,8 @@ interface Exercise {
   description: string | null;
   muscle_groups: string[] | null;
   equipment: string | null;
-  media_url: string | null;
+  /** Its video in the Bunny collection "Exercise" (the only media used). */
+  video_id: string | null;
   difficulty: string | null;
   created_at: string;
 }
@@ -50,6 +53,7 @@ const emptyForm = {
   muscle_groups: '',
   equipment: '',
   difficulty: '' as string,
+  video_id: '' as string,
 };
 
 export default function AdminExercises() {
@@ -57,7 +61,7 @@ export default function AdminExercises() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingExercise, setEditingExercise] = useState<Exercise | null>(null);
   const [form, setForm] = useState(emptyForm);
-  const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<Exercise | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -73,10 +77,20 @@ export default function AdminExercises() {
     },
   });
 
+  // The Bunny collection "Exercise": the videos to pick from.
+  const { data: videos = [] } = useQuery({
+    queryKey: ['bunny-exercise-videos'],
+    queryFn: () => listBunnyVideos(EXERCISE_COLLECTION),
+    staleTime: 5 * 60_000,
+  });
+  const titleOf = (guid: string | null) => {
+    const v = guid ? videos.find((x) => x.guid === guid) : null;
+    return v ? exerciseTitle(v.title) : null;
+  };
+
   const openAdd = () => {
     setEditingExercise(null);
     setForm(emptyForm);
-    setMediaFile(null);
     setIsDialogOpen(true);
   };
 
@@ -88,8 +102,8 @@ export default function AdminExercises() {
       muscle_groups: (ex.muscle_groups || []).join(', '),
       equipment: ex.equipment || '',
       difficulty: ex.difficulty || '',
+      video_id: ex.video_id || '',
     });
-    setMediaFile(null);
     setIsDialogOpen(true);
   };
 
@@ -101,28 +115,6 @@ export default function AdminExercises() {
 
     setIsUploading(true);
 
-    let mediaUrl = editingExercise?.media_url || null;
-
-    // Upload media if provided
-    if (mediaFile) {
-      const ext = mediaFile.name.split('.').pop();
-      const fileName = `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('exercise_media')
-        .upload(fileName, mediaFile, { upsert: true });
-
-      if (uploadError) {
-        toast({ title: 'שגיאת העלאה', description: uploadError.message, variant: 'destructive' });
-        setIsUploading(false);
-        return;
-      }
-
-      const { data: urlData } = supabase.storage
-        .from('exercise_media')
-        .getPublicUrl(uploadData.path);
-      mediaUrl = urlData.publicUrl;
-    }
-
     const payload = {
       name: form.name.trim(),
       description: form.description.trim() || null,
@@ -131,7 +123,7 @@ export default function AdminExercises() {
         : [],
       equipment: form.equipment.trim() || null,
       difficulty: form.difficulty || null,
-      media_url: mediaUrl,
+      video_id: form.video_id || null,
     };
 
     if (editingExercise) {
@@ -177,7 +169,6 @@ export default function AdminExercises() {
     setDeletingId(null);
   };
 
-  const isVideo = (url: string) => /\.(mp4|webm|mov|avi)$/i.test(url);
 
   return (
     <div className="space-y-6" dir="rtl">
@@ -217,27 +208,15 @@ export default function AdminExercises() {
             >
               {/* Media */}
               <div className="relative bg-muted h-44 flex items-center justify-center overflow-hidden">
-                {ex.media_url ? (
-                  isVideo(ex.media_url) ? (
-                    <video
-                      src={ex.media_url}
-                      className="w-full h-full object-cover"
-                      muted
-                      loop
-                      onMouseOver={(e) => (e.currentTarget as HTMLVideoElement).play()}
-                      onMouseOut={(e) => { (e.currentTarget as HTMLVideoElement).pause(); (e.currentTarget as HTMLVideoElement).currentTime = 0; }}
-                    />
-                  ) : (
-                    <img
-                      src={ex.media_url}
-                      alt={ex.name}
-                      className="w-full h-full object-cover"
-                    />
-                  )
+                {ex.video_id ? (
+                  <button type="button" onClick={() => setPreview(ex)} className="flex flex-col items-center gap-2 text-muted-foreground hover:text-foreground">
+                    <Play className="h-10 w-10" />
+                    <span className="text-xs">צפייה בסרטון</span>
+                  </button>
                 ) : (
                   <div className="flex flex-col items-center gap-2 text-muted-foreground">
                     <Dumbbell className="h-12 w-12 opacity-20" />
-                    <span className="text-xs">אין מדיה</span>
+                    <span className="text-xs">אין סרטון</span>
                   </div>
                 )}
                 {ex.difficulty && (
@@ -354,29 +333,30 @@ export default function AdminExercises() {
               </div>
             </div>
 
-            {/* Media upload */}
+            {/* The video: from the Bunny collection "Exercise" */}
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">תמונה / וידאו</label>
-              {editingExercise?.media_url && !mediaFile && (
-                <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
-                  {isVideo(editingExercise.media_url) ? (
-                    <Video className="h-3.5 w-3.5" />
-                  ) : (
-                    <Image className="h-3.5 w-3.5" />
-                  )}
-                  <span className="truncate max-w-[200px]">{editingExercise.media_url.split('/').pop()}</span>
-                </div>
-              )}
-              <label className="flex items-center gap-2 px-3 py-2 border border-dashed border-border rounded-lg cursor-pointer hover:bg-muted/50 transition-colors text-sm text-muted-foreground">
-                <Upload className="h-4 w-4" />
-                {mediaFile ? mediaFile.name : 'בחר קובץ (תמונה / וידאו)'}
-                <input
-                  type="file"
-                  accept="image/*,video/*"
-                  className="sr-only"
-                  onChange={(e) => setMediaFile(e.target.files?.[0] || null)}
-                />
-              </label>
+              <label className="text-sm font-medium">סרטון (מ-Bunny, אוסף Exercise)</label>
+              <Select
+                value={form.video_id || 'none'}
+                onValueChange={(v) => {
+                  const id = v === 'none' ? '' : v;
+                  // The video's name is the exercise's exact name.
+                  setForm({ ...form, video_id: id, name: id ? titleOf(id) ?? form.name : form.name });
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="בחר סרטון" />
+                </SelectTrigger>
+                <SelectContent className="max-h-72">
+                  <SelectItem value="none">בלי סרטון</SelectItem>
+                  {videos.map((v) => (
+                    <SelectItem key={v.guid} value={v.guid}>
+                      {exerciseTitle(v.title)}{v.ready ? '' : ' (בעיבוד)'}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {form.video_id && <BunnyLoop videoId={form.video_id} className="mx-auto max-w-[10rem]" />}
             </div>
 
             <div className="flex gap-2 pt-2">
@@ -396,6 +376,16 @@ export default function AdminExercises() {
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* A card's video */}
+      <Dialog open={!!preview} onOpenChange={(o) => !o && setPreview(null)}>
+        <DialogContent className="max-w-sm" dir="rtl">
+          <DialogHeader>
+            <DialogTitle>{preview?.name}</DialogTitle>
+          </DialogHeader>
+          {preview?.video_id && <BunnyLoop videoId={preview.video_id} title={preview.name} controls />}
         </DialogContent>
       </Dialog>
     </div>

@@ -20,7 +20,7 @@ export async function loadMyWorkout(id: string): Promise<{ name: string; items: 
   if (!rows.length) return { name: w.name, items: [] };
   const { data: ex } = await db
     .from('exercises')
-    .select('id, name, description, muscle_groups, equipment, media_url, difficulty')
+    .select('id, name, description, muscle_groups, equipment, media_url, video_id, difficulty')
     .in('id', rows.map((r) => r.exercise_id));
   const byId = new Map(((ex ?? []) as Exercise[]).map((e) => [e.id, e]));
   return {

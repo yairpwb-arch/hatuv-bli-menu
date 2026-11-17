@@ -255,7 +255,9 @@ export default function AdminContent() {
   const handleDelete = async (id: string) => {
     if (!confirm('האם אתה בטוח שברצונך למחוק תוכן זה?')) return;
 
-    const { error } = await supabase.from('program_content').delete().eq('id', id);
+    // Archived, never deleted: a real delete takes every trainee's "watched" mark with it,
+    // and they'd all be sent back to that stage.
+    const { error } = await (supabase as any).from('program_content').update({ archived_at: new Date().toISOString() }).eq('id', id);
 
     if (error) {
       toast({ title: 'שגיאה', description: 'לא ניתן למחוק את התוכן', variant: 'destructive' });

@@ -16,6 +16,26 @@ export async function signedPlayerUrl(videoId: string): Promise<{ url: string; e
   return data;
 }
 
+/** The Bunny collection "Exercise": a short square loop for each exercise (exercises.video_id). */
+export const EXERCISE_COLLECTION = '24541dec-4f8f-441e-a484-31853fa62779';
+
+export interface BunnyVideo {
+  guid: string;
+  title: string;
+  seconds: number;
+  ready: boolean;
+}
+
+/** Admins: the videos of a collection (or the whole library), every page. */
+export async function listBunnyVideos(collection?: string): Promise<BunnyVideo[]> {
+  const { data, error } = await supabase.functions.invoke('bunny-video', { body: { action: 'list', collection } });
+  if (error || !data?.videos) return [];
+  return data.videos as BunnyVideo[];
+}
+
+/** A video's title as an exercise name: the file name without ".mp4". */
+export const exerciseTitle = (title: string) => title.replace(/\.(mp4|mov|m4v|webm)$/i, '').trim();
+
 /* ── Where the trainee stopped (per video, on this device) ──────────────────── */
 const posKey = (userId: string, videoId: string) => `videoPos:${userId}:${videoId}`;
 

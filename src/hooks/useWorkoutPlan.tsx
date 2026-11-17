@@ -28,6 +28,8 @@ export interface Exercise {
   muscle_groups: string[] | null;
   equipment: string | null;
   media_url: string | null;
+  /** Its video in the Bunny collection "Exercise" (the only media used). */
+  video_id?: string | null;
   difficulty: string | null;
 }
 
