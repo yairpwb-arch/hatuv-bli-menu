@@ -10,7 +10,7 @@
 //   - not if one of us wrote in the group in the last 6 hours.
 
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
-import { buildPrompt, composeReply, maxParts, runModel, toReply } from '../whatsapp-webhook/brain.ts';
+import { buildPrompt, composeReply, maxParts, missingDays, runModel, toReply } from '../whatsapp-webhook/brain.ts';
 import { TEST_GROUP_ID, alertHandoff, deliver, readChat, sendTyping } from '../_shared/wa.ts';
 import { REVIEW_OPEN_TASK, afterReply, openReview, reviewDue, reviewTimeouts, startReview } from '../whatsapp-webhook/workouts.ts';
 import { requestFromGroup } from '../whatsapp-webhook/planBuilder.ts';
@@ -150,10 +150,20 @@ const TASKS = {
   friday:
     'משוב שבועי לפני שבת, כמו שמאמן אמיתי כותב למתאמן שלו אחרי שעבר על השבוע: טבעי, אישי וזורם, לא רשימה של נתונים ולא משפטים טלגרפיים ("השבוע עשית הליכה של 30 דקות וחלבון קיבל 8" זה לא טוב). ' +
     'אין הגבלת אורך בהודעה הזו: כתוב כמה שצריך כדי לעבור באמת על השבוע, בכמה הודעות שצריך, מופרדות ב---. ' +
-    'עבור על כל הנתונים: השאלון השבועי (הציונים שלו לכל הרגל), סימוני ההרגלים באפליקציה, צעדים, אימונים, משקל. ' +
+    'הוא עוד לא מילא את השאלון השבועי של השבוע, אז עוברים על השבוע לפי הנתונים מהאפליקציה: סימוני ההרגלים, צעדים, אימונים והליכות, משקל. ' +
     '1) מה עבד טוב, ספציפי ולמה זה חשוב. ' +
-    '2) מה לא עבד: כל ההרגלים שלא נעשו כמו שצריך השבוע (ציון נמוך בשאלון או מעט סימונים), כל אחד מהם, בלי לדלג על אף אחד. לכל הרגל: מה קרה, ופתרון קונקרטי לשבוע הבא שמתאים לו. ' +
-    '3) שאלה אחת בסוף על מה שהכי מפריע לו, כדי להבין ולעזור. {weight}',
+    '2) מה לא עבד: כל ההרגלים שכמעט לא סומנו השבוע, כל אחד מהם, בלי לדלג. לכל הרגל: מה קרה, ופתרון קונקרטי לשבוע הבא שמתאים לו. ' +
+    '3) בסוף: בקשה קצרה למלא את השאלון השבועי באפליקציה (2 דקות), כדי שנעבור עליו ביחד. {weight}',
+  days:
+    'עוד לא נקבע לו יום קבוע בשבוע ל: {items}. הודעה טבעית וחמה, בלי אשמה: למה יום ושעה קבועים חשובים (כשזה קבוע, זה פשוט קורה), ' +
+    'ובקשה לקבוע את זה עכשיו באפליקציה: במסך האימונים לוחצים "עריכת ימים", ובוחרים יום ושעה. מבקשים שיעדכן אותנו איזה יום בחר. שאלה אחת לכל היותר.',
+  survey:
+    'הלקוח מילא עכשיו את השאלון השבועי (הציונים שלו בנתונים להודעה הזו, 1–10 לכל הרגל). עוברים איתו על השאלון כמו מאמן שקרא אותו: טבעי, אישי וזורם, לא רשימת נתונים ולא משפטים טלגרפיים. ' +
+    'אין הגבלת אורך בהודעה הזו: כמה הודעות שצריך, מופרדות ב---. ' +
+    '1) בקצרה מה הלך טוב (ציון 8 ומעלה), ספציפי. ' +
+    '2) העיקר: כל הרגל שקיבל 7 ומטה, כל אחד מהם, בלי לדלג על אף אחד. לכל הרגל: מה כנראה מפריע (לפי מה שידוע מהשיחה, מהתיק ומהנתונים), ופתרון קונקרטי אחד לשבוע הבא שמתאים לו, כמו בכללים ("כשהלקוח נתקע במכשול"). אם כל ההרגלים 8 ומעלה: מפרגנים, ובוחרים את החלש ביותר לחיזוק. ' +
+    '3) שקילה: ירידה → מפרגנים עם המספר; עלייה או בלי שינוי → בלי דרמה, עם ההסבר על תנודות. ' +
+    '4) שאלה אחת בסוף שמזיזה לפעולה, על ההרגל שהכי חשוב לשפר.',
   shabbat:
     'הודעת "שבת שלום" קצרה וטבעית, כמו שמאמן כותב: "שבת שלום, תנוח ותן בראש 💪". {trend} ' +
     'לא מציינים כמה ירד מתחילת התהליך ולא זורקים נתון שלא קשור. הודעה אחת, בלי שאלה.',
@@ -214,6 +224,26 @@ async function doneToday(db: SupabaseClient, userId: string, kind: 'workout' | '
   return !!(log.data ?? []).length || actMatch || !!((session as { data: unknown[] | null }).data ?? []).length;
 }
 
+/**
+ * This week's survey, filled in the last 36 hours and not gone over yet: its answers as lines
+ * (habits with their 1–10 score first), or null.
+ */
+async function surveyToReview(db: SupabaseClient, userId: string, recent: Row[]): Promise<string | null> {
+  const { data } = await db.from('weekly_checkin').select('week_number, submitted_at, answers').eq('user_id', userId)
+    .gte('submitted_at', new Date(Date.now() - 36 * HOUR).toISOString()).order('submitted_at', { ascending: false }).limit(1).maybeSingle();
+  const items = ((data?.answers as Row | null)?.items ?? []) as Row[];
+  if (!data || !items.length) return null;
+  const filled = Date.parse(data.submitted_at);
+  if (recent.some((r) => r.kind === 'survey' && Date.parse(r.sent_at) >= filled)) return null;
+  const habits = items.filter((i) => String(i.key ?? '').startsWith('habit:'));
+  const other = items.filter((i) => !String(i.key ?? '').startsWith('habit:'));
+  return [
+    `השאלון השבועי (שבוע ${data.week_number}), הציונים שהוא נתן לעצמו לכל הרגל (1–10):`,
+    ...habits.map((i) => `- ${i.question}: ${i.answer}`),
+    ...(other.length ? ['שאר התשובות:', ...other.map((i) => `- ${i.question}: ${i.answer}`)] : []),
+  ].join('\n');
+}
+
 /** The week's numbers for Friday's feedback. */
 async function weekData(db: SupabaseClient, userId: string) {
   const il = israel();
@@ -234,7 +264,8 @@ async function weekData(db: SupabaseClient, userId: string) {
       .lte('day_start', day).or(`day_end.gte.${day},day_end.is.null`).or(`user_id.is.null,user_id.eq.${userId}`);
     const done = new Map<string, number>();
     for (const t of (ticks.data ?? []) as Row[]) done.set(t.habit_id, (done.get(t.habit_id) ?? 0) + 1);
-    const hs = ((defs ?? []) as Row[]).filter((h) => h.day_end !== 0);
+    // Walks and workouts aren't ticked day by day: they're in the activities line below.
+    const hs = ((defs ?? []) as Row[]).filter((h) => h.day_end !== 0 && !/הליכ|אימון/.test(h.name));
     if (hs.length) {
       habitsLine = 'סימוני ההרגלים באפליקציה ב-7 הימים האחרונים (בכמה ימים סימן שעשה, מתוך הימים שההרגל היה פתוח): ' +
         hs.map((h) => `${h.name}${h.is_bonus ? ' (בונוס)' : ''}: ${done.get(h.id) ?? 0}/${Math.min(7, Math.max(1, day - h.day_start + 1))}`).join('; ') + '.';
@@ -285,8 +316,25 @@ export async function proactive(db: SupabaseClient) {
       db.from('whatsapp_messages').select('id').eq('chat_id', g.chat_id).eq('sender', 'coach').gte('created_at', new Date(now.getTime() - 6 * HOUR).toISOString()).limit(1),
     ]);
     const recent = (today ?? []) as Row[];
-    if (recent.filter((r) => r.sent_at >= midnight).length >= MAX_A_DAY) continue;
     if ((coach ?? []).length) continue; // one of us is in the conversation
+    // A weekly survey he just filled: gone over with him first, even past the day's cap.
+    const survey = await surveyToReview(db, g.user_id, recent);
+    if (survey) {
+      const w = await weekData(db, g.user_id);
+      const prompt = await buildPrompt(db, g.chat_id, g.user_id, 'השאלון השבועי, הרגלים לשפר', false, undefined, undefined, TASKS.survey, `${survey}\n\nמהאפליקציה:\n${w.text}`);
+      const { text, refused } = await runModel(db, prompt, { chatId: g.chat_id, userId: g.user_id });
+      if (!text && !refused) continue; // the model failed: tried again in 15 minutes
+      const { parts, handoff } = refused ? { parts: [], handoff: false } : toReply(text, 8);
+      // Logged even when nothing went out, so it isn't tried again every 15 minutes.
+      await db.from('bot_proactive').insert({ chat_id: g.chat_id, user_id: g.user_id, kind: 'survey', text: parts.join('\n---\n') });
+      if (parts.length) {
+        if (handoff) await alertHandoff(db, g.chat_id, g.user_id, parts.join('\n'), true);
+        await deliver(db, g.chat_id, g.user_id, parts);
+        sent.push({ chat: g.chat_id, kind: 'survey' });
+      }
+      continue;
+    }
+    if (recent.filter((r) => r.sent_at >= midnight).length >= MAX_A_DAY) continue;
     const sentSince = (kind: string, ms: number) => recent.some((r) => r.kind === kind && new Date(r.sent_at).getTime() > now.getTime() - ms);
     const at = (t: Date | null) => !!t && now >= t && now.getTime() < t.getTime() + WINDOW;
 
@@ -329,7 +377,8 @@ export async function proactive(db: SupabaseClient) {
     let extra: string | undefined;
     let query = '';
 
-    if (nextCandles && at(new Date(nextCandles.getTime() - 150 * MIN)) && !sentSince('friday', 20 * HOUR)) {
+    // Friday's feedback only for one who hasn't filled the survey: one who did got its review already.
+    if (nextCandles && at(new Date(nextCandles.getTime() - 150 * MIN)) && !sentSince('friday', 20 * HOUR) && !sentSince('survey', 36 * HOUR)) {
       const w = await weekData(db, g.user_id);
       kind = 'friday';
       task = TASKS.friday.replace('{weight}', w.weighedToday
@@ -384,6 +433,17 @@ export async function proactive(db: SupabaseClient) {
       }
     }
 
+    // Walks / workouts still without a fixed day: Sunday at 18:00, after the morning's push
+    // ("עוד לא קבעת ימים", 11:00) didn't do it. Once a week at most.
+    if (!kind && il.weekday === 0 && il.minutes >= 18 * 60 && il.minutes < 18 * 60 + 20 && !sentSince('days', 6 * 24 * HOUR)) {
+      const missing = await missingDays(db, g.user_id);
+      if (missing.length) {
+        kind = 'days';
+        task = TASKS.days.replace('{items}', missing.join(', '));
+        query = 'יום קבוע להליכה ולאימון';
+      }
+    }
+
     // Not in the middle of asking about the workouts.
     if (!kind && !(await openReview(db, g.user_id)) && il.minutes >= 16 * 60 && il.minutes < 16 * 60 + 20 && il.weekday !== 5 && il.weekday !== 6 && !sentSince('checkin', 48 * HOUR)) {
       const last = await lastUpdate(db, g.chat_id, g.user_id);
@@ -407,7 +467,7 @@ export async function proactive(db: SupabaseClient) {
     }
     const prompt = await buildPrompt(db, g.chat_id, g.user_id, query, false, undefined, undefined, task, extra);
     const { text, refused, model } = await runModel(db, prompt, { chatId: g.chat_id, userId: g.user_id });
-    // Friday's feedback has room to go over the whole week.
+    // Friday's feedback has room to go over the whole week (the survey's review has its own, above).
     const { parts, handoff } = refused ? { parts: [], handoff: false } : toReply(text, kind === 'friday' ? 8 : maxParts(model));
     if (!parts.length) {
       // The opening never went out: no review hanging open.

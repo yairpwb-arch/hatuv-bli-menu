@@ -395,11 +395,12 @@ async function openActivities(userId: string) {
   const days = ((dayRows ?? []) as any[]).filter((d) => !d.unlocks_with || unlocked.has(d.unlocks_with)) as { id: string; name: string }[];
   const weekdayOf = new Map(((schedule.data ?? []) as any[]).map((r) => [r.plan_day_id as string, r.weekday as number]));
   const walkRows = (walks.data ?? []) as any[];
-  // A walk is open once its video is watched; it's missing a day if it has none (and wasn't removed).
+  // A walk is open once its stage comes (the nightly public.ensure_walks adds its row) or its video
+  // is watched; it's missing a day if it has none (and wasn't removed).
   const walksMissing = [1, 2].filter((n) => {
-    if (!unlocked.has(`walk_${n}`)) return false;
     const row = walkRows.find((w) => w.walk_number === n);
-    return !row || (row.is_active && row.day_of_week == null);
+    if (!row) return unlocked.has(`walk_${n}`);
+    return row.is_active && row.day_of_week == null;
   }).length;
   const timeOf = (planDayId: string, weekday: number, day: string) =>
     ((placements.data ?? []) as any[])

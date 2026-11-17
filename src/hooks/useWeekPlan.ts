@@ -48,16 +48,18 @@ export function useWeekPlan(userId: string | undefined, currentWeek: number, pla
       const { data: existing } = await db.from('user_walking_schedule').select('*').eq('user_id', userId).order('walk_number');
       let list = (existing || []) as WalkEntry[];
 
-      // A walk opens when its video is watched (week 1, week 4).
+      // A walk opens with its stage (week 1, week 4), or earlier if its video was watched.
+      // (The server adds them every night too: public.ensure_walks.)
+      const open = (n: number, weekStart: number) => currentWeek >= weekStart || unlocked.has(`walk_${n}`);
       for (const [number, weekStart] of [[1, 1], [2, 4]] as const) {
-        if (!unlocked.has(`walk_${number}`) || list.find((w) => w.walk_number === number)) continue;
+        if (!open(number, weekStart) || list.find((w) => w.walk_number === number)) continue;
         const { data } = await db.from('user_walking_schedule').insert({ user_id: userId, walk_number: number, week_start: weekStart }).select().single();
         if (data) list = [...list, data as WalkEntry];
       }
-      // One with a day already chosen stays; one without waits for its video.
+      // One with a day already chosen stays; one without waits for its stage.
       return {
         active: list
-          .filter((w) => w.is_active && (w.day_of_week !== null || unlocked.has(`walk_${w.walk_number}`)))
+          .filter((w) => w.is_active && (w.day_of_week !== null || open(w.walk_number, w.walk_number === 1 ? 1 : 4)))
           .sort((a, b) => a.walk_number - b.walk_number),
         removed: list.filter((w) => !w.is_active),
       };

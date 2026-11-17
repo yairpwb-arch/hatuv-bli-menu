@@ -587,7 +587,8 @@ export default function AdminUsers() {
       .or(`day_end.is.null,day_end.gte.${currentDay}`)
       .or(`user_id.is.null,user_id.eq.${user.id}`);
     const all = (hd || []) as (Habit & { user_id: string | null })[];
-    setHabits(all.filter(h => !h.user_id));
+    // Walks and workouts aren't ticked day by day: they're read from the weekly survey and the workouts tab.
+    setHabits(all.filter(h => !h.user_id && !/הליכ|אימון/.test(h.name)));
     setPersonalHabits(all.filter(h => !!h.user_id));
 
     // This week's habit completions
@@ -1319,10 +1320,7 @@ export default function AdminUsers() {
                     return (
                       <div key={h.id} className="space-y-1">
                         <div className="flex items-center justify-between text-sm">
-                          <span className="flex items-center gap-2">
-                            {h.icon && <span>{h.icon}</span>}
-                            {h.name}
-                          </span>
+                          <span>{h.name}</span>
                           <span className="text-muted-foreground text-xs">{done}/7 ימים</span>
                         </div>
                         <Progress value={pct} className="h-2" />

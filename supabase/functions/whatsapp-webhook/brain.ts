@@ -51,6 +51,34 @@ async function programDay(db: SupabaseClient, userId: string | null): Promise<nu
   return Math.floor((Date.now() - new Date(`${data.start_date}T00:00:00`).getTime()) / 86400_000) + 1;
 }
 
+/**
+ * The walks and workouts open for him with no day of the week yet, as the app shows them
+ * (like push-notification's openActivities): e.g. ["הליכה שנייה", 'אימון "A"']. Empty when all are set.
+ */
+export async function missingDays(db: SupabaseClient, userId: string): Promise<string[]> {
+  const [content, progress, assignment, schedule, walks] = await Promise.all([
+    db.from('program_content').select('id, unlocks').not('unlocks', 'is', null).is('archived_at', null),
+    db.from('content_progress').select('content_id').eq('user_id', userId),
+    db.from('user_workout_assignments').select('plan_id').eq('user_id', userId).eq('is_active', true).maybeSingle(),
+    db.from('workout_day_schedule').select('plan_day_id').eq('user_id', userId),
+    db.from('user_walking_schedule').select('walk_number, day_of_week, is_active').eq('user_id', userId),
+  ]);
+  const watched = new Set(((progress.data ?? []) as Row[]).map((p) => p.content_id));
+  const unlocked = new Set(((content.data ?? []) as Row[]).filter((c) => watched.has(c.id)).map((c) => c.unlocks as string));
+  const planId = (assignment.data as Row | null)?.plan_id;
+  const { data: dayRows } = planId ? await db.from('workout_plan_days').select('id, name, unlocks_with').eq('plan_id', planId) : { data: [] };
+  const scheduled = new Set(((schedule.data ?? []) as Row[]).map((r) => r.plan_day_id));
+  const workouts = ((dayRows ?? []) as Row[])
+    .filter((d) => (!d.unlocks_with || unlocked.has(d.unlocks_with)) && !scheduled.has(d.id))
+    .map((d) => `אימון "${d.name}"`);
+  // A walk's row is added with its stage (public.ensure_walks); one turned off by a coach doesn't count.
+  const walkList = ((walks.data ?? []) as Row[])
+    .filter((w) => w.is_active && w.day_of_week == null)
+    .sort((a, b) => a.walk_number - b.walk_number)
+    .map((w) => (w.walk_number === 1 ? 'הליכה ראשונה' : 'הליכה שנייה'));
+  return [...walkList, ...workouts];
+}
+
 /** What the app knows about the client, as short Hebrew lines. */
 async function clientContext(db: SupabaseClient, userId: string | null, day: number | null): Promise<string> {
   if (!userId) return 'אין לקוח משויך לקבוצה הזו (קבוצת ניסיון): אין נתונים מהאפליקציה.';
@@ -103,6 +131,11 @@ async function clientContext(db: SupabaseClient, userId: string | null, day: num
       ...sch.map((s) => `אימון "${s.workout_plan_days?.name ?? ''}" ביום ${WD[s.weekday]}`),
       ...wk.map((w) => `הליכה ביום ${WD[w.day_of_week]}`),
     ].join(', ') + '.');
+  }
+  // Open walks / workouts with no day yet: the coaches want a fixed day for each.
+  if (day != null && day >= 1) {
+    const missing = await missingDays(db, userId);
+    if (missing.length) lines.push(`עוד בלי יום קבוע בשבוע: ${missing.join(', ')}. (נקבע באפליקציה: מסך האימונים ← עריכת ימים.)`);
   }
   // Today in the calendar: the plan's workout / walk at their set time, and what he planned himself.
   const todayWd = new Date(`${todayIl}T12:00:00Z`).getUTCDay();
