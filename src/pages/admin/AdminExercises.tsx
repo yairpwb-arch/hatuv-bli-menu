@@ -154,19 +154,28 @@ export default function AdminExercises() {
     setIsUploading(false);
   };
 
-  const handleDelete = async (id: string) => {
+  /** True when it was deleted. Asks first; one that's in a trainee's plan or history stays. */
+  const handleDelete = async (id: string): Promise<boolean> => {
+    const ex = exercises.find((e) => e.id === id);
+    if (!confirm(`למחוק את "${ex?.name ?? 'התרגיל'}"? אי אפשר לבטל.`)) return false;
     setDeletingId(id);
     const { error } = await (supabase as any)
       .from('exercises')
       .delete()
       .eq('id', id);
-    if (error) {
-      toast({ title: 'שגיאה', description: error.message, variant: 'destructive' });
-    } else {
-      toast({ title: 'הצלחה', description: 'התרגיל נמחק' });
-      queryClient.invalidateQueries({ queryKey: ['admin-exercises'] });
-    }
     setDeletingId(null);
+    if (error) {
+      const inUse = error.code === '23503';
+      toast({
+        title: inUse ? 'אי אפשר למחוק' : 'שגיאה',
+        description: inUse ? 'התרגיל נמצא בתוכנית או בהיסטוריה של מתאמן. אפשר להחליף אותו שם ואז למחוק.' : error.message,
+        variant: 'destructive',
+      });
+      return false;
+    }
+    toast({ title: 'הצלחה', description: 'התרגיל נמחק' });
+    queryClient.invalidateQueries({ queryKey: ['admin-exercises'] });
+    return true;
   };
 
 
@@ -204,15 +213,19 @@ export default function AdminExercises() {
           {exercises.map((ex) => (
             <div
               key={ex.id}
-              className="bg-card border border-border rounded-xl overflow-hidden flex flex-col hover:shadow-md transition-shadow"
+              role="button"
+              tabIndex={0}
+              onClick={() => setPreview(ex)}
+              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setPreview(ex)}
+              className="bg-card border border-border rounded-xl overflow-hidden flex flex-col hover:shadow-md transition-shadow cursor-pointer"
             >
               {/* Media */}
               <div className="relative bg-muted h-44 flex items-center justify-center overflow-hidden">
                 {ex.video_id ? (
-                  <button type="button" onClick={() => setPreview(ex)} className="flex flex-col items-center gap-2 text-muted-foreground hover:text-foreground">
+                  <div className="flex flex-col items-center gap-2 text-muted-foreground">
                     <Play className="h-10 w-10" />
-                    <span className="text-xs">צפייה בסרטון</span>
-                  </button>
+                    <span className="text-xs">לחיצה לצפייה בסרטון</span>
+                  </div>
                 ) : (
                   <div className="flex flex-col items-center gap-2 text-muted-foreground">
                     <Dumbbell className="h-12 w-12 opacity-20" />
@@ -247,7 +260,7 @@ export default function AdminExercises() {
               </div>
 
               {/* Actions */}
-              <div className="flex border-t border-border">
+              <div className="flex border-t border-border" onClick={(e) => e.stopPropagation()}>
                 <button
                   onClick={() => openEdit(ex)}
                   className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
@@ -385,7 +398,27 @@ export default function AdminExercises() {
           <DialogHeader>
             <DialogTitle>{preview?.name}</DialogTitle>
           </DialogHeader>
-          {preview?.video_id && <BunnyLoop videoId={preview.video_id} title={preview.name} controls />}
+          {preview?.video_id ? (
+            <BunnyLoop videoId={preview.video_id} title={preview.name} controls />
+          ) : (
+            <p className="py-6 text-center text-sm text-muted-foreground">אין סרטון לתרגיל הזה</p>
+          )}
+          {preview?.description && <p className="text-sm text-muted-foreground">{preview.description}</p>}
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <Button variant="outline" className="gap-1.5" onClick={() => { const ex = preview!; setPreview(null); openEdit(ex); }}>
+              <Pencil className="h-4 w-4" />
+              עריכה
+            </Button>
+            <Button
+              variant="outline"
+              className="gap-1.5 text-destructive hover:text-destructive"
+              disabled={!!preview && deletingId === preview.id}
+              onClick={async () => { if (preview && (await handleDelete(preview.id))) setPreview(null); }}
+            >
+              <Trash2 className="h-4 w-4" />
+              מחיקה
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
