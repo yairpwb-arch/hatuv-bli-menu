@@ -149,10 +149,10 @@ const TASKS = {
     'היום היה מתוכנן {item} ב-{time}, ועוד לא סומן שבוצע. שאלה עדינה אחת אם יצא לו היום, בלי לחץ ובלי אשמה. הודעה אחת.',
   friday:
     'משוב שבועי לפני שבת, כמו שמאמן אמיתי כותב למתאמן שלו אחרי שעבר על השבוע: טבעי, אישי וזורם, לא רשימה של נתונים ולא משפטים טלגרפיים ("השבוע עשית הליכה של 30 דקות וחלבון קיבל 8" זה לא טוב). ' +
-    'אין הגבלת אורך בהודעה הזו: כתוב כמה שצריך כדי לעבור באמת על השבוע. אפשר עד 3–4 הודעות מופרדות ב---. ' +
+    'אין הגבלת אורך בהודעה הזו: כתוב כמה שצריך כדי לעבור באמת על השבוע, בכמה הודעות שצריך, מופרדות ב---. ' +
     'עבור על כל הנתונים: השאלון השבועי (הציונים שלו לכל הרגל), סימוני ההרגלים באפליקציה, צעדים, אימונים, משקל. ' +
     '1) מה עבד טוב, ספציפי ולמה זה חשוב. ' +
-    '2) מה לא עבד: כל ההרגלים שהיו חלשים השבוע (ציון נמוך או מעט סימונים), לא רק אחד. לכל אחד בקצרה מה קרה ומה עושים בשבוע הבא, עם פתרון קונקרטי. אם יש הרבה, מתחילים מהחשובים. ' +
+    '2) מה לא עבד: כל ההרגלים שלא נעשו כמו שצריך השבוע (ציון נמוך בשאלון או מעט סימונים), כל אחד מהם, בלי לדלג על אף אחד. לכל הרגל: מה קרה, ופתרון קונקרטי לשבוע הבא שמתאים לו. ' +
     '3) שאלה אחת בסוף על מה שהכי מפריע לו, כדי להבין ולעזור. {weight}',
   shabbat:
     'הודעת "שבת שלום" קצרה וטבעית, כמו שמאמן כותב: "שבת שלום, תנוח ותן בראש 💪". {trend} ' +
@@ -408,7 +408,7 @@ export async function proactive(db: SupabaseClient) {
     const prompt = await buildPrompt(db, g.chat_id, g.user_id, query, false, undefined, undefined, task, extra);
     const { text, refused, model } = await runModel(db, prompt, { chatId: g.chat_id, userId: g.user_id });
     // Friday's feedback has room to go over the whole week.
-    const { parts, handoff } = refused ? { parts: [], handoff: false } : toReply(text, kind === 'friday' ? 4 : maxParts(model));
+    const { parts, handoff } = refused ? { parts: [], handoff: false } : toReply(text, kind === 'friday' ? 8 : maxParts(model));
     if (!parts.length) {
       // The opening never went out: no review hanging open.
       if (opensReview) await db.from('bot_workout_reviews').update({ status: 'cancelled', closed_at: new Date().toISOString() }).eq('user_id', g.user_id).eq('status', 'interview');
