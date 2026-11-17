@@ -315,9 +315,13 @@ async function fetchEligibleUsers(includeStartDate = false, pref?: string) {
     console.error('[push] fetchEligibleUsers error:', error.message);
     return [];
   }
+  // Coaches (admins) aren't trainees: none of the program's notifications go to them.
+  const { data: adminRows } = await supabase.from('user_roles').select('user_id').eq('role', 'admin');
+  const admins = new Set(((adminRows ?? []) as any[]).map((r) => r.user_id as string));
 
   return (data ?? []).filter(
     (s: any) =>
+      !admins.has(s.user_id) &&
       s.profiles?.is_active === true &&
       (!pref || s.prefs?.[pref] !== false) &&
       !isQuietHours(s.timezone, s.profiles?.sleep_time, s.profiles?.wake_time),

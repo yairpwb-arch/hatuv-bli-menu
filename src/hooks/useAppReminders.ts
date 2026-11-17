@@ -79,8 +79,12 @@ export function useAppReminders(userId: string | undefined) {
     if (!userId || isLoading) return;
     (async () => {
       // Off with the main notifications switch, or with its own one in Settings.
-      const { data } = await db.from('notification_settings').select('notifications_enabled, prefs').eq('user_id', userId).maybeSingle();
-      const on = data?.notifications_enabled !== false && data?.prefs?.workout_walk !== false;
+      // Coaches (admins) aren't trainees: no workout or walk reminders for them.
+      const [{ data }, { data: admin }] = await Promise.all([
+        db.from('notification_settings').select('notifications_enabled, prefs').eq('user_id', userId).maybeSingle(),
+        db.from('user_roles').select('id').eq('user_id', userId).eq('role', 'admin').limit(1),
+      ]);
+      const on = !(admin ?? []).length && data?.notifications_enabled !== false && data?.prefs?.workout_walk !== false;
       await scheduleActivityReminders(events, on);
     })();
   }, [userId, events, isLoading]);
