@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, Pencil, Trash2, Play, Dumbbell } from 'lucide-react';
+import { Plus, Pencil, Trash2, Play, Dumbbell, Search, X } from 'lucide-react';
 import { BunnyLoop } from '@/components/content/BunnyPlayer';
 import { EXERCISE_COLLECTION, exerciseTitle, listBunnyVideos } from '@/lib/bunny';
 
@@ -62,6 +62,7 @@ export default function AdminExercises() {
   const [editingExercise, setEditingExercise] = useState<Exercise | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [preview, setPreview] = useState<Exercise | null>(null);
+  const [search, setSearch] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -87,6 +88,15 @@ export default function AdminExercises() {
     const v = guid ? videos.find((x) => x.guid === guid) : null;
     return v ? exerciseTitle(v.title) : null;
   };
+
+  // Search by name, muscle or equipment (every word has to match somewhere); A→Z by name.
+  const shown = (() => {
+    const words = search.trim().toLowerCase().split(/s+/).filter(Boolean);
+    const hay = (e: Exercise) => [e.name, e.equipment ?? '', ...(e.muscle_groups ?? [])].join(' ').toLowerCase();
+    return exercises
+      .filter((e) => words.every((w) => hay(e).includes(w)))
+      .sort((a, b) => a.name.localeCompare(b.name, 'he'));
+  })();
 
   const openAdd = () => {
     setEditingExercise(null);
@@ -195,6 +205,24 @@ export default function AdminExercises() {
         </Button>
       </div>
 
+      {/* Search */}
+      <div className="relative">
+        <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="חיפוש תרגיל: שם, שריר או ציוד"
+          className="pr-9 pl-9"
+          aria-label="חיפוש תרגיל"
+        />
+        {search && (
+          <button type="button" onClick={() => setSearch('')} aria-label="ניקוי החיפוש" className="absolute left-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center text-muted-foreground hover:text-foreground">
+            <X className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+      {search && <p className="-mt-3 text-sm text-muted-foreground">{shown.length ? `נמצאו ${shown.length} תרגילים` : 'לא נמצא תרגיל כזה'}</p>}
+
       {/* Grid */}
       {isLoading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -210,7 +238,7 @@ export default function AdminExercises() {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {exercises.map((ex) => (
+          {shown.map((ex) => (
             <div
               key={ex.id}
               role="button"
