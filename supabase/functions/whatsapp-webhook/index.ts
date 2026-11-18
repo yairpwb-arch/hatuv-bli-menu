@@ -215,14 +215,24 @@ async function handle(body: any) {
   }
 
   // A live conversation: answer in ~10 s; a newer message in the meantime takes over.
+  // Messages sent together (forwarded at once) have the same second: the one with the
+  // highest id is "newest", so exactly one run answers them all.
+  const after = async (senders: string[]) => {
+    const { data } = await supabase
+      .from('whatsapp_messages')
+      .select('sender, created_at, wa_message_id')
+      .eq('chat_id', chatId)
+      .in('sender', senders)
+      .gte('created_at', at)
+      .limit(20);
+    const t = new Date(at).getTime();
+    return ((data ?? []) as { sender: string; created_at: string; wa_message_id: string | null }[]).filter((m) => {
+      const mt = new Date(m.created_at).getTime();
+      return mt > t || (mt === t && m.wa_message_id !== waId && (m.wa_message_id ?? '') > (waId ?? ''));
+    });
+  };
   await sleep(LIVE_WAIT_MS);
-  const { data: newer } = await supabase
-    .from('whatsapp_messages')
-    .select('sender')
-    .eq('chat_id', chatId)
-    .neq('sender', 'bot')
-    .gt('created_at', at)
-    .limit(5);
+  const newer = await after(['client', 'coach']);
   if ((newer ?? []).some((m: { sender: string }) => m.sender === 'client')) return; // the newer one answers
   if ((newer ?? []).some((m: { sender: string }) => m.sender === 'coach')) return; // one of us took over
 
@@ -231,8 +241,9 @@ async function handle(body: any) {
   const { parts, handoff, review, planRequest, todayTimes, watched } = await composeReply(supabase, chatId, userId, msg.text);
   // He wrote more (or a photo arrived) while this was written: that message's own run
   // answers everything together, so nothing he sent is left unanswered.
-  const { data: during } = await supabase.from('whatsapp_messages').select('id').eq('chat_id', chatId).eq('sender', 'client').gt('created_at', at).limit(1);
-  if ((during ?? []).length) return;
+  if ((await after(['client'])).length) return;
+  // Already answered meanwhile (another run, or a coach): never the same answer twice.
+  if ((await after(['bot', 'coach'])).some((m) => new Date(m.created_at).getTime() > new Date(at).getTime())) return;
   // The test group always gets the answer; a real group in draft mode would get only our alert.
   const toGroup = isTest || !group?.draft_mode;
   if (handoff) await alertHandoff(supabase, chatId, userId, parts.join('\n'), toGroup);
