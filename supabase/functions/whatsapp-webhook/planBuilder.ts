@@ -33,8 +33,9 @@ const STAGE_UNLOCK: Record<string, string | null> = { '1': 'workout_1', '2': 'wo
 //   - strength for over two months, up to 2 a week: open from the start,
 //       men 1 full body, women 2;
 //   - strength for over two months, 3+ a week: open from the start,
-//       men ABC (legs / chest-triceps-shoulders / back-biceps-abs),
-//       women LLU (legs+abs, legs+abs, upper body).
+//       at the gym: men ABC (legs / chest-triceps-shoulders / back-biceps-abs),
+//       women LLU (legs+abs, legs+abs, upper body);
+//       at home or in the park: three alternating full body workouts (A, B, C).
 // Extras offered in weeks 9–10 (the trainee taps "add"): pull-ups (men), abs (women).
 
 interface DaySpec { stage: '1' | '2' | 'now'; focus: string }
@@ -71,6 +72,16 @@ function trackOf(a: Row, gender: string | null | undefined): Track {
       ? { key: 'regular_f', label: `מתאמנת כוח מעל חודשיים, עד 2 בשבוע · ${who}`, days: [{ stage: 'now', focus: FULL_F }, { stage: 'now', focus: FULL_F + OTHER }] }
       : { key: 'regular_m', label: `מתאמן כוח מעל חודשיים, עד 2 בשבוע · ${who}`, days: [{ stage: 'now', focus: FULL_M }] };
   }
+  // ABC and LLU are for the gym only: 3+ a week at home or in the park is three alternating full body workouts.
+  const where = String(a.preferred_location ?? a.strength_location ?? '');
+  if (where && where !== 'gym') {
+    const full = female ? FULL_F : FULL_M;
+    return { key: female ? 'full3_f' : 'full3_m', label: `${female ? 'מתאמנת' : 'מתאמן'} כוח מעל חודשיים, 3+ בשבוע, לא בחדר כושר: 3 פול באדי מתחלפים · ${who}`, days: [
+      { stage: 'now', focus: 'A · ' + full },
+      { stage: 'now', focus: 'B · ' + full + OTHER },
+      { stage: 'now', focus: 'C · ' + full + OTHER },
+    ] };
+  }
   return female
     ? { key: 'llu_f', label: `מתאמנת כוח מעל חודשיים, 3+ בשבוע: LLU · ${who}`, days: [
         { stage: 'now', focus: 'L · רגליים ובטן' },
@@ -101,15 +112,23 @@ async function knowledge(db: SupabaseClient) {
   return { principles: (principles ?? '').trim(), templates: (templates ?? []) as Row[] };
 }
 
+/** The library's tags, as the coaches' principles name them. */
+const TAG_TEXT: Record<string, string> = { struggling: 'מתקשים', no_jumps: 'בלי קפיצות', no_floor: 'בלי רצפה' };
+
 /** The library with short codes (L1…), so the model picks real exercises only. */
 async function libraryCodes(db: SupabaseClient) {
-  const { data } = await db.from('exercises').select('id, name, equipment, muscle_groups, difficulty').order('name').limit(1500);
+  const { data } = await db.from('exercises').select('id, name, equipment, muscle_groups, level, tags, easier_id, harder_id').order('name').limit(1500);
   const rows = (data ?? []) as Row[];
   const byCode = new Map<string, Row>();
+  const codeOf = new Map<string, string>(rows.map((x, i) => [x.id as string, `L${i + 1}`]));
   const lines = rows.map((x, i) => {
     const code = `L${i + 1}`;
     byCode.set(code, x);
-    return `${code} ${x.name}${x.equipment ? ` [${x.equipment}]` : ''}${x.muscle_groups?.length ? ` (${x.muscle_groups.join(', ')})` : ''}${x.difficulty ? ` · ${x.difficulty}` : ''}`;
+    const tags = ((x.tags ?? []) as string[]).map((t) => TAG_TEXT[t] ?? t);
+    const easier = x.easier_id && codeOf.get(x.easier_id);
+    const harder = x.harder_id && codeOf.get(x.harder_id);
+    return `${code} ${x.name}${x.equipment ? ` [${x.equipment}]` : ''}${x.muscle_groups?.length ? ` (${x.muscle_groups.join(', ')})` : ''}` +
+      `${x.level ? ` · רמה ${x.level}` : ''}${tags.length ? ` · ${tags.join(', ')}` : ''}${easier ? ` · easier ${easier}` : ''}${harder ? ` · harder ${harder}` : ''}`;
   });
   return { text: lines.join('\n'), byCode };
 }
@@ -146,10 +165,11 @@ const SYSTEM = `אתה המאמן הבונה תוכניות אימון של "ח�
 - השיטה של הצוות (העקרונות והתבניות למטה) גוברת על כל ידע כללי שלך. כשיש תבנית שמתאימה למתאמן, מתחילים ממנה ומתאימים אותה אליו.
 - רק תרגילים מספריית התרגילים, לפי הקוד שלהם (L12). אין להמציא תרגילים.
 - מתאימים לציוד ולמקום (בית / חדר כושר / בחוץ), לזמן שיש לו לאימון, לניסיון ולרמה שלו (מהשאלון: כמה מתח / שכיבות סמיכה / סקוואטים הוא מצליח).
-- פציעה או מצב רפואי בשאלון: לא נותנים תרגיל שמעמיס על האזור. כותבים את זה במפורש בהסבר למאמן.
+- כאבים או מצב רפואי בשאלון: לפי העקרונות (מה אסור ומה במקום), ולא נותנים תרגיל שמעמיס על האזור. כותבים את זה במפורש בהסבר למאמן.
+- פציעה חדשה, כאב חד או היריון: לא בונים אימון. מחזירים רק {"refer": "מה כתוב בשאלון או בבקשה ולמה מעבירים למאמן"}.
 - סטים, טווח חזרות ומנוחה ריאליים. תרגיל בזמן (פלאנק, חבל, קרדיו): is_duration=true וה"חזרות" הן שניות.
-- מאמץ: כל סט עובד צריך להיות מאתגר באמת. המטרה היא משקל או גרסה שבהם 1–2 החזרות האחרונות בכל סט קשות, בטכניקה טובה. גם למתחילים: טכניקה נכונה, ועדיין מאמץ אמיתי.
-- הערות לתרגיל (notes): קצרות, על ביצוע נכון ועל מאמץ. למשל "משקל שבו 2 החזרות האחרונות קשות", "יורדים לאט ודוחפים חזק", "עד שהחזה כמעט נוגע ברצפה". לעולם לא "משקל קל", "בלי להתאמץ", "בנחת" או "לא להעמיס". מותר לכתוב להקל רק בגלל פציעה או מצב רפואי מהשאלון, ואז כותבים במפורש למה.
+- מאמץ: כל סט עובד מסתיים כשנשארו 1–3 חזרות "במיכל", בטכניקה טובה. לא עד כישלון, ולא קל מדי. גם למתחילים: טכניקה נכונה, ועדיין מאמץ אמיתי.
+- הערות לתרגיל (notes): קצרות, על ביצוע נכון ועל מאמץ. למשל "משקל שנשארות בו 1–3 חזרות במיכל", "יורדים לאט ודוחפים חזק", "עד שהחזה כמעט נוגע ברצפה". לעולם לא "משקל קל", "בלי להתאמץ", "בנחת" או "לא להעמיס". מותר לכתוב להקל רק בגלל פציעה או מצב רפואי מהשאלון, ואז כותבים במפורש למה.
 - שמות לימי האימון: קצרים ובעברית (למשל "אימון A · גוף מלא"). כשיש בקשה, השם משקף אותה (למשל "רגליים · בית").
 - בקשה של המתאמן או של המאמן היא חובה, לא המלצה. קודם מוציאים מהשיחה כל דבר שהוא ביקש במפורש: אזור או שריר לחזק (רגליים, בטן, גב…), תרגיל מסוים (סקוואט, מתח…), מקום, ציוד, זמן. כל אחד מהם חייב להופיע באימון שבונים:
   - תרגיל שביקש בשמו: נמצא באימון (או הגרסה שלו מהספרייה שמתאימה לציוד שלו).
@@ -229,7 +249,7 @@ export async function buildDraft(db: SupabaseClient, draftId: string): Promise<R
     hasDays ? `# התוכנית שיש לו עכשיו\n${planText(plan!, refs)}` : '',
     draft.note ? `# הערת המאמן לבנייה הזו (חובה ליישם)\n${draft.note}` : '',
     `# המשימה\n${task}`,
-    `# ספריית התרגילים (קוד שם [ציוד] (שרירים))\n${lib.text}`,
+    `# ספריית התרגילים (קוד שם [ציוד] (שרירים) · רמה · תגיות · easier / harder = הקוד של הגרסה הקלה / הקשה יותר)\n${lib.text}`,
   ].filter(Boolean).join('\n\n');
 
   let r: Row;
@@ -247,6 +267,13 @@ export async function buildDraft(db: SupabaseClient, draftId: string): Promise<R
   await logUsage(db, { kind: 'plan', model: PLAN_MODEL, userId: draft.user_id, ...claudeUsage(r) });
   const text = ((r.content ?? []) as Row[]).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
   const out = parseJson(text);
+  // A new injury, sharp pain or pregnancy: no plan, the coaches take it.
+  if (out?.refer && !Array.isArray(out.days)) {
+    const why = String(out.refer).trim().slice(0, 400);
+    await db.from('bot_workout_plans').update({ status: 'failed', error: `להעביר למאמן: ${why}`, model: PLAN_MODEL }).eq('id', draftId);
+    await tellCoachesRefer(db, draft, who.name, why);
+    return { referred: draftId };
+  }
   if (!out || !Array.isArray(out.days)) return fail('התשובה של המודל לא הייתה תוכנית תקינה');
 
   // Only real exercises, numbers in range; unknown codes are dropped (and noted).
@@ -302,6 +329,17 @@ export async function buildDraft(db: SupabaseClient, draftId: string): Promise<R
   }
   await tellCoaches(db, draft, who.name, days);
   return { built: draftId, days: days.length };
+}
+
+/** A private message to the coaches: the bot didn't build, a coach should (an injury, pain, pregnancy). */
+async function tellCoachesRefer(db: SupabaseClient, draft: Row, name: string, why: string) {
+  const { data: g } = await db.from('whatsapp_groups').select('chat_id').eq('user_id', draft.user_id).maybeSingle();
+  const phones = await alertPhones(db, g?.chat_id ?? '');
+  const text = `⚠️ הבוט לא בנה תוכנית אימון ל${name}: צריך מאמן.
+${why}
+
+(אדמין ← משתמשים ← ${name} ← אימון)`;
+  for (const p of phones) await sendAndLog(db, `${p}@c.us`, draft.user_id, text);
 }
 
 /** A private message to the coaches: a plan is waiting in the admin. */
